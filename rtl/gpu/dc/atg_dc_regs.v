@@ -310,8 +310,8 @@ module atg_dc_regs #(
 	genvar gtw;
 	generate
 		for (gtw = 0; gtw < 9; gtw = gtw + 1) begin : g_twrite
-			wire we_t_l = d_we_cfg_l && (idx_cfg == (I_TIMING + gtw)) && !quasi_bad;
-			wire we_t_h = d_we_cfg_h && (idx_cfg == (I_TIMING + gtw)) && !quasi_bad;
+			wire we_t_l = d_we_cfg_l && (idx_cfg == (I_TIMING + gtw));
+			wire we_t_h = d_we_cfg_h && (idx_cfg == (I_TIMING + gtw));
 			always @(posedge clk or posedge rst_high) begin
 				if (rst_high) begin
 					r_timing_lo[gtw] <= 16'd0;
@@ -370,7 +370,7 @@ module atg_dc_regs #(
 	always @(posedge clk or posedge rst_high) begin
 		if (rst_high)
 			r_frame_count_lo <= 16'd0;
-		else if (do_reset)
+		else if (do_reset_q)
 			r_frame_count_lo <= 16'd0;
 		else if (ev_vsync_lo)
 			r_frame_count_lo <= frame_inc_lo;
@@ -379,7 +379,7 @@ module atg_dc_regs #(
 	always @(posedge clk or posedge rst_high) begin
 		if (rst_high)
 			r_frame_count_hi <= 16'd0;
-		else if (do_reset)
+		else if (do_reset_q)
 			r_frame_count_hi <= 16'd0;
 		else if (ev_vsync_hi)
 			r_frame_count_hi <= frame_inc_hi;
@@ -469,9 +469,9 @@ module atg_dc_regs #(
 			r_flip_ready <= 1'b0;
 			disp_irq_status <= 6'd0;
 			disp_irq_enable <= 6'd0;
-			connected_q <= 1'b1;
+			connected_q <= 1'b0;
 			ev_hotplug_q <= 1'b0;
-		end else if (do_reset) begin
+		end else if (do_reset_q) begin
 			taken <= 1'b0;
 			taken_cancel <= 1'b0;
 			ev_error <= 1'b0;

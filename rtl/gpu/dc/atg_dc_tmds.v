@@ -94,7 +94,7 @@ module atg_dc_tmds (
 	wire [23:0] rgb_b = rgb;
 `endif
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high) begin
 			s1_de <= 1'b0;
 			s1_ctrl[0] <= 2'd0;
@@ -125,12 +125,12 @@ module atg_dc_tmds (
 		wire [7:0] qm_xor;
 		assign qm_xor[0] = d_b[0];
 		assign qm_xor[1] = d_b[0] ^ d_b[1];
-		assign qm_xor[2] = qm_xor[1] ^ d_b[2];
-		assign qm_xor[3] = qm_xor[2] ^ d_b[3];
-		assign qm_xor[4] = qm_xor[3] ^ d_b[4];
-		assign qm_xor[5] = qm_xor[4] ^ d_b[5];
-		assign qm_xor[6] = qm_xor[5] ^ d_b[6];
-		assign qm_xor[7] = qm_xor[6] ^ d_b[7];
+		assign qm_xor[2] = ^d_b[2:0];
+		assign qm_xor[3] = ^d_b[3:0];
+		assign qm_xor[4] = ^d_b[4:0];
+		assign qm_xor[5] = ^d_b[5:0];
+		assign qm_xor[6] = ^d_b[6:0];
+		assign qm_xor[7] = ^d_b[7:0];
 
 		wire [8:0] next_qm = {
 			!xnor_,
@@ -161,7 +161,7 @@ module atg_dc_tmds (
 		wire [3:0] next_n1 = xnor_ ? n1_xnor : n1_xor;
 
 		reg [3:0] s1_n1_r;
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_high) begin
 			if (rst_high) begin
 				s1_qm[c] <= 9'd0;
 				s1_n1_r  <= 4'd0;
@@ -174,7 +174,7 @@ module atg_dc_tmds (
 		wire [3:0] n1 = s1_n1_r;
 		wire n1_co_unused = n1_xor_co_unused ^ n1_xnor_co_unused;
 `else
-		always @(posedge clk)
+		always @(posedge clk or posedge rst_high)
 			if (rst_high)
 				s1_qm[c] <= 9'd0;
 			else
@@ -223,7 +223,7 @@ module atg_dc_tmds (
 		am_add #(.W(5)) a_cnt (.a(cnt), .b(delta), .ci(1'b0), .s(cnt_next), .co(cnt_next_co_unused));
 		assign tmds[10*c +: 10] = out;
 
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_high) begin
 			if (rst_high) begin
 				cnt <= 5'd0;
 				out <= 10'd0;

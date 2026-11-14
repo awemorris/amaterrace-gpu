@@ -82,10 +82,16 @@ module atg_dc_tgen (
 `ifdef SYNTH_KINTEX7
 	reg vrr_en_q, flip_ready_q;
 	reg [11:0] vrr_vmax_q;
-	always @(posedge clk) begin
-		vrr_en_q <= vrr_en;
-		flip_ready_q <= flip_ready;
-		vrr_vmax_q <= vrr_vmax;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			vrr_en_q <= 1'b0;
+			flip_ready_q <= 1'b0;
+			vrr_vmax_q <= 12'd0;
+		end else begin
+			vrr_en_q <= vrr_en;
+			flip_ready_q <= flip_ready;
+			vrr_vmax_q <= vrr_vmax;
+		end
 	end
 	wire d_vrr_en = vrr_en_q;
 	wire d_flip_ready = flip_ready_q;
@@ -112,16 +118,28 @@ module atg_dc_tgen (
 	reg [11:0] p1_ha, p1_hss, p1_hs, p1_hbp_m1;
 	reg [11:0] p1_va, p1_vss, p1_vs, p1_vbp_m1;
 	reg [1:0]  p1_pol;
-	always @(posedge clk) begin
-		p1_ha     <= t_ha;
-		p1_hss    <= p1_hss_w;
-		p1_hs     <= t_hs;
-		p1_hbp_m1 <= p1_hbp_m1_w;
-		p1_va     <= t_va;
-		p1_vss    <= p1_vss_w;
-		p1_vs     <= t_vs;
-		p1_vbp_m1 <= p1_vbp_m1_w;
-		p1_pol    <= t_pol;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			p1_ha     <= 12'd0;
+			p1_hss    <= 12'd0;
+			p1_hs     <= 12'd0;
+			p1_hbp_m1 <= 12'd0;
+			p1_va     <= 12'd0;
+			p1_vss    <= 12'd0;
+			p1_vs     <= 12'd0;
+			p1_vbp_m1 <= 12'd0;
+			p1_pol    <= 2'd0;
+		end else begin
+			p1_ha     <= t_ha;
+			p1_hss    <= p1_hss_w;
+			p1_hs     <= t_hs;
+			p1_hbp_m1 <= p1_hbp_m1_w;
+			p1_va     <= t_va;
+			p1_vss    <= p1_vss_w;
+			p1_vs     <= t_vs;
+			p1_vbp_m1 <= p1_vbp_m1_w;
+			p1_pol    <= t_pol;
+		end
 	end
 
 	wire [11:0] p2_hse_w, p2_vse_w;
@@ -132,16 +150,28 @@ module atg_dc_tgen (
 	reg [11:0] p2_ha, p2_hss, p2_hse, p2_hbp_m1;
 	reg [11:0] p2_va, p2_vss, p2_vse, p2_vbp_m1;
 	reg [1:0]  p2_pol;
-	always @(posedge clk) begin
-		p2_ha     <= p1_ha;
-		p2_hss    <= p1_hss;
-		p2_hse    <= p2_hse_w;
-		p2_hbp_m1 <= p1_hbp_m1;
-		p2_va     <= p1_va;
-		p2_vss    <= p1_vss;
-		p2_vse    <= p2_vse_w;
-		p2_vbp_m1 <= p1_vbp_m1;
-		p2_pol    <= p1_pol;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			p2_ha     <= 12'd0;
+			p2_hss    <= 12'd0;
+			p2_hse    <= 12'd0;
+			p2_hbp_m1 <= 12'd0;
+			p2_va     <= 12'd0;
+			p2_vss    <= 12'd0;
+			p2_vse    <= 12'd0;
+			p2_vbp_m1 <= 12'd0;
+			p2_pol    <= 2'd0;
+		end else begin
+			p2_ha     <= p1_ha;
+			p2_hss    <= p1_hss;
+			p2_hse    <= p2_hse_w;
+			p2_hbp_m1 <= p1_hbp_m1;
+			p2_va     <= p1_va;
+			p2_vss    <= p1_vss;
+			p2_vse    <= p2_vse_w;
+			p2_vbp_m1 <= p1_vbp_m1;
+			p2_pol    <= p1_pol;
+		end
 	end
 
 	wire [11:0] p3_hlast_w, p3_vlast_w;
@@ -149,17 +179,30 @@ module atg_dc_tgen (
 	am_add #(.W(12)) u_p3_hlast (.a(p2_hse), .b(p2_hbp_m1), .ci(1'b0), .s(p3_hlast_w), .co(p3_co_unused[0]));
 	am_add #(.W(12)) u_p3_vlast (.a(p2_vse), .b(p2_vbp_m1), .ci(1'b0), .s(p3_vlast_w), .co(p3_co_unused[1]));
 
-	always @(posedge clk) begin
-		ha    <= p2_ha;
-		hss   <= p2_hss;
-		hse   <= p2_hse;
-		hlast <= p3_hlast_w;
-		va    <= p2_va;
-		vss   <= p2_vss;
-		vse   <= p2_vse;
-		vlast <= p3_vlast_w;
-		bar_w <= {3'd0, p2_ha[11:3]};
-		pol   <= p2_pol;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ha    <= 12'd0;
+			hss   <= 12'd0;
+			hse   <= 12'd0;
+			hlast <= 12'd0;
+			va    <= 12'd0;
+			vss   <= 12'd0;
+			vse   <= 12'd0;
+			vlast <= 12'd0;
+			bar_w <= 12'd0;
+			pol   <= 2'd0;
+		end else begin
+			ha    <= p2_ha;
+			hss   <= p2_hss;
+			hse   <= p2_hse;
+			hlast <= p3_hlast_w;
+			va    <= p2_va;
+			vss   <= p2_vss;
+			vse   <= p2_vse;
+			vlast <= p3_vlast_w;
+			bar_w <= {3'd0, p2_ha[11:3]};
+			pol   <= p2_pol;
+		end
 	end
 	wire [7:0] bnd_co_unused = {p1_co_unused, p2_co_unused, p3_co_unused};
 `else
@@ -176,17 +219,30 @@ module atg_dc_tgen (
 	am_add #(.W(12)) a_vtot (.a(vse_c), .b(t_vbp), .ci(1'b0), .s(vtot_c), .co(bnd_co_unused[6]));
 	am_sub #(.W(12)) s_vlast (.a(vtot_c), .b(12'd1), .bi(1'b0), .d(vlast_c), .bo(bnd_co_unused[7]));
 
-	always @(posedge clk) begin
-		ha <= t_ha;
-		hss <= hss_c;
-		hse <= hse_c;
-		hlast <= hlast_c;
-		va <= t_va;
-		vss <= vss_c;
-		vse <= vse_c;
-		vlast <= vlast_c;
-		bar_w <= {3'd0, t_ha[11:3]};
-		pol <= t_pol;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ha    <= 12'd0;
+			hss   <= 12'd0;
+			hse   <= 12'd0;
+			hlast <= 12'd0;
+			va    <= 12'd0;
+			vss   <= 12'd0;
+			vse   <= 12'd0;
+			vlast <= 12'd0;
+			bar_w <= 12'd0;
+			pol   <= 2'd0;
+		end else begin
+			ha <= t_ha;
+			hss <= hss_c;
+			hse <= hse_c;
+			hlast <= hlast_c;
+			va <= t_va;
+			vss <= vss_c;
+			vse <= vse_c;
+			vlast <= vlast_c;
+			bar_w <= {3'd0, t_ha[11:3]};
+			pol <= t_pol;
+		end
 	end
 `endif
 
@@ -220,8 +276,12 @@ module atg_dc_tgen (
 	wire [11:0] bar_last_w;
 	am_sub #(.W(12)) s_barw (.a(bar_w), .b(12'd1), .bi(1'b0), .d(bar_last_w), .bo(cnt_co_unused[4]));
 	reg [11:0] bar_last_r;
-	always @(posedge clk)
-		bar_last_r <= bar_last_w;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			bar_last_r <= 12'd0;
+		else
+			bar_last_r <= bar_last_w;
+	end
 	wire [11:0] bar_last = bar_last_r;
 `else
 	wire [11:0] bar_last;
@@ -233,9 +293,14 @@ module atg_dc_tgen (
 	am_sub #(.W(12)) s_ha (.a(ha), .b(12'd1), .bi(1'b0), .d(ha_last_w), .bo(cnt_co_unused[5]));
 	am_sub #(.W(12)) s_va (.a(va), .b(12'd1), .bi(1'b0), .d(va_last_w), .bo(cnt_co_unused[6]));
 	reg [11:0] ha_last_r, va_last_r;
-	always @(posedge clk) begin
-		ha_last_r <= ha_last_w;
-		va_last_r <= va_last_w;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ha_last_r <= 12'd0;
+			va_last_r <= 12'd0;
+		end else begin
+			ha_last_r <= ha_last_w;
+			va_last_r <= va_last_w;
+		end
 	end
 	wire [11:0] ha_last = ha_last_r;
 	wire [11:0] va_last = va_last_r;
@@ -253,8 +318,12 @@ module atg_dc_tgen (
 
 	wire [11:0] diff_vlast = v ^ vlast;
 	reg v_last_match_r;
-	always @(posedge clk)
-		v_last_match_r <= ~(|diff_vlast);
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			v_last_match_r <= 1'b0;
+		else
+			v_last_match_r <= ~(|diff_vlast);
+	end
 	wire v_last_match = v_last_match_r;
 	wire [11:0] diff_valast = v ^ va_last;
 	wire v_act_end_match = ~(|diff_valast);
@@ -304,8 +373,12 @@ module atg_dc_tgen (
 	wire hs_c = h >= hss && h < hse;
 `ifdef SYNTH_KINTEX7
 	reg vs_c_r;
-	always @(posedge clk)
-		vs_c_r <= (v >= vss && v < vse);
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			vs_c_r <= 1'b0;
+		else
+			vs_c_r <= (v >= vss && v < vse);
+	end
 	wire vs_c = vs_c_r;
 `else
 	wire vs_c = v >= vss && v < vse;
@@ -331,16 +404,23 @@ module atg_dc_tgen (
 
 `ifdef SYNTH_KINTEX7
 	reg [11:0] eff_vmax_r;
-	always @(posedge clk)
-		eff_vmax_r <= (d_vrr_vmax != 12'd0) ? d_vrr_vmax : vlast;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			eff_vmax_r <= 12'd0;
+		else
+			eff_vmax_r <= (d_vrr_vmax != 12'd0) ? d_vrr_vmax : vlast;
+	end
 	wire [11:0] eff_vmax = eff_vmax_r;
 `else
 	wire [11:0] eff_vmax = (d_vrr_vmax != 12'd0) ? d_vrr_vmax : vlast;
 `endif
 `ifdef SYNTH_KINTEX7
 	reg vrr_hold_r;
-	always @(posedge clk) begin
-		vrr_hold_r <= d_vrr_en && (~(|(v ^ vss))) && !d_flip_ready && !vrr_flip_latched && (vrr_lines < eff_vmax);
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			vrr_hold_r <= 1'b0;
+		else
+			vrr_hold_r <= d_vrr_en && (~(|(v ^ vss))) && !d_flip_ready && !vrr_flip_latched && (vrr_lines < eff_vmax);
 	end
 	wire vrr_hold = vrr_hold_r;
 	wire vrr_hold_v, vrr_hold_l, vrr_hold_t;

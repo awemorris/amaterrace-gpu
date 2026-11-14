@@ -20,6 +20,7 @@
 module atg_fmt_cvt_tb;
 	`include "atg_fmt_info.vh"
 	reg clk = 1'b0;
+	reg rst_n = 1'b1;
 	always #5 clk = !clk;
 
 	reg [127:0] raw = 128'd0;
@@ -28,7 +29,7 @@ module atg_fmt_cvt_tb;
 	reg sten = 1'b0;
 	wire [31:0] val;
 
-	atg_fmt_cvt dut (.clk(clk), .i_raw(raw), .i_inf(inf), .i_k(k), .i_sten(sten), .o_val(val));
+	atg_fmt_cvt dut (.clk(clk), .rst_n(rst_n), .i_raw(raw), .i_inf(inf), .i_k(k), .i_sten(sten), .o_val(val));
 	wire [31:0] ref_v;
 	atg_fmt_comp u_ref (.raw(raw), .inf(inf), .k(k), .sten(sten), .v(ref_v));
 

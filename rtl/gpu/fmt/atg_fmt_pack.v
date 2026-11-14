@@ -157,7 +157,7 @@ module atg_fmt_pack #(
 			wire [256:0] s1_val = v_leaf[0];
 			if (LAT == 2) begin : g_lat2
 				reg [256:0] reg_s1;
-				always @(posedge clk) begin
+				always @(posedge clk or negedge rst_n) begin
 					if (!rst_n)
 						reg_s1 <= 257'd0;
 					else if (en)
@@ -173,7 +173,7 @@ module atg_fmt_pack #(
 			wire [256:0] s1_val = g_tree1.g_l1[L_SPLIT].g_j1[gk].v;
 			if (LAT == 2) begin : g_lat2
 				reg [256:0] reg_s1;
-				always @(posedge clk) begin
+				always @(posedge clk or negedge rst_n) begin
 					if (!rst_n)
 						reg_s1 <= 257'd0;
 					else if (en)
@@ -214,7 +214,7 @@ module atg_fmt_pack #(
 	generate
 	if (LAT == 2) begin : g_s2_reg
 		reg [255:0] reg_s2;
-		always @(posedge clk) begin
+		always @(posedge clk or negedge rst_n) begin
 			if (!rst_n)
 				reg_s2 <= {{128{1'b1}}, 128'd0};
 			else if (en)

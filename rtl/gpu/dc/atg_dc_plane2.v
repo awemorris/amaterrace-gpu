@@ -96,9 +96,14 @@ module atg_dc_plane2 #(
 
 `ifdef SYNTH_KINTEX7
 	reg [11:0] end_x_r, end_y_r;
-	always @(posedge clk) begin
-		end_x_r <= end_x;
-		end_y_r <= end_y;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			end_x_r <= 12'd0;
+			end_y_r <= 12'd0;
+		end else begin
+			end_x_r <= end_x;
+			end_y_r <= end_y;
+		end
 	end
 	wire in_box = (cur_x >= pos_x) && (cur_x < end_x_r) && (cur_y >= pos_y) && (cur_y < end_y_r);
 `else
@@ -208,14 +213,23 @@ module atg_dc_plane2 #(
 	(* max_fanout = 16 *) reg [23:0] sel_ov_rgb_q2, prim_rgb_q2;
 	(* max_fanout = 16 *) reg [7:0] alpha_q2;
 	(* max_fanout = 16 *) reg active_overlay_q2;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			p_r_ov_q <= 16'd0; p_r_prim_q <= 16'd0;
+			p_g_ov_q <= 16'd0; p_g_prim_q <= 16'd0;
+			p_b_ov_q <= 16'd0; p_b_prim_q <= 16'd0;
+			active_overlay_q2 <= 1'b0;
+		end else begin
+			p_r_ov_q <= p_r_ov; p_r_prim_q <= p_r_prim;
+			p_g_ov_q <= p_g_ov; p_g_prim_q <= p_g_prim;
+			p_b_ov_q <= p_b_ov; p_b_prim_q <= p_b_prim;
+			active_overlay_q2 <= active_overlay;
+		end
+	end
 	always @(posedge clk) begin
-		p_r_ov_q <= p_r_ov; p_r_prim_q <= p_r_prim;
-		p_g_ov_q <= p_g_ov; p_g_prim_q <= p_g_prim;
-		p_b_ov_q <= p_b_ov; p_b_prim_q <= p_b_prim;
 		sel_ov_rgb_q2 <= p2_sel_ov_rgb;
 		prim_rgb_q2 <= p2_prim_rgb;
 		alpha_q2 <= p2_alpha;
-		active_overlay_q2 <= active_overlay;
 	end
 	wire [15:0] d_r_ov = p_r_ov_q, d_r_prim = p_r_prim_q;
 	wire [15:0] d_g_ov = p_g_ov_q, d_g_prim = p_g_prim_q;

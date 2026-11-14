@@ -30,6 +30,7 @@
 (* rom_style = "distributed" *)
 module atg_fmt_cvt (
 	input wire clk,
+	input wire rst_n,
 	input wire [127:0] i_raw,
 	input wire [67:0] i_inf,	/* the format's atg_fmt_info word */
 	input wire [1:0] i_k,	/* the component */
@@ -168,40 +169,76 @@ module atg_fmt_cvt (
 	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0] ty0_sn0, ty0_sn1, ty0_sn2, ty0_uw, ty0_snmin;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0] k0_0, k0_1, k0_2, k0_3;
 	reg [4:0] e5e0;
-	always @(posedge clk) begin
-		cst0_0 <= cst_u1;
-		cst0_1 <= cst_u1;
-		cst0_2 <= cst_u1;
-		cst0_3 <= cst_u1;
-		cst0_k <= cst_u1;
-		cval0 <= cval_u1;
-		raw0_s0 <= raw_win[31:0];
-		raw0_s1 <= raw_win[39:8];
-		raw0_s2 <= raw_win[47:16];
-		raw0_s3 <= {8'd0, raw_win[47:24]};
-		pos0_0 <= pos[3:0];
-		pos0_1 <= pos[3:0];
-		pos0_2 <= pos[3:0];
-		pos0_3 <= pos[3:0];
-		w0_0 <= w_u1;
-		w0_1 <= w_u1;
-		w0_2 <= w_u1;
-		w0_3 <= w_u1;
-		ty0_0 <= ty;
-		ty0_1 <= ty;
-		ty0_2 <= ty;
-		ty0_3 <= ty;
-		ty0_k <= ty;
-		ty0_sn0 <= ty;
-		ty0_sn1 <= ty;
-		ty0_sn2 <= ty;
-		ty0_uw <= ty;
-		ty0_snmin <= ty;
-		k0_0 <= i_k;
-		k0_1 <= i_k;
-		k0_2 <= i_k;
-		k0_3 <= i_k;
-		e5e0 <= i_raw[31:27];
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			cst0_0 <= 1'b0;
+			cst0_1 <= 1'b0;
+			cst0_2 <= 1'b0;
+			cst0_3 <= 1'b0;
+			cst0_k <= 1'b0;
+			cval0 <= 32'd0;
+			raw0_s0 <= 32'd0;
+			raw0_s1 <= 32'd0;
+			raw0_s2 <= 32'd0;
+			raw0_s3 <= 32'd0;
+			pos0_0 <= 4'd0;
+			pos0_1 <= 4'd0;
+			pos0_2 <= 4'd0;
+			pos0_3 <= 4'd0;
+			w0_0 <= 6'd0;
+			w0_1 <= 6'd0;
+			w0_2 <= 6'd0;
+			w0_3 <= 6'd0;
+			ty0_0 <= 3'd0;
+			ty0_1 <= 3'd0;
+			ty0_2 <= 3'd0;
+			ty0_3 <= 3'd0;
+			ty0_k <= 3'd0;
+			ty0_sn0 <= 3'd0;
+			ty0_sn1 <= 3'd0;
+			ty0_sn2 <= 3'd0;
+			ty0_uw <= 3'd0;
+			ty0_snmin <= 3'd0;
+			k0_0 <= 2'd0;
+			k0_1 <= 2'd0;
+			k0_2 <= 2'd0;
+			k0_3 <= 2'd0;
+			e5e0 <= 5'd0;
+		end else begin
+			cst0_0 <= cst_u1;
+			cst0_1 <= cst_u1;
+			cst0_2 <= cst_u1;
+			cst0_3 <= cst_u1;
+			cst0_k <= cst_u1;
+			cval0 <= cval_u1;
+			raw0_s0 <= raw_win[31:0];
+			raw0_s1 <= raw_win[39:8];
+			raw0_s2 <= raw_win[47:16];
+			raw0_s3 <= {8'd0, raw_win[47:24]};
+			pos0_0 <= pos[3:0];
+			pos0_1 <= pos[3:0];
+			pos0_2 <= pos[3:0];
+			pos0_3 <= pos[3:0];
+			w0_0 <= w_u1;
+			w0_1 <= w_u1;
+			w0_2 <= w_u1;
+			w0_3 <= w_u1;
+			ty0_0 <= ty;
+			ty0_1 <= ty;
+			ty0_2 <= ty;
+			ty0_3 <= ty;
+			ty0_k <= ty;
+			ty0_sn0 <= ty;
+			ty0_sn1 <= ty;
+			ty0_sn2 <= ty;
+			ty0_uw <= ty;
+			ty0_snmin <= ty;
+			k0_0 <= i_k;
+			k0_1 <= i_k;
+			k0_2 <= i_k;
+			k0_3 <= i_k;
+			e5e0 <= i_raw[31:27];
+		end
 	end
 
 	/* ---- U1b: the field ---- */
@@ -239,43 +276,82 @@ module atg_fmt_cvt (
 	(* keep = "true", equivalent_register_removal = "no" *) reg [2:0] ty1_sn0, ty1_sn1, ty1_sn2, ty1_uw, ty1_snmin;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [1:0] k1_0, k1_1, k1_2, k1_3;
 	reg [4:0] e5e1;
-	always @(posedge clk) begin
-		cst1_0 <= cst0_0;
-		cst1_1 <= cst0_1;
-		cst1_2 <= cst0_2;
-		cst1_3 <= cst0_3;
-		cst1_k <= cst0_k;
-		cval1 <= cval0;
-		fld1_lo <= fsel_lo & msk_u1_lo;
-		fld1_hi <= fsel_hi & msk_u1_hi;
-		fld1_srgb_0 <= fsel_0 & msk_u1_0;
-		fld1_srgb_1 <= fsel_0 & msk_u1_0;
-		fld1_srgb_2 <= fsel_0 & msk_u1_0;
-		fld1_srgb_3 <= fsel_0 & msk_u1_0;
-		fld1_srgb_4 <= fsel_0 & msk_u1_0;
-		fld1_srgb_5 <= fsel_0 & msk_u1_0;
-		fld1_srgb_6 <= fsel_0 & msk_u1_0;
-		fld1_srgb_7 <= fsel_0 & msk_u1_0;
-		w1_msk_lo <= w0_0;
-		w1_msk_hi <= w0_2;
-		w1_ctrl_a <= w0_1;
-		w1_ctrl_b_lo <= w0_3;
-		w1_ctrl_b_hi <= w0_3;
-		ty1_0 <= ty0_0;
-		ty1_1 <= ty0_1;
-		ty1_2 <= ty0_2;
-		ty1_3 <= ty0_3;
-		ty1_k <= ty0_k;
-		ty1_sn0 <= ty0_sn0;
-		ty1_sn1 <= ty0_sn1;
-		ty1_sn2 <= ty0_sn2;
-		ty1_uw <= ty0_uw;
-		ty1_snmin <= ty0_snmin;
-		k1_0 <= k0_0;
-		k1_1 <= k0_1;
-		k1_2 <= k0_2;
-		k1_3 <= k0_3;
-		e5e1 <= e5e0;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			cst1_0 <= 1'b0;
+			cst1_1 <= 1'b0;
+			cst1_2 <= 1'b0;
+			cst1_3 <= 1'b0;
+			cst1_k <= 1'b0;
+			cval1 <= 32'd0;
+			fld1_lo <= 16'd0;
+			fld1_hi <= 16'd0;
+			fld1_srgb_0 <= 8'd0;
+			fld1_srgb_1 <= 8'd0;
+			fld1_srgb_2 <= 8'd0;
+			fld1_srgb_3 <= 8'd0;
+			fld1_srgb_4 <= 8'd0;
+			fld1_srgb_5 <= 8'd0;
+			fld1_srgb_6 <= 8'd0;
+			fld1_srgb_7 <= 8'd0;
+			w1_msk_lo <= 6'd0;
+			w1_msk_hi <= 6'd0;
+			w1_ctrl_a <= 6'd0;
+			w1_ctrl_b_lo <= 6'd0;
+			w1_ctrl_b_hi <= 6'd0;
+			ty1_0 <= 3'd0;
+			ty1_1 <= 3'd0;
+			ty1_2 <= 3'd0;
+			ty1_3 <= 3'd0;
+			ty1_k <= 3'd0;
+			ty1_sn0 <= 3'd0;
+			ty1_sn1 <= 3'd0;
+			ty1_sn2 <= 3'd0;
+			ty1_uw <= 3'd0;
+			ty1_snmin <= 3'd0;
+			k1_0 <= 2'd0;
+			k1_1 <= 2'd0;
+			k1_2 <= 2'd0;
+			k1_3 <= 2'd0;
+			e5e1 <= 5'd0;
+		end else begin
+			cst1_0 <= cst0_0;
+			cst1_1 <= cst0_1;
+			cst1_2 <= cst0_2;
+			cst1_3 <= cst0_3;
+			cst1_k <= cst0_k;
+			cval1 <= cval0;
+			fld1_lo <= fsel_lo & msk_u1_lo;
+			fld1_hi <= fsel_hi & msk_u1_hi;
+			fld1_srgb_0 <= fsel_0 & msk_u1_0;
+			fld1_srgb_1 <= fsel_0 & msk_u1_0;
+			fld1_srgb_2 <= fsel_0 & msk_u1_0;
+			fld1_srgb_3 <= fsel_0 & msk_u1_0;
+			fld1_srgb_4 <= fsel_0 & msk_u1_0;
+			fld1_srgb_5 <= fsel_0 & msk_u1_0;
+			fld1_srgb_6 <= fsel_0 & msk_u1_0;
+			fld1_srgb_7 <= fsel_0 & msk_u1_0;
+			w1_msk_lo <= w0_0;
+			w1_msk_hi <= w0_2;
+			w1_ctrl_a <= w0_1;
+			w1_ctrl_b_lo <= w0_3;
+			w1_ctrl_b_hi <= w0_3;
+			ty1_0 <= ty0_0;
+			ty1_1 <= ty0_1;
+			ty1_2 <= ty0_2;
+			ty1_3 <= ty0_3;
+			ty1_k <= ty0_k;
+			ty1_sn0 <= ty0_sn0;
+			ty1_sn1 <= ty0_sn1;
+			ty1_sn2 <= ty0_sn2;
+			ty1_uw <= ty0_uw;
+			ty1_snmin <= ty0_snmin;
+			k1_0 <= k0_0;
+			k1_1 <= k0_1;
+			k1_2 <= k0_2;
+			k1_3 <= k0_3;
+			e5e1 <= e5e0;
+		end
 	end
 
 	/* ---- U2 ---- */
@@ -447,35 +523,66 @@ module atg_fmt_cvt (
 	reg [4:0] he2;
 	reg [9:0] x2;
 	reg [7:0] e5b2;
-	always @(posedge clk) begin
-		kind2 <= kind_u2;
-		dir2_0 <= dir_u2_0;
-		dir2_1 <= dir_u2_1;
-		dir2_2 <= dir_u2_2;
-		dir2_3 <= dir_u2_3;
-		uc2 <= uc;
-		uw_code2_0 <= uw_code_u2;
-		uw_code2_1 <= uw_code_u2;
-		uw_code2_2 <= uw_code_u2;
-		uw_code2_3 <= uw_code_u2;
-		uw_code2_4 <= uw_code_u2;
-		uw_code2_5 <= uw_code_u2;
-		uw_code2_6 <= uw_code_u2;
-		uw_code2_7 <= uw_code_u2;
-		uw_code2_8 <= uw_code_u2;
-		uw_code2_9 <= uw_code_u2;
-		uw_code2_10 <= uw_code_u2;
-		uw_code2_11 <= uw_code_u2;
-		uw_code2_12 <= uw_code_u2;
-		uw_code2_13 <= uw_code_u2;
-		uw_code2_14 <= uw_code_u2;
-		uw_code2_15 <= uw_code_u2;
-		neg2 <= neg_reg;
-		snmin2 <= snmin;
-		he2 <= he;
-		x2 <= x;
-		hs2 <= hs;
-		e5b2 <= e5b;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			kind2 <= 3'd0;
+			dir2_0 <= 8'd0;
+			dir2_1 <= 8'd0;
+			dir2_2 <= 8'd0;
+			dir2_3 <= 8'd0;
+			uc2 <= 24'd0;
+			uw_code2_0 <= 4'd0;
+			uw_code2_1 <= 4'd0;
+			uw_code2_2 <= 4'd0;
+			uw_code2_3 <= 4'd0;
+			uw_code2_4 <= 4'd0;
+			uw_code2_5 <= 4'd0;
+			uw_code2_6 <= 4'd0;
+			uw_code2_7 <= 4'd0;
+			uw_code2_8 <= 4'd0;
+			uw_code2_9 <= 4'd0;
+			uw_code2_10 <= 4'd0;
+			uw_code2_11 <= 4'd0;
+			uw_code2_12 <= 4'd0;
+			uw_code2_13 <= 4'd0;
+			uw_code2_14 <= 4'd0;
+			uw_code2_15 <= 4'd0;
+			neg2 <= 1'b0;
+			snmin2 <= 1'b0;
+			he2 <= 5'd0;
+			x2 <= 10'd0;
+			hs2 <= 1'b0;
+			e5b2 <= 8'd0;
+		end else begin
+			kind2 <= kind_u2;
+			dir2_0 <= dir_u2_0;
+			dir2_1 <= dir_u2_1;
+			dir2_2 <= dir_u2_2;
+			dir2_3 <= dir_u2_3;
+			uc2 <= uc;
+			uw_code2_0 <= uw_code_u2;
+			uw_code2_1 <= uw_code_u2;
+			uw_code2_2 <= uw_code_u2;
+			uw_code2_3 <= uw_code_u2;
+			uw_code2_4 <= uw_code_u2;
+			uw_code2_5 <= uw_code_u2;
+			uw_code2_6 <= uw_code_u2;
+			uw_code2_7 <= uw_code_u2;
+			uw_code2_8 <= uw_code_u2;
+			uw_code2_9 <= uw_code_u2;
+			uw_code2_10 <= uw_code_u2;
+			uw_code2_11 <= uw_code_u2;
+			uw_code2_12 <= uw_code_u2;
+			uw_code2_13 <= uw_code_u2;
+			uw_code2_14 <= uw_code_u2;
+			uw_code2_15 <= uw_code_u2;
+			neg2 <= neg_reg;
+			snmin2 <= snmin;
+			he2 <= he;
+			x2 <= x;
+			hs2 <= hs;
+			e5b2 <= e5b;
+		end
 	end
 
 	/* ---- U3: c / (2^w - 1) is 0.ccc... (atg_fmt_unorm), the repeated bits;
@@ -543,20 +650,36 @@ module atg_fmt_cvt (
 	reg [9:0] x3;
 	reg [3:0] hlz3;
 	reg [7:0] e5b3;
-	always @(posedge clk) begin
-		kind3 <= kind2;
-		dir3_0 <= dir2_0;
-		dir3_1 <= dir2_1;
-		dir3_2 <= dir2_2;
-		dir3_3 <= dir2_3;
-		rr3 <= r_u3;
-		neg3 <= neg2;
-		snmin3 <= snmin2;
-		hs3 <= hs2;
-		he3 <= he2;
-		x3 <= x2;
-		hlz3 <= hlz_u3;
-		e5b3 <= e5b2;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			kind3 <= 3'd0;
+			dir3_0 <= 8'd0;
+			dir3_1 <= 8'd0;
+			dir3_2 <= 8'd0;
+			dir3_3 <= 8'd0;
+			rr3 <= 80'd0;
+			neg3 <= 1'b0;
+			snmin3 <= 1'b0;
+			hs3 <= 1'b0;
+			he3 <= 5'd0;
+			x3 <= 10'd0;
+			hlz3 <= 4'd0;
+			e5b3 <= 8'd0;
+		end else begin
+			kind3 <= kind2;
+			dir3_0 <= dir2_0;
+			dir3_1 <= dir2_1;
+			dir3_2 <= dir2_2;
+			dir3_3 <= dir2_3;
+			rr3 <= r_u3;
+			neg3 <= neg2;
+			snmin3 <= snmin2;
+			hs3 <= hs2;
+			he3 <= he2;
+			x3 <= x2;
+			hlz3 <= hlz_u3;
+			e5b3 <= e5b2;
+		end
 	end
 
 	/* ---- U3b: UNORM's leading zeros (of the top 24 bits) ---- */
@@ -584,25 +707,46 @@ module atg_fmt_cvt (
 	(* max_fanout = 16 *) reg [3:0] hlz3b_hf;
 	(* max_fanout = 16 *) reg [3:0] hlz3b_exp;
 	reg [7:0] e5b3b;
-	always @(posedge clk) begin
-		kind3b <= kind3;
-		dir3b_0 <= dir3_0;
-		dir3b_1 <= dir3_1;
-		dir3b_2 <= dir3_2;
-		dir3b_3 <= dir3_3;
-		r3_hi <= rr3[79:32];
-		r_low_or <= |rr3[31:8];
-		lz3 <= lz_u3;
-		lz3_un <= lz_u3;
-		found3 <= found_u3;
-		neg3b <= neg3;
-		snmin3b <= snmin3;
-		hs3b <= hs3;
-		he3b <= he3;
-		x3b <= x3;
-		hlz3b_hf <= hlz3;
-		hlz3b_exp <= hlz3;
-		e5b3b <= e5b3;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			kind3b <= 3'd0;
+			dir3b_0 <= 8'd0;
+			dir3b_1 <= 8'd0;
+			dir3b_2 <= 8'd0;
+			dir3b_3 <= 8'd0;
+			r3_hi <= 48'd0;
+			r_low_or <= 1'b0;
+			lz3 <= 5'd0;
+			lz3_un <= 5'd0;
+			found3 <= 1'b0;
+			neg3b <= 1'b0;
+			snmin3b <= 1'b0;
+			hs3b <= 1'b0;
+			he3b <= 5'd0;
+			x3b <= 10'd0;
+			hlz3b_hf <= 4'd0;
+			hlz3b_exp <= 4'd0;
+			e5b3b <= 8'd0;
+		end else begin
+			kind3b <= kind3;
+			dir3b_0 <= dir3_0;
+			dir3b_1 <= dir3_1;
+			dir3b_2 <= dir3_2;
+			dir3b_3 <= dir3_3;
+			r3_hi <= rr3[79:32];
+			r_low_or <= |rr3[31:8];
+			lz3 <= lz_u3;
+			lz3_un <= lz_u3;
+			found3 <= found_u3;
+			neg3b <= neg3;
+			snmin3b <= snmin3;
+			hs3b <= hs3;
+			he3b <= he3;
+			x3b <= x3;
+			hlz3b_hf <= hlz3;
+			hlz3b_exp <= hlz3;
+			e5b3b <= e5b3;
+		end
 	end
 
 	/* ---- U4 ---- */
@@ -640,19 +784,34 @@ module atg_fmt_cvt (
 	(* max_fanout = 16 *) reg found4;
 	(* max_fanout = 16 *) reg neg4;
 	(* max_fanout = 16 *) reg snmin4;
-	always @(posedge clk) begin
-		kind4_lo <= kind3b;
-		kind4_hi <= kind3b;
-		dir4_0 <= (kind3b == K_HF || kind3b == K_E5) ? hval[7:0] : dir3b_0;
-		dir4_1 <= (kind3b == K_HF || kind3b == K_E5) ? hval[15:8] : dir3b_1;
-		dir4_2 <= (kind3b == K_HF || kind3b == K_E5) ? hval[23:16] : dir3b_2;
-		dir4_3 <= (kind3b == K_HF || kind3b == K_E5) ? hval[31:24] : dir3b_3;
-		um4 <= um_hi[46:23];
-		st4 <= r_low_or | (|um_hi[22:0]);
-		lz4 <= lz3;
-		found4 <= found3;
-		neg4 <= neg3b;
-		snmin4 <= snmin3b;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			kind4_lo <= 3'd0;
+			kind4_hi <= 3'd0;
+			dir4_0 <= 8'd0;
+			dir4_1 <= 8'd0;
+			dir4_2 <= 8'd0;
+			dir4_3 <= 8'd0;
+			um4 <= 24'd0;
+			st4 <= 1'b0;
+			lz4 <= 5'd0;
+			found4 <= 1'b0;
+			neg4 <= 1'b0;
+			snmin4 <= 1'b0;
+		end else begin
+			kind4_lo <= kind3b;
+			kind4_hi <= kind3b;
+			dir4_0 <= (kind3b == K_HF || kind3b == K_E5) ? hval[7:0] : dir3b_0;
+			dir4_1 <= (kind3b == K_HF || kind3b == K_E5) ? hval[15:8] : dir3b_1;
+			dir4_2 <= (kind3b == K_HF || kind3b == K_E5) ? hval[23:16] : dir3b_2;
+			dir4_3 <= (kind3b == K_HF || kind3b == K_E5) ? hval[31:24] : dir3b_3;
+			um4 <= um_hi[46:23];
+			st4 <= r_low_or | (|um_hi[22:0]);
+			lz4 <= lz3;
+			found4 <= found3;
+			neg4 <= neg3b;
+			snmin4 <= snmin3b;
+		end
 	end
 
 	/* ---- U5: UNORM's rounding (never a tie), SNORM ---- */
@@ -671,13 +830,17 @@ module atg_fmt_cvt (
 	wire is_snmin_lo = (kind4_lo == K_SN) && snmin4;
 	wire is_snmin_hi = (kind4_hi == K_SN) && snmin4;
 
-	always @(posedge clk) begin
-		o_val[7:0] <= is_norm_lo ? ((found4 && !is_snmin_lo) ? q22[7:0] : 8'd0) : dir4_0;
-		o_val[15:8] <= is_norm_lo ? ((found4 && !is_snmin_lo) ? q22[15:8] : 8'd0) : dir4_1;
-		o_val[22:16] <= is_norm_hi ? ((found4 && !is_snmin_hi) ? q22[22:16] : 7'd0) : dir4_2[6:0];
-		o_val[23] <= is_norm_hi ? (is_snmin_hi ? 1'b1 : (found4 ? exp[0] : 1'b0)) : dir4_2[7];
-		o_val[30:24] <= is_norm_hi ? (is_snmin_hi ? 7'h3F : (found4 ? exp[7:1] : 7'd0)) : dir4_3[6:0];
-		o_val[31] <= is_norm_hi ? ((kind4_hi == K_SN) ? (is_snmin_hi || (found4 && neg4)) : 1'b0) : dir4_3[7];
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			o_val <= 32'd0;
+		end else begin
+			o_val[7:0] <= is_norm_lo ? ((found4 && !is_snmin_lo) ? q22[7:0] : 8'd0) : dir4_0;
+			o_val[15:8] <= is_norm_lo ? ((found4 && !is_snmin_lo) ? q22[15:8] : 8'd0) : dir4_1;
+			o_val[22:16] <= is_norm_hi ? ((found4 && !is_snmin_hi) ? q22[22:16] : 7'd0) : dir4_2[6:0];
+			o_val[23] <= is_norm_hi ? (is_snmin_hi ? 1'b1 : (found4 ? exp[0] : 1'b0)) : dir4_2[7];
+			o_val[30:24] <= is_norm_hi ? (is_snmin_hi ? 7'h3F : (found4 ? exp[7:1] : 7'd0)) : dir4_3[6:0];
+			o_val[31] <= is_norm_hi ? ((kind4_hi == K_SN) ? (is_snmin_hi || (found4 && neg4)) : 1'b0) : dir4_3[7];
+		end
 	end
 	wire unused_ok = &{1'b0, i_inf[15], i_inf[12], i_inf[5:1], um_hi[47], fsh[9], u_neg_nc,
 		u_wm1_nc, u_e5b_nc, u_hexp_nc, u_hden_nc, u_e5x_nc, u_q_nc, u_e127_nc,

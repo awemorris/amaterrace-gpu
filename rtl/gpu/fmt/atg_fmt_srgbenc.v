@@ -59,7 +59,7 @@ module atg_fmt_srgbenc (
 	assign o_valid = state == S_OUT;
 	assign o_code = lo;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
 			x <= 31'd0;

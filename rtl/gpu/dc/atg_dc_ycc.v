@@ -94,7 +94,7 @@ module atg_dc_ycc (
 	reg odd;
 	reg [7:0] cr_held;
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_high) begin
 		if (rst_high) begin
 			y1 <= 8'd16;
 			cb1 <= 8'd128;

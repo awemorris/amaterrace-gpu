@@ -665,6 +665,7 @@ module atg_vf_conv (
 	(* ram_style = "distributed", rom_style = "distributed" *)
 	atg_fmt_cvt u_cvt (
 		.clk(clk),
+		.rst_n(rst_n),
 		.i_raw(c_raw),
 		.i_inf(cvt_inf),
 		.i_k(c_i_cvt),
