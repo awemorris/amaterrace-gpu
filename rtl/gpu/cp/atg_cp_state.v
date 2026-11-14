@@ -108,10 +108,11 @@ module atg_cp_state (
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rpr1 (.I0(rp_rd), .O(rp_rd_b[1]));
 `endif
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge state_rst_high) begin
 		if (state_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			rp_rd <= 1'b0;
@@ -151,12 +152,20 @@ module atg_cp_state (
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb1 (.I0(w), .O(w_b[1]));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb2 (.I0(w), .O(w_b[2]));
 
-	always @(posedge clk) begin
-		alias_ridx_r <= alias_ridx;
-		b_ridx_r <= rp_rd_b[1] ? rp_idx : cpu_ridx;
-		w_r <= w;
-		widx_r <= widx;
-		wdata_r <= wdata;
+	always @(posedge clk or posedge state_rst_high) begin
+		if (state_rst_high) begin
+			alias_ridx_r <= 10'd0;
+			b_ridx_r     <= 10'd0;
+			w_r          <= 1'b0;
+			widx_r       <= 10'd0;
+			wdata_r      <= 32'd0;
+		end else begin
+			alias_ridx_r <= alias_ridx;
+			b_ridx_r <= rp_rd_b[1] ? rp_idx : cpu_ridx;
+			w_r <= w;
+			widx_r <= widx;
+			wdata_r <= wdata;
+		end
 	end
 
 	always @(posedge clk) begin
@@ -168,9 +177,14 @@ module atg_cp_state (
 		b_q <= mem_b[b_ridx_r];
 	end
 
-	always @(posedge clk) begin
-		a_q_pipe <= a_q;
-		b_q_pipe <= b_q;
+	always @(posedge clk or posedge state_rst_high) begin
+		if (state_rst_high) begin
+			a_q_pipe <= 32'd0;
+			b_q_pipe <= 32'd0;
+		end else begin
+			a_q_pipe <= a_q;
+			b_q_pipe <= b_q;
+		end
 	end
 
 	assign alias_rdata = a_q_pipe;

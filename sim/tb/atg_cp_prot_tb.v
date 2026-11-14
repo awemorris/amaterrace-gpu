@@ -86,7 +86,8 @@ module atg_cp_prot_tb;
 		.tbase(tbase), .inv_valid(inv_valid), .inv_g(inv_g), .inv_n(inv_n),
 		.inv_pending(1'b0), .gw_valid(gw_valid), .gw_idx(gw_idx), .gw_data(gw_data),
 		.fault_slot(fault_slot), .fault_tag(fault_tag), .unit_tag(unit_tag),
-		.wdt_tag(wdt_tag), .kick_ok(kick_ok), .su_kick(su_kick)
+		.wdt_tag(wdt_tag), .kick_ok(kick_ok), .su_kick(su_kick),
+		.fault_clear_en(1'b0), .fault_clear_tag(8'd0)
 	);
 
 	integer errors = 0, before;

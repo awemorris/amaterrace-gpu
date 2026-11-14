@@ -123,6 +123,8 @@ module atg_cp_prot #(
 	localparam [9:0] I_CAPS = REG_OFF[11:2];
 	localparam [9:0] I_TABLE = REG_OFF[11:2] + 10'd1;
 	localparam [9:0] I_TBYTES = REG_OFF[11:2] + 10'd2;
+	localparam [9:0] I_AP_BASE = GHCI_LEGACY_APERTURE_BASE[11:2];
+	localparam [9:0] I_AP_LIMIT = GHCI_LEGACY_APERTURE_LIMIT[11:2];
 
 	localparam [5:0] W_SLOT = 6'h28;
 	localparam [5:0] W_INV_G = 6'h29;
@@ -167,7 +169,7 @@ module atg_cp_prot #(
 	assign fault_tag = tag_v[fault_slot] ? tag_d[fault_slot] : 8'd0;
 	assign unit_tag = tag_v[prot_unit] ? tag_d[prot_unit] : 8'd0;
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			map_v <= 256'd0;
 			map_faulted <= 256'd0;
@@ -271,7 +273,7 @@ module atg_cp_prot #(
 	wire gone = slot_gone;
 `endif
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			st <= S_IDLE;
 			known <= 1'b0;
@@ -360,7 +362,7 @@ module atg_cp_prot #(
 	assign gw_valid = gw_p;
 	assign gw_data = {glimit, gbase, gctl[2], gctl[1], gctl[9:4], gctl[0]};
 
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			tbase <= {ADDR_W{1'b0}};
 			inv_p <= 1'b0;
@@ -374,7 +376,9 @@ module atg_cp_prot #(
 		end else begin
 			inv_p <= 1'b0;
 			gw_p <= 1'b0;
-			if (hcr_we && hcr_widx == I_TABLE && n_slots == 7'd0)
+			if (hcr_we && (hcr_widx == I_AP_BASE || hcr_widx == I_AP_LIMIT))
+				tbase <= {ADDR_W{1'b0}};
+			else if (hcr_we && hcr_widx == I_TABLE && n_slots == 7'd0)
 				tbase <= ((tbase & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) &
 					~{{(ADDR_W-12){1'b0}}, 12'hFFF};
 			if (sb_we) begin

@@ -262,15 +262,26 @@ module atg_cp_ring #(
 	(* dont_touch = "true" *) reg [31:0] wdata_a, wdata_b, wdata_c, wdata_d;
 	(* dont_touch = "true" *) reg [8:0] wdata_d1;
 	(* dont_touch = "true" *) reg [31:0] wmask_a, wmask_b, wmask_c;
-	always @(posedge clk) begin
-		wdata_a  <= hcr_wdata;
-		wdata_b  <= hcr_wdata;
-		wdata_c  <= hcr_wdata;
-		wdata_d  <= hcr_wdata;
-		wdata_d1 <= hcr_wdata[8:0];
-		wmask_a  <= hcr_wmask;
-		wmask_b  <= hcr_wmask;
-		wmask_c  <= hcr_wmask;
+	always @(posedge clk or posedge ring_rst_high) begin
+		if (ring_rst_high) begin
+			wdata_a  <= 32'd0;
+			wdata_b  <= 32'd0;
+			wdata_c  <= 32'd0;
+			wdata_d  <= 32'd0;
+			wdata_d1 <= 9'd0;
+			wmask_a  <= 32'd0;
+			wmask_b  <= 32'd0;
+			wmask_c  <= 32'd0;
+		end else begin
+			wdata_a  <= hcr_wdata;
+			wdata_b  <= hcr_wdata;
+			wdata_c  <= hcr_wdata;
+			wdata_d  <= hcr_wdata;
+			wdata_d1 <= hcr_wdata[8:0];
+			wmask_a  <= hcr_wmask;
+			wmask_b  <= hcr_wmask;
+			wmask_c  <= hcr_wmask;
+		end
 	end
 `else
 	wire [31:0] wdata_a = hcr_wdata;
@@ -429,7 +440,7 @@ module atg_cp_ring #(
 	(* DONT_TOUCH = "TRUE" *) reg rsp_is_tag0_r, rsp_is_tag1_r, rsp_is_tag2_r, rsp_is_tag3_r;
 	(* DONT_TOUCH = "TRUE" *) reg rsp_err_tag0_r, rsp_error_r;
 	(* extract_reset = "no" *) reg [LINE_BYTES*8-1:0] rsp_rdata_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high) begin
 			rsp_ok_tag0_r  <= 1'b0;
 			rsp_ok_tag1_r  <= 1'b0;
@@ -439,6 +450,7 @@ module atg_cp_ring #(
 			rsp_is_tag3_r  <= 1'b0;
 			rsp_err_tag0_r <= 1'b0;
 			rsp_error_r    <= 1'b0;
+			rsp_rdata_r    <= {(LINE_BYTES*8){1'b0}};
 		end else begin
 			rsp_ok_tag0_r  <= rsp_valid && (rsp_tag[1:0] == 2'd0) && !rsp_error;
 			rsp_ok_tag1_r  <= rsp_valid && (rsp_tag[1:0] == 2'd1) && !rsp_error;
@@ -448,8 +460,8 @@ module atg_cp_ring #(
 			rsp_is_tag3_r  <= rsp_valid && (rsp_tag[1:0] == 2'd3);
 			rsp_err_tag0_r <= rsp_valid && (rsp_tag[1:0] == 2'd0) && rsp_error;
 			rsp_error_r    <= rsp_error;
+			rsp_rdata_r    <= rsp_rdata;
 		end
-		rsp_rdata_r <= rsp_rdata;
 	end
 	wire rsp_ok_tag1 = rsp_ok_tag1_r;
 	wire rsp_ok_tag0 = rsp_ok_tag0_r;
@@ -666,7 +678,7 @@ module atg_cp_ring #(
 	(* dont_touch = "true" *) reg [9:0] widx_a, widx_b;
 	(* dont_touch = "true" *) reg [2:0] doorbell_r;
 	wire hcr_we_lo64 = hcr_we && (hcr_widx[9:6] == 4'd0);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_rst_high) begin
 		if (ring_rst_high) begin
 			hcr_we_cfg_b <= 5'd0;
 			hcr_we_db    <= 1'b0;
@@ -738,10 +750,11 @@ module atg_cp_ring #(
 	assign avail = avail_d & mask_act;
 
 	(* max_fanout = 16 *) reg [21:0] avail_r;
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge ring_rst_high) begin
 		if (ring_rst_high)
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 `endif
 			avail_r <= 22'd0;
@@ -752,7 +765,7 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 	wire [21:0] avail_check = avail_r;
 	reg [22:0] nwords_act_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_rst_high) begin
 		if (ring_rst_high)
 			nwords_act_r <= 23'd0;
 		else
@@ -772,10 +785,11 @@ module atg_cp_ring #(
 
 	(* max_fanout = 16 *) reg [22:0] rem_words_r;
 	(* max_fanout = 16 *) reg rem_words_bo_r;
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge ring_rst_high) begin
 		if (ring_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			rem_words_r    <= 23'd0;
@@ -845,14 +859,18 @@ module atg_cp_ring #(
 		.I0(q0_empty_r), .I1(imm_rest_en), .I2(st_is_radv_hw), .I3(ring_core_rst_high),
 		.O(hw_rst_all)
 	);
-	always @(posedge clk) begin
-		if (hw_rst_all)
+	always @(posedge clk or posedge ring_core_rst_high) begin
+		if (ring_core_rst_high)
+			has_work_r <= 3'd0;
+		else if (hw_rst_all)
 			has_work_r <= 3'd0;
 		else
 			has_work_r <= has_work;
 	end
-	always @(posedge clk) begin
-		if (hw_rst_all || doorbell[0])
+	always @(posedge clk or posedge ring_core_rst_high) begin
+		if (ring_core_rst_high)
+			q0_empty_r <= 1'b0;
+		else if (hw_rst_all || doorbell[0])
 			q0_empty_r <= 1'b0;
 		else
 			q0_empty_r <= q_empty[0];
@@ -874,7 +892,7 @@ module atg_cp_ring #(
 		.O(rptr_we_q2)
 	);
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high) begin
 			rptr[0] <= 22'd0;
 			rptr[1] <= 22'd0;
@@ -993,7 +1011,7 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 	wire pf_trigger = (st == R_N) && !k_eq_n && !next_hit_r && !nl_settle_r[0] && (pf_st == PF_IDLE) && !ctx_req && go;
 	reg pf_trigger_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high)
 			pf_trigger_r <= 1'b0;
 		else
@@ -1086,15 +1104,18 @@ module atg_cp_ring #(
 		.I3(hn_set_other), .I4(hn_clr_other), .I5(hit_n_r),
 		.O(hit_n_next)
 	);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high)
 			hit_n_r <= 1'b0;
 		else
 			hit_n_r <= hit_n_next;
 	end
 
-	always @(posedge clk) begin
-		if (bv_clr_fsm) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
+		if (ring_core_rst_high) begin
+			buf_valid  <= 8'd0;
+			next_hit_r <= 1'b0;
+		end else if (bv_clr_fsm) begin
 			buf_valid  <= 8'd0;
 			next_hit_r <= 1'b0;
 		end else begin
@@ -1107,7 +1128,7 @@ module atg_cp_ring #(
 	end
 
 	reg empty_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high)
 			empty_r <= 1'b1;
 		else if (doorbell[0] || doorbell[1] || doorbell[2])
@@ -1164,18 +1185,23 @@ module atg_cp_ring #(
 	(* dont_touch = "true", extract_reset = "no" *) reg [LA_W-1:0] r_req_line;
 	(* dont_touch = "true", extract_reset = "no" *) reg [LINE_BYTES-1:0] r_req_be;
 	(* dont_touch = "true", extract_reset = "no" *) reg [7:0] r_req_tag;
-	always @(posedge clk) begin
-		if (ring_core_rst_high)
+	always @(posedge clk or posedge ring_core_rst_high) begin
+		if (ring_core_rst_high) begin
 			r_req_valid <= 1'b0;
-		else
+			r_req_write <= 1'b0;
+			r_req_line  <= {LA_W{1'b0}};
+			r_req_be    <= {LINE_BYTES{1'b0}};
+			r_req_tag   <= 8'd0;
+		end else begin
 			r_req_valid <= ctx_req || demand_req || (pf_st == PF_REQ);
-		r_req_write <= ctx_save_req;
-		r_req_line  <= {
-			ctx_req_b[1] ? ctx_line[LA_W-1:14] : (demand_req_b[1] ? want_line[LA_W-1:14] : pf_line[LA_W-1:14]),
-			ctx_req_b[0] ? ctx_line[13:0]      : (demand_req_b[0] ? want_line[13:0]      : pf_line[13:0])
-		};
-		r_req_be    <= {{(LINE_BYTES-16){ctx_save_req_b[1]}}, {16{ctx_save_req_b[0]}}};
-		r_req_tag   <= ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+			r_req_write <= ctx_save_req;
+			r_req_line  <= {
+				ctx_req_b[1] ? ctx_line[LA_W-1:14] : (demand_req_b[1] ? want_line[LA_W-1:14] : pf_line[LA_W-1:14]),
+				ctx_req_b[0] ? ctx_line[13:0]      : (demand_req_b[0] ? want_line[13:0]      : pf_line[13:0])
+			};
+			r_req_be    <= {{(LINE_BYTES-16){ctx_save_req_b[1]}}, {16{ctx_save_req_b[0]}}};
+			r_req_tag   <= ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+		end
 	end
 	assign req_valid = r_req_valid;
 	assign req_write = r_req_write;
@@ -1276,10 +1302,11 @@ module atg_cp_ring #(
 `endif
 
 	integer bi;
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge ring_rst_high) begin
 		if (ring_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			for (bi = 0; bi < 3; bi = bi + 1) begin
@@ -1358,10 +1385,11 @@ module atg_cp_ring #(
 	end
 
 	/* Main sequential logic */
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge ring_core_rst_high) begin
 		if (ring_core_rst_high) begin
 `else
+	always @(posedge clk or negedge core_rst_n) begin
 		if (!core_rst_n) begin
 `endif
 			for (bi = 0; bi < 3; bi = bi + 1) begin

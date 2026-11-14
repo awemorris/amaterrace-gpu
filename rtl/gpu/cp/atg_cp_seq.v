@@ -392,7 +392,7 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT2 #(.INIT(4'hE)) u_pw_we (
 		.I0(st == Q_DEC2), .I1(pay_take_b[3]), .O(pw_we_b)
 	);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge seq_rst_high) begin
 		if (seq_rst_high) begin
 			pay_wait_r <= 9'd0;
 		end else if (pw_we_b) begin
@@ -431,7 +431,7 @@ module atg_cp_seq #(
 	(* max_fanout = 16 *) reg uop_we_r;
 	(* max_fanout = 16 *) reg [9:0] uop_idx_r;
 	(* max_fanout = 16 *) reg [31:0] uop_wdata_r;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge seq_rst_high) begin
 		if (seq_rst_high) begin
 			uop_we_r <= 1'b0;
 			uop_idx_r <= 10'd0;
@@ -767,7 +767,7 @@ module atg_cp_seq #(
 	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'h80)) u_ffwe0 (.I0(pay_take_b[2]), .I1(is_fence_cmd_r), .I2(p_is_4_r), .O(fflags_we_b[0]));
 	(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'h80)) u_ffwe1 (.I0(pay_take_b[2]), .I1(is_fence_cmd_r), .I2(p_is_4_r), .O(fflags_we_b[1]));
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge seq_rst_high) begin
 		if (seq_rst_high) begin
 			a0 <= 32'd0;
 			a0_hi <= 32'd0;
@@ -812,10 +812,11 @@ module atg_cp_seq #(
 	assign cmd_active = busy && !(st == Q_PAY && use_fw && !fw_valid);
 	assign seq_st = st;
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge seq_rst_high) begin
 		if (seq_rst_high) begin
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 `endif
 			st <= Q_IDLE;

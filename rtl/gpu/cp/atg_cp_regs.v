@@ -458,13 +458,14 @@ module atg_cp_regs #(
 		end
 	endgenerate
 
-	always @(posedge clk) begin
 `ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge regs_rst_high) begin
 		if (regs_rst_high) begin
 			scratch <= 32'd0;
 			counter <= TIMESTAMP_INIT[31:0];
 			counter_hi <= TIMESTAMP_INIT[63:32];
 			win_q <= HAS_WINDOW;
+			perf <= 128'd0;
 		end else begin
 			counter <= counter_n;
 			counter_hi <= counter_hi_n;
@@ -474,18 +475,21 @@ module atg_cp_regs #(
 				scratch[31:16] <= (scratch[31:16] & ~hcr_wmask[31:16]) | (hcr_wdata[31:16] & hcr_wmask[31:16]);
 			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && reg_wstrb[0])
 				win_q <= hcr_wdata[0];
+			for (i = 0; i < 8; i = i + 1)
+				if (perf_rst_b[i])
+					perf[i * 16 +: 16] <= 16'd0;
+				else
+					perf[i * 16 +: 16] <= perf_n[i * 16 +: 16];
 		end
-		for (i = 0; i < 8; i = i + 1)
-			if (perf_rst_b[i])
-				perf[i * 16 +: 16] <= 16'd0;
-			else
-				perf[i * 16 +: 16] <= perf_n[i * 16 +: 16];
+	end
 `else
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			scratch <= 32'd0;
 			counter <= TIMESTAMP_INIT[31:0];
 			counter_hi <= TIMESTAMP_INIT[63:32];
 			win_q <= HAS_WINDOW;
+			perf <= 128'd0;
 		end else begin
 			counter <= counter_n;
 			counter_hi <= counter_hi_n;
@@ -493,14 +497,14 @@ module atg_cp_regs #(
 				scratch <= (scratch & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
 			if (HAS_WINDOW && hcr_we && hcr_widx == I_WINDOW_CTRL && reg_wstrb[0])
 				win_q <= hcr_wdata[0];
+			for (i = 0; i < 4; i = i + 1)
+				if (perf_clear)
+					perf[i * 32 +: 32] <= 32'd0;
+				else
+					perf[i * 32 +: 32] <= perf_n[i * 32 +: 32];
 		end
-		for (i = 0; i < 4; i = i + 1)
-			if (!rst_n || perf_clear)
-				perf[i * 32 +: 32] <= 32'd0;
-			else
-				perf[i * 32 +: 32] <= perf_n[i * 32 +: 32];
-`endif
 	end
+`endif
 
 	function [9:0] hcr_reg_ridx;
 		input [16:0] addr;
@@ -571,7 +575,7 @@ module atg_cp_regs #(
 	wire rd_hcr_next = (ridx_next != HCR_IDX_INVALID);
 	reg rd_hcr_lo_q, rd_hcr_hi_q;
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge regs_rst_high) begin
 		if (regs_rst_high) begin
 			ridx_q <= 10'd0;
 			raddr_q <= 17'd0;
@@ -591,7 +595,7 @@ module atg_cp_regs #(
 		end
 	end
 `else
-	always @(posedge clk) begin
+	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			ridx_q <= 10'd0;
 			raddr_q <= 17'd0;
@@ -861,7 +865,7 @@ module atg_cp_regs #(
 	assign own_c_pre = {own_const_hi_w[31:16], own_const_lo_w[15:0]};
 
 	(* dont_touch = "true" *) reg [31:0] own_a_q, own_b_q, own_c_q;
-	always @(posedge clk) begin
+	always @(posedge clk or posedge regs_rst_high) begin
 		if (regs_rst_high) begin
 			own_a_q <= 32'd0;
 			own_b_q <= 32'd0;
