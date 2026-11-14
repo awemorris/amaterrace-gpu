@@ -121,7 +121,7 @@ module atg_tlb_l1 #(
 		(* keep = "true", equivalent_register_removal = "no" *) wire we1_pfn_hi = refill_we & cur_set_active & (set_alloc_ptr == 1'b1);
 		(* keep = "true", equivalent_register_removal = "no" *) wire we1_flg    = refill_we & cur_set_active & (set_alloc_ptr == 1'b1);
 
-		always @(posedge clk_l1) begin
+		always @(posedge clk_l1 or posedge rst_l1_int) begin
 			if (rst_l1_int) begin
 				w0_valid      <= 1'b0;
 				w1_valid      <= 1'b0;
@@ -146,18 +146,32 @@ module atg_tlb_l1 #(
 			end
 		end
 
-		always @(posedge clk_l1) begin
-			if (we0_tag_lo) w0_tag[10:0]          <= refill_tag[10:0];
-			if (we0_tag_hi) w0_tag[TAG_W-1:11]    <= refill_tag[TAG_W-1:11];
-			if (we0_pfn_lo) w0_pfn_lo             <= refill_pfn[9:0];
-			if (we0_pfn_hi) w0_pfn_hi             <= refill_pfn[PPN_BITS-1:10];
-			if (we0_flg)    w0_flags              <= refill_flags;
+		always @(posedge clk_l1 or posedge rst_l1_int) begin
+			if (rst_l1_int) begin
+				w0_tag[10:0]          <= 11'd0;
+				w0_tag[TAG_W-1:11]    <= {(TAG_W-11){1'b0}};
+				w0_pfn_lo             <= 10'd0;
+				w0_pfn_hi             <= {(PPN_BITS-10){1'b0}};
+				w0_flags              <= 6'd0;
 
-			if (we1_tag_lo) w1_tag[10:0]          <= refill_tag[10:0];
-			if (we1_tag_hi) w1_tag[TAG_W-1:11]    <= refill_tag[TAG_W-1:11];
-			if (we1_pfn_lo) w1_pfn_lo             <= refill_pfn[9:0];
-			if (we1_pfn_hi) w1_pfn_hi             <= refill_pfn[PPN_BITS-1:10];
-			if (we1_flg)    w1_flags              <= refill_flags;
+				w1_tag[10:0]          <= 11'd0;
+				w1_tag[TAG_W-1:11]    <= {(TAG_W-11){1'b0}};
+				w1_pfn_lo             <= 10'd0;
+				w1_pfn_hi             <= {(PPN_BITS-10){1'b0}};
+				w1_flags              <= 6'd0;
+			end else begin
+				if (we0_tag_lo) w0_tag[10:0]          <= refill_tag[10:0];
+				if (we0_tag_hi) w0_tag[TAG_W-1:11]    <= refill_tag[TAG_W-1:11];
+				if (we0_pfn_lo) w0_pfn_lo             <= refill_pfn[9:0];
+				if (we0_pfn_hi) w0_pfn_hi             <= refill_pfn[PPN_BITS-1:10];
+				if (we0_flg)    w0_flags              <= refill_flags;
+
+				if (we1_tag_lo) w1_tag[10:0]          <= refill_tag[10:0];
+				if (we1_tag_hi) w1_tag[TAG_W-1:11]    <= refill_tag[TAG_W-1:11];
+				if (we1_pfn_lo) w1_pfn_lo             <= refill_pfn[9:0];
+				if (we1_pfn_hi) w1_pfn_hi             <= refill_pfn[PPN_BITS-1:10];
+				if (we1_flg)    w1_flags              <= refill_flags;
+			end
 		end
 
 		/* Level 1: 7 groups of 3-bit equality checks per way (1 LUT each) */
