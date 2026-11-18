@@ -1,0 +1,170 @@
+INFO: [Common 17-3922] A valid Vivado Design Suite BASIC license has been detected. Your current license is active and will expire on 23-oct-2027.
+
+****** Vivado v2026.1 (64-bit)
+  **** SW Build 6511674 on Tue Jun 16 11:01:26 MDT 2026
+  **** IP Build 6504888 on Tue Jun 09 09:05:25 MDT 2026
+  **** SharedData Build 6501428 on Mon Jun 08 17:34:18 MDT 2026
+  **** Start of session at: Fri Oct 30 16:17:59 2026
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+    ** Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+
+Sourcing tcl script '/home/awe/.Xilinx/Vivado/Vivado_init.tcl'
+source scratch/list_all_120_r3.tcl
+# open_checkpoint build/asic_lint/atg_cp/post_synth.dcp
+Command: open_checkpoint build/asic_lint/atg_cp/post_synth.dcp
+
+Starting open_checkpoint Task
+
+Time (s): cpu = 00:00:00.04 ; elapsed = 00:00:00.03 . Memory (MB): peak = 1448.352 ; gain = 8.906 ; free physical = 12666 ; free virtual = 325543
+INFO: [Device 21-403] Loading part xc7k325tffg900-2
+Netlist sorting complete. Time (s): cpu = 00:00:00.02 ; elapsed = 00:00:00.02 . Memory (MB): peak = 1893.406 ; gain = 0.000 ; free physical = 12344 ; free virtual = 325225
+INFO: [Netlist 29-17] Analyzing 590 Unisim elements for replacement
+INFO: [Netlist 29-28] Unisim Transformation completed in 0 CPU seconds
+INFO: [Project 1-479] Netlist was created with Vivado 2026.1
+INFO: [Project 1-570] Preparing netlist for logic optimization
+Read ShapeDB Complete: Time (s): cpu = 00:00:00.01 ; elapsed = 00:00:00.01 . Memory (MB): peak = 1978.156 ; gain = 1.000 ; free physical = 12233 ; free virtual = 325117
+Netlist sorting complete. Time (s): cpu = 00:00:00 ; elapsed = 00:00:00 . Memory (MB): peak = 1978.156 ; gain = 0.000 ; free physical = 12194 ; free virtual = 325080
+INFO: [Project 1-111] Unisim Transformation Summary:
+No Unisim elements were transformed.
+
+INFO: [Project 1-604] Checkpoint was created with Vivado v2026.1 (64-bit) build 6511674
+open_checkpoint: Time (s): cpu = 00:00:15 ; elapsed = 00:00:12 . Memory (MB): peak = 1986.191 ; gain = 550.715 ; free physical = 12284 ; free virtual = 325170
+# set in_ports [get_ports -filter {DIRECTION == "IN"}]
+# set out_ports [get_ports -filter {DIRECTION == "OUT"}]
+INFO: [Timing 38-35] Done setting XDC timing constraints.
+WARNING: [Timing 38-493] Port clk has one or several leaf clock pins in its transitive fanout without any clock buffer on the path and no clock reaching the clock pin(s). Vivado cannot infer the clock source when no clock buffer is found on the path to a leaf clock pin.
+WARNING: [Timing 38-242] The property HD.CLK_SRC of clock port "clk" is not set. In out-of-context mode, this prevents timing estimation for clock delay/skew
+Resolution: Set the HD.CLK_SRC property of the out-of-context port to the location of the clock buffer instance in the top-level design
+get_timing_paths: Time (s): cpu = 00:00:09 ; elapsed = 00:00:08 . Memory (MB): peak = 2617.227 ; gain = 631.035 ; free physical = 11652 ; free virtual = 324550
+# set fps [get_timing_paths -from $in_ports -to $out_ports -max_paths 1000]
+# puts "=== LIST OF ALL [llength $fps] COMBINATIONAL FEEDTHROUGHS ==="
+=== LIST OF ALL 120 COMBINATIONAL FEEDTHROUGHS ===
+# set idx 0
+# foreach fp $fps {
+#     set sp [get_property STARTPOINT_PIN $fp]
+#     set ep [get_property ENDPOINT_PIN $fp]
+#     set lev [get_property LOGIC_LEVELS $fp]
+#     puts "$idx: $sp -> $ep ($lev levels)"
+#     incr idx
+# }
+0: reg_waddr[15] -> blt_kick (10 levels)
+1: fw_data[5] -> fw_ready (7 levels)
+2: reg_waddr[15] -> hcr_we (5 levels)
+3: reg_waddr[15] -> hcr_widx[4] (5 levels)
+4: busy_ext[7] -> lc_kick (6 levels)
+5: busy_ext[7] -> raw_kick (6 levels)
+6: busy_ext[7] -> cs_kick (6 levels)
+7: busy_ext[7] -> draw_kick (6 levels)
+8: busy_ext[7] -> inv[0] (6 levels)
+9: busy_ext[7] -> inv[1] (6 levels)
+10: busy_ext[7] -> inv[2] (6 levels)
+11: busy_ext[7] -> inv[3] (6 levels)
+12: mc_idle -> reg_rdata[8] (6 levels)
+13: busy_ext[7] -> occ_clear (5 levels)
+14: blt_busy -> reg_rdata[1] (5 levels)
+15: reg_waddr[15] -> hcr_widx[0] (3 levels)
+16: reg_waddr[15] -> hcr_widx[1] (3 levels)
+17: reg_waddr[15] -> hcr_widx[2] (3 levels)
+18: reg_waddr[15] -> hcr_widx[3] (3 levels)
+19: busy_ext[4] -> reg_rdata[4] (4 levels)
+20: busy_ext[6] -> reg_rdata[6] (4 levels)
+21: busy_ext[7] -> reg_rdata[7] (4 levels)
+22: x_rdata[16] -> reg_rdata[16] (3 levels)
+23: x_rdata[19] -> reg_rdata[19] (3 levels)
+24: x_rdata[20] -> reg_rdata[20] (3 levels)
+25: x_rdata[24] -> reg_rdata[24] (3 levels)
+26: x_rdata[26] -> reg_rdata[26] (3 levels)
+27: x_rdata[28] -> reg_rdata[28] (3 levels)
+28: rsp_tag[6] -> cp_fence_ev (3 levels)
+29: busy_ext[3] -> reg_rdata[3] (3 levels)
+30: busy_ext[2] -> reg_rdata[2] (3 levels)
+31: busy_ext[5] -> reg_rdata[5] (3 levels)
+32: x_rdata[27] -> reg_rdata[27] (3 levels)
+33: x_rdata[30] -> reg_rdata[30] (3 levels)
+34: x_rdata[12] -> reg_rdata[12] (3 levels)
+35: x_rdata[22] -> reg_rdata[22] (3 levels)
+36: x_rdata[29] -> reg_rdata[29] (3 levels)
+37: x_rdata[17] -> reg_rdata[17] (3 levels)
+38: x_rdata[13] -> reg_rdata[13] (3 levels)
+39: diag_cp_pc[0] -> reg_rdata[0] (2 levels)
+40: x_rdata[10] -> reg_rdata[10] (2 levels)
+41: diag_cp_status[11] -> reg_rdata[11] (2 levels)
+42: x_rdata[9] -> reg_rdata[9] (2 levels)
+43: x_rdata[14] -> reg_rdata[14] (2 levels)
+44: x_rdata[15] -> reg_rdata[15] (2 levels)
+45: x_rdata[18] -> reg_rdata[18] (2 levels)
+46: x_rdata[21] -> reg_rdata[21] (2 levels)
+47: x_rdata[23] -> reg_rdata[23] (2 levels)
+48: diag_cp_status[25] -> reg_rdata[25] (2 levels)
+49: x_rdata[31] -> reg_rdata[31] (2 levels)
+50: rst_n -> core_rst_n (1 levels)
+51: reg_wdata[0] -> hcr_wdata[0] (0 levels)
+52: reg_wdata[10] -> hcr_wdata[10] (0 levels)
+53: reg_wdata[11] -> hcr_wdata[11] (0 levels)
+54: reg_wdata[12] -> hcr_wdata[12] (0 levels)
+55: reg_wdata[13] -> hcr_wdata[13] (0 levels)
+56: reg_wdata[14] -> hcr_wdata[14] (0 levels)
+57: reg_wdata[15] -> hcr_wdata[15] (0 levels)
+58: reg_wdata[16] -> hcr_wdata[16] (0 levels)
+59: reg_wdata[17] -> hcr_wdata[17] (0 levels)
+60: reg_wdata[18] -> hcr_wdata[18] (0 levels)
+61: reg_wdata[19] -> hcr_wdata[19] (0 levels)
+62: reg_wdata[1] -> hcr_wdata[1] (0 levels)
+63: reg_wdata[20] -> hcr_wdata[20] (0 levels)
+64: reg_wdata[21] -> hcr_wdata[21] (0 levels)
+65: reg_wdata[22] -> hcr_wdata[22] (0 levels)
+66: reg_wdata[23] -> hcr_wdata[23] (0 levels)
+67: reg_wdata[24] -> hcr_wdata[24] (0 levels)
+68: reg_wdata[25] -> hcr_wdata[25] (0 levels)
+69: reg_wdata[26] -> hcr_wdata[26] (0 levels)
+70: reg_wdata[27] -> hcr_wdata[27] (0 levels)
+71: reg_wdata[28] -> hcr_wdata[28] (0 levels)
+72: reg_wdata[29] -> hcr_wdata[29] (0 levels)
+73: reg_wdata[2] -> hcr_wdata[2] (0 levels)
+74: reg_wdata[30] -> hcr_wdata[30] (0 levels)
+75: reg_wdata[31] -> hcr_wdata[31] (0 levels)
+76: reg_wdata[3] -> hcr_wdata[3] (0 levels)
+77: reg_wdata[4] -> hcr_wdata[4] (0 levels)
+78: reg_wdata[5] -> hcr_wdata[5] (0 levels)
+79: reg_wdata[6] -> hcr_wdata[6] (0 levels)
+80: reg_wdata[7] -> hcr_wdata[7] (0 levels)
+81: reg_wdata[8] -> hcr_wdata[8] (0 levels)
+82: reg_wdata[9] -> hcr_wdata[9] (0 levels)
+83: reg_waddr[7] -> hcr_widx[5] (0 levels)
+84: reg_waddr[8] -> hcr_widx[6] (0 levels)
+85: reg_waddr[9] -> hcr_widx[7] (0 levels)
+86: reg_waddr[10] -> hcr_widx[8] (0 levels)
+87: reg_waddr[11] -> hcr_widx[9] (0 levels)
+88: reg_wstrb[0] -> hcr_wmask[0] (0 levels)
+89: reg_wstrb[1] -> hcr_wmask[10] (0 levels)
+90: reg_wstrb[1] -> hcr_wmask[11] (0 levels)
+91: reg_wstrb[1] -> hcr_wmask[12] (0 levels)
+92: reg_wstrb[1] -> hcr_wmask[13] (0 levels)
+93: reg_wstrb[1] -> hcr_wmask[14] (0 levels)
+94: reg_wstrb[1] -> hcr_wmask[15] (0 levels)
+95: reg_wstrb[2] -> hcr_wmask[16] (0 levels)
+96: reg_wstrb[2] -> hcr_wmask[17] (0 levels)
+97: reg_wstrb[2] -> hcr_wmask[18] (0 levels)
+98: reg_wstrb[2] -> hcr_wmask[19] (0 levels)
+99: reg_wstrb[0] -> hcr_wmask[1] (0 levels)
+100: reg_wstrb[2] -> hcr_wmask[20] (0 levels)
+101: reg_wstrb[2] -> hcr_wmask[21] (0 levels)
+102: reg_wstrb[2] -> hcr_wmask[22] (0 levels)
+103: reg_wstrb[2] -> hcr_wmask[23] (0 levels)
+104: reg_wstrb[3] -> hcr_wmask[24] (0 levels)
+105: reg_wstrb[3] -> hcr_wmask[25] (0 levels)
+106: reg_wstrb[3] -> hcr_wmask[26] (0 levels)
+107: reg_wstrb[3] -> hcr_wmask[27] (0 levels)
+108: reg_wstrb[3] -> hcr_wmask[28] (0 levels)
+109: reg_wstrb[3] -> hcr_wmask[29] (0 levels)
+110: reg_wstrb[0] -> hcr_wmask[2] (0 levels)
+111: reg_wstrb[3] -> hcr_wmask[30] (0 levels)
+112: reg_wstrb[3] -> hcr_wmask[31] (0 levels)
+113: reg_wstrb[0] -> hcr_wmask[3] (0 levels)
+114: reg_wstrb[0] -> hcr_wmask[4] (0 levels)
+115: reg_wstrb[0] -> hcr_wmask[5] (0 levels)
+116: reg_wstrb[0] -> hcr_wmask[6] (0 levels)
+117: reg_wstrb[0] -> hcr_wmask[7] (0 levels)
+118: reg_wstrb[1] -> hcr_wmask[8] (0 levels)
+119: reg_wstrb[1] -> hcr_wmask[9] (0 levels)
+INFO: [Common 17-206] Exiting Vivado at Fri Oct 30 16:18:22 2026...

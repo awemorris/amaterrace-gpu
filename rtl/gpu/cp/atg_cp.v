@@ -1,0 +1,1563 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_cp: the command processor, wiring only: its children
+ * hold the GHCI host control registers and the work (spec/gpu/cp/).
+ *
+ *   atg_cp_regs   the register bus: identification, CAPS, the extended
+ *                 capability list, PERF; the HCR snoop bus and STATE alias
+ *   atg_cp_state  STATE[0..511], the broadcast to the blocks, the replay
+ *                 after RESET
+ *   atg_cp_ctl    CTRL/STATUS, the CP states, KICK, quiesce, the RESET
+ *                 order, the watchdog, the aperture, FAULT_ADDR/INFO
+ *   atg_cp_ring   the command ring and the packet envelope (design §2.4.2)
+ *   atg_cp_seq    the class N µop sequencer
+ *   atg_cp_fence  FENCE/RESULT writes, WAIT_FENCE polls, FENCE_LAST
+ *   atg_cp_irq    IRQ_STATUS/ENABLE/SET and the line
+ *   atg_cp_dbg    the asynchronous debug port
+ *   atg_cp_disp   (HAS_DISP) the DISP2 display controller's side: DISP_SET,
+ *                 FLIP, the host's gate to the DC's registers (window at
+ *                 0x200), the plane slots and the flip records
+ *
+ * The ring, the fence unit, the debug port and atg_cp_disp's record
+ * writer share MC client 0 through am_amb_mux (priority ring, fence,
+ * debug, records; the requester in tag bits [7:6]).  The MC's quiesce does not hold client 0 (atg_top sets the MC's
+ * QUIESCE_EXEMPT), so the CP's own accesses (the debug port in HALTED and
+ * FAULTED, a ring line or fence already requested) go on while the blocks
+ * are held.
+ * Session protection (atg_cp_prot, outside): the sequencer shows its µop
+ * (u_*) and waits for u_ok before it starts a unit; the fence unit's
+ * requests carry f_chk and f_slot (req_chk, req_slot when the mux picked
+ * the fence unit; the ring's and the debug port's are not checked); an MC
+ * refusal for protection is a device fault with mc_fault_tag.
+ * rst_n is the board reset; core_rst_n (CTRL.RESET's pulse) resets the
+ * ring's pointers, the sequencer, the fence unit, the debug port,
+ * IRQ_STATUS and the blocks outside.  atg_cp_disp is on rst_n (its slots
+ * and records survive CTRL.RESET).  The sequencer's kicks come as one
+ * pulse with a code, split here.
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_cp #(
+	parameter [63:0] TIMESTAMP_INIT = 64'd0,
+	parameter ADDR_W = 32,
+	parameter LINE_BYTES = 32,
+	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
+	parameter [31:0] GCLK_HZ = 32'd0,
+	parameter [31:0] VENDOR_ID = 32'h414D4154,	/* "AMAT" */
+	parameter [31:0] DEVICE_ID = 32'h41544731,	/* "ATG1" */
+	parameter [31:0] DEVICE_VERSION = 32'h00000003,	/* 0.3: CP with the ring */
+	parameter [7:0] UNITS = 8'h03,	/* present blocks, STATUS busy-bit order (CP, BLT) */
+	parameter HAS_CPU = 0,	/* atg_cpu takes class V packets */
+	parameter HAS_VSYNC = 0,	/* vsync is connected (CAPS[10], WAIT_VSYNC) */
+	parameter HAS_DISP = 0,	/* a DISP2 display controller (atg_dc in atg_top): CAPS[3], the DISP2 capability, atg_cp_disp */
+	parameter DISP_PLANES = 2,	/* its planes: 2 with the cursor plane */
+	parameter [7:0] DC_CLIENT = 8'hFF,	/* its MC client (refusals are not device faults) */
+	parameter HAS_DBG = 0,	/* a debug bridge outside the host bus (JTAG; the DBG capability) */
+	parameter PACKED = 0,	/* the SU has the packed arithmetic (CAPS[28]) */
+	parameter SUBGROUP = 0,	/* the SU has shfl/vote/ballot (CAPS[24]) */
+	parameter MS4 = 0,	/* 4x multisampling in the RX, ROP, TU, SU and BLT (CAPS[29]) */
+	parameter CORE1 = 0,	/* Vulkan 1.0 core rendering (CAPS[30], CAPS[9]) */
+	parameter HAS_ETC = 0,	/* the TU's ETC2/EAC decoder (FMT reports those formats) */
+	parameter [3:0] MRT_COUNT = 4'd1,	/* colour attachments */
+	parameter [15:0] RESIDENT_WARPS = 16'd0,	/* RESIDENT_WARPS: NSU x NWARPS (0: no shader unit) */
+	parameter [7:0] NREGS = 8'd0,	/* RESIDENT_WARPS[23:16]: general registers per lane (0: no SU) */
+	parameter [31:0] LOCAL_BASE = 32'd0,	/* the MEM capability (listed when LOCAL_BYTES is not 0) */
+	parameter [31:0] LOCAL_BYTES = 32'd0,
+	parameter [31:0] WINDOW_BYTES = 32'd0,
+	parameter [31:0] HOST_LIMIT = 32'd0,
+	parameter [15:0] SUBSYSTEM_VENDOR = 16'h0000,
+	parameter [15:0] SUBSYSTEM_DEVICE = 16'h0000,
+	parameter [31:0] MEM_CACHE_CFG = 32'd0,
+`ifdef CFG_TU_ENABLE_BILINEAR
+	parameter TU_BILINEAR = `CFG_TU_ENABLE_BILINEAR,
+`else
+	parameter TU_BILINEAR = 0,
+`endif
+	parameter VA_BITS = 32,
+	parameter PA_BITS = 40,
+	parameter NSU = 0,
+`ifdef CFG_SU_NPHYS
+	parameter SU_NPHYS = `CFG_SU_NPHYS,
+`else
+	parameter SU_NPHYS = 8,
+`endif
+	parameter SU_PACKED = 0,
+	parameter SU_SUBGROUP = 0,
+	parameter SU_LDS_KB = 0,
+	parameter HAS_BLT = 0,
+	parameter HAS_TU = 0,
+	parameter HAS_FFILT = 0,
+	parameter HAS_ROP = 0,
+	parameter HAS_ROP_PACK = 0,
+	parameter HAS_D16 = 0,
+	parameter HAS_D24S8 = 0,
+	parameter HAS_D32F = 0,
+	parameter HAS_STENCIL = 0,
+	parameter HAS_FBLEND = 0,
+	parameter HAS_MESH = 0,
+	parameter HAS_INDIRECT_DRAW = 0,
+	parameter HAS_SECONDARY_RING = 0,
+	parameter HAS_HW_WALKER = 0,
+	parameter HAS_VF = 0,
+	parameter HAS_TEX_ARRAY = 1,
+	parameter HAS_TEX_3D_CUBE = 1,
+	parameter HAS_TEX_TRILINEAR = 1,
+	parameter HAS_FMT_SRGB = 1,
+	parameter HAS_FMT_RGB565 = 1,
+	parameter HAS_PROT = 0,	/* session protection: the PROT capability is listed (atg_cp_prot) */
+	parameter [7:0] PROT_SLOTS = 8'd31,
+	parameter [15:0] PROT_GRANTS = 16'd8,
+	parameter [31:0] APERTURE_BASE_INIT = 32'd0,
+	parameter [31:0] APERTURE_LIMIT_INIT = 32'hFFFFFFFF,
+	parameter C_CPU = 2,
+	parameter C_VF = 3,
+	parameter C_TU = 4,
+	parameter C_ROP = 5,
+	parameter C_ATOM = 6,
+	parameter C_SA = 7,
+	parameter C_DC = 8'hFF,
+	parameter C_SU = 8,
+	parameter BLT_SCALE = 0,
+	parameter BLT_BLEND = 0,
+	parameter BLT_TILE = 0,
+	parameter RX_ENABLE_CPOLY = 0,
+	parameter RX_ENABLE_EARLY_Z = 0,
+	parameter RX_COARSE_SCAN = 0,
+	parameter ROP_FAST_CLEAR = 0,
+	parameter ROP_ENABLE_LOGICOP = 0,
+	parameter ROP_DUAL_SOURCE = 0
+) (
+	input wire clk,
+	input wire rst_n,
+
+	input wire reg_wr,
+	input wire [16:0] reg_waddr,
+	input wire [31:0] reg_wdata,
+	input wire [3:0] reg_wstrb,
+	input wire reg_rd,
+	input wire [16:0] reg_raddr,
+	output wire [31:0] reg_rdata,
+
+	/* Diagnostics (0x074, 0x078, 0x07C) */
+	input wire [31:0] diag_cp_pc,
+	input wire [31:0] diag_cp_status,
+	input wire [31:0] diag_pipe_fsm,
+
+	output wire irq,
+	input wire mem_ready,
+
+	output wire core_rst_n,
+	output wire win_en,	/* MEM WINDOW_CTRL.ENABLE: the local window is open (rst_n only) */
+
+	output wire mc_quiesce,
+	output wire mc_flush,
+	output wire l2_flush,
+	input wire l2_flush_done,
+	input wire l2_idle,
+	output wire [ADDR_W-1:0] aperture_base,
+	output wire [ADDR_W-1:0] aperture_limit,
+	input wire mc_idle,
+	input wire mc_fault,
+	input wire [7:0] mc_fault_client,
+	input wire [ADDR_W-1:0] mc_fault_addr,
+	input wire mc_fault_write,
+	input wire mc_fault_prot,	/* the refusal was for session protection (FAULT_INFO[9]) */
+	input wire mc_fault_mem,	/* a protection table read failed (kind 5) */
+	input wire [7:0] mc_fault_tag,	/* the job tag of the refused request's slot */
+	input wire [7:0] mc_fault_req_tag,
+
+	output reg st_we,
+	output reg [9:0] st_idx,
+	output reg [31:0] st_wdata,
+
+	output wire blt_kick,
+	input wire blt_busy,
+	input wire blt_error,
+	input wire [3:0] blt_error_kind,
+
+	output wire req_valid,
+	input wire req_ready,
+	output wire req_write,
+	output wire [ADDR_W-LINE_SHIFT-1:0] req_line,
+	output wire [LINE_BYTES-1:0] req_be,
+	output wire [LINE_BYTES*8-1:0] req_wdata,
+	output wire [7:0] req_tag,
+	output wire req_chk,
+	output wire [5:0] req_slot,
+	input wire rsp_valid,
+	input wire rsp_write,
+	input wire [7:0] rsp_tag,
+	input wire [LINE_BYTES*8-1:0] rsp_rdata,
+	input wire rsp_error,
+
+	/* The other blocks of design §7.6 and the CPU (atg_cpu). */
+	output wire draw_kick,
+	output wire cs_kick,
+	output wire cs_mesh,
+	output wire lc_kick,
+	output wire raw_kick,
+	output wire [3:0] inv,
+	input wire [7:0] busy_ext,	/* STATUS[7:2] bits of VF, RX, ROP, TU, SU, SA; [0] the units'
+					 * memory requests not yet answered (atg_mc's !unit_idle) */
+	input wire vsync,
+	input wire [1:0] x_fault,	/* fault sources: 0 the SUs (ISA), 1 the other blocks */
+	input wire [7:0] x_fault_kind,
+	input wire [63:0] x_fault_addr,
+	input wire [15:0] x_fault_tag,
+	input wire [3:0] su_fault_stage,
+
+	output wire hcr_we,	/* the HCR snoop bus for atg_cpu */
+	output wire [9:0] hcr_widx,
+	output wire [31:0] hcr_wdata,
+	output wire [31:0] hcr_wmask,
+	output wire [9:0] hcr_ridx,
+	input wire [31:0] x_rdata,
+	output wire v_valid,	/* class V packets to atg_cpu */
+	output wire [31:0] v_addr,
+	output wire [15:0] v_dwords,
+	output wire [7:0] v_tag,
+	input wire v_done,
+	input wire fw_valid,	/* µops from atg_cpu */
+	output wire fw_ready,
+	input wire [31:0] fw_data,
+	input wire fw_last,
+	input wire fw_active,
+	input wire [6:0] fw_side,
+	output wire u_fw,	/* the sequencer's µop (session protection) */
+	output wire [6:0] u_side,
+	output wire [1:0] u_req,
+	output wire [7:0] u_tag,
+	input wire u_ok,
+	input wire u_active,
+	output wire fault_session_clear,
+	output wire [7:0] fault_session_tag,
+	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault (the drained session's) */
+	input wire f_chk,
+	input wire [5:0] f_slot,
+	input wire [9:0] cpu_st_ridx,
+	output wire [31:0] cpu_st_rdata,
+	output wire [31:0] cp_fence_last,
+	output wire cp_fence_ev,
+	output wire cp_halt,
+	output wire cp_open,
+	input wire cpu_fault,
+	input wire [31:0] cpu_fault_addr,
+	input wire cpu_stall,
+	input wire cpu_result,
+	input wire [39:0] occ_count,	/* the occlusion counter (atg_rop, QUERY) */
+	output wire occ_clear,
+
+	/* The DISP2 display controller (atg_dc; HAS_DISP), through atg_cp_disp. */
+	output wire d_we,
+	output wire [5:0] d_idx,
+	output wire [31:0] d_wdata,
+	output wire [31:0] d_wmask,
+	output wire [5:0] d_ridx,
+	input wire [31:0] d_rdata,
+	output wire flip_valid,
+	output wire flip_plane,
+	output wire [31:0] flip_base,
+	input wire [1:0] taken,
+	input wire [1:0] taken_cancel,
+	input wire [1:0] dc_pending,
+	input wire dc_idle,
+	input wire [31:0] frame_count,
+	output wire [1:0] dc_err,
+	input wire [2:0] dc_ev,	/* one-cycle pulses: [0] VBLANK, [1] DISP_ERROR, [2] HOTPLUG */
+	input wire dc_irq_display,
+	/* Firmware sub-bus (for CAPS read interface) */
+	input wire sb_we,
+	input wire sb_re,
+	input wire [5:0] sb_idx,
+	input wire [31:0] sb_wdata,
+	output reg [31:0] sb_rdata
+);
+	`include "ghci_regs.vh"
+
+	localparam SLA_W = ADDR_W - LINE_SHIFT;
+	localparam SLB = LINE_BYTES * 8;
+	/* verilator lint_off WIDTHTRUNC */
+	localparam [3:0] LS4 = LINE_SHIFT;
+	/* verilator lint_on WIDTHTRUNC */
+	localparam [31:0] ISA = UNITS[6] ? 32'h47534931 : 32'd0;	/* "GSI1" */
+	/* Host extended capability list (only MEM 0x080, PROT 0x100, CPFW 0x020, DISP2 0x400) */
+	localparam [10:0] XCAP_HOST = (HAS_CPU != 0 ? 11'h020 : 11'h000) |
+		(HAS_DISP != 0 ? 11'h400 : 11'h000) |
+		(LOCAL_BYTES != 32'd0 ? 11'h080 : 11'h000) |
+		(HAS_PROT != 0 ? 11'h100 : 11'h000);
+
+	/* Capability block dw18 EXTCAP_PRESENT (all capabilities: DBG, PERF, VEND, CPFW, MEM, PROT, FMT, DISP2) */
+	localparam [10:0] XCAP_BLOCK = 11'h004 | 11'h008 | (HAS_CPU != 0 ? 11'h020 : 11'h000) |
+		(HAS_DISP != 0 ? 11'h400 : 11'h000) | (HAS_DBG != 0 ? 11'h002 : 11'h000) |
+		(LOCAL_BYTES != 32'd0 ? 11'h080 : 11'h000) | 11'h200 |
+		(HAS_PROT != 0 ? 11'h100 : 11'h000);
+
+	/*
+	 * The STATE broadcast to the blocks, one register stage after
+	 * atg_cp_state (the path ring → sequencer → index decode → the
+	 * blocks' shadow enables did not meet 100 MHz with the CPU in a
+	 * Zynq-7010).  A kick comes at least two cycles after the last STATE write
+	 * of its µops (the header after the payload, the kick a cycle after
+	 * the header), so the blocks still see their state before the kick.
+	 */
+	wire s_st_we;
+	wire [9:0] s_st_idx;
+	wire [31:0] s_st_wdata;
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire cp_rst_high;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_cp_rst (.I0(rst_n), .O(cp_rst_high));
+`endif
+
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			st_we <= 1'b0;
+			st_idx <= 10'd0;
+			st_wdata <= 32'd0;
+		end else begin
+			st_we <= s_st_we;
+			st_idx <= s_st_idx;
+			st_wdata <= s_st_wdata;
+		end
+	end
+`else
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			st_we <= 1'b0;
+			st_idx <= 10'd0;
+			st_wdata <= 32'd0;
+		end else begin
+			st_we <= s_st_we;
+			st_idx <= s_st_idx;
+			st_wdata <= s_st_wdata;
+		end
+	end
+`endif
+
+	/* The HCR snoop bus. */
+	wire s_hcr_we;
+	wire [9:0] s_hcr_widx, s_hcr_ridx;
+	wire [31:0] s_hcr_wdata, s_hcr_wmask;
+	wire s_alias_we;
+	wire [9:0] s_alias_idx, s_alias_ridx;
+	wire [31:0] s_ctl_rdata, s_irq_rdata, s_ring_rdata, s_fence_rdata, s_dbg_rdata;
+	wire [31:0] s_state_rdata;
+	wire s_perf_reset;
+
+`ifdef SYNTH_KINTEX7
+	(* dont_touch = "true" *) reg hcr_we_ctl, hcr_we_fence, hcr_we_dbg, hcr_we_disp, hcr_we_irq;
+	wire hcr_we_ring = s_hcr_we;
+
+	wire [9:0] hcr_ridx_ctl   = s_hcr_ridx;
+	wire [9:0] hcr_ridx_ring  = s_hcr_ridx;
+	wire [9:0] hcr_ridx_fence = s_hcr_ridx;
+	wire [9:0] hcr_ridx_dbg   = s_hcr_ridx;
+	wire [9:0] hcr_ridx_disp  = s_hcr_ridx;
+	wire [9:0] hcr_ridx_irq   = s_hcr_ridx;
+	(* dont_touch = "true" *) reg [9:0] hcr_widx_ctl, hcr_widx_fence, hcr_widx_dbg, hcr_widx_disp, hcr_widx_irq;
+	wire [9:0] hcr_widx_ring = s_hcr_widx;
+
+	(* dont_touch = "true" *) reg [31:0] hcr_wmask_ctl, hcr_wmask_fence, hcr_wmask_dbg, hcr_wmask_irq, hcr_wmask_disp;
+	wire [31:0] hcr_wmask_ring = s_hcr_wmask;
+
+	wire [31:0] reg_wdata_regs = reg_wdata;
+	wire [31:0] reg_wdata_ring = s_hcr_wdata;
+	(* dont_touch = "true" *) reg [31:0] reg_wdata_ctl, reg_wdata_fence, reg_wdata_dbg, reg_wdata_irq, reg_wdata_state, reg_wdata_disp;
+
+	wire [3:0] reg_wstrb_regs = reg_wstrb;
+	wire [16:0] reg_waddr_regs = reg_waddr;
+
+	(* dont_touch = "true" *) reg alias_we_state;
+	(* dont_touch = "true" *) reg [9:0] alias_idx_state;
+
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			hcr_we_ctl      <= 1'b0;
+			hcr_we_fence    <= 1'b0;
+			hcr_we_dbg      <= 1'b0;
+			hcr_we_disp     <= 1'b0;
+			hcr_we_irq      <= 1'b0;
+			hcr_widx_ctl    <= 10'd0;
+			hcr_widx_fence  <= 10'd0;
+			hcr_widx_dbg    <= 10'd0;
+			hcr_widx_disp   <= 10'd0;
+			hcr_widx_irq    <= 10'd0;
+			hcr_wmask_ctl   <= 32'd0;
+			hcr_wmask_fence <= 32'd0;
+			hcr_wmask_dbg   <= 32'd0;
+			hcr_wmask_irq   <= 32'd0;
+			hcr_wmask_disp  <= 32'd0;
+			reg_wdata_ctl   <= 32'd0;
+			reg_wdata_fence <= 32'd0;
+			reg_wdata_dbg   <= 32'd0;
+			reg_wdata_irq   <= 32'd0;
+			reg_wdata_state <= 32'd0;
+			reg_wdata_disp  <= 32'd0;
+			alias_we_state  <= 1'b0;
+			alias_idx_state <= 10'd0;
+		end else begin
+			hcr_we_ctl      <= s_hcr_we && (s_hcr_widx[9:6] == 4'd0);
+			hcr_we_fence    <= s_hcr_we;
+			hcr_we_dbg      <= s_hcr_we;
+			hcr_we_disp     <= s_hcr_we;
+			hcr_we_irq      <= s_hcr_we;
+			hcr_widx_ctl    <= s_hcr_widx;
+			hcr_widx_fence  <= s_hcr_widx;
+			hcr_widx_dbg    <= s_hcr_widx;
+			hcr_widx_disp   <= s_hcr_widx;
+			hcr_widx_irq    <= s_hcr_widx;
+			hcr_wmask_ctl   <= s_hcr_wmask;
+			hcr_wmask_fence <= s_hcr_wmask;
+			hcr_wmask_dbg   <= s_hcr_wmask;
+			hcr_wmask_irq   <= s_hcr_wmask;
+			hcr_wmask_disp  <= s_hcr_wmask;
+			reg_wdata_ctl   <= s_hcr_wdata;
+			reg_wdata_fence <= s_hcr_wdata;
+			reg_wdata_dbg   <= s_hcr_wdata;
+			reg_wdata_irq   <= s_hcr_wdata;
+			reg_wdata_state <= s_hcr_wdata;
+			reg_wdata_disp  <= s_hcr_wdata;
+			alias_we_state  <= s_alias_we;
+			alias_idx_state <= s_alias_idx;
+		end
+	end
+
+	wire [1:0] blt_err_b, cpu_fault_b;
+	wire [2:0] rsp_err_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be0 (.I0(blt_error), .O(blt_err_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_be1 (.I0(blt_error), .O(blt_err_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf0 (.I0(cpu_fault), .O(cpu_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_cf1 (.I0(cpu_fault), .O(cpu_fault_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re0 (.I0(s_i_rsp_error), .O(rsp_err_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re1 (.I0(s_i_rsp_error), .O(rsp_err_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_re2 (.I0(s_i_rsp_error), .O(rsp_err_b[2]));
+
+	wire [1:0] x_fault_b0, x_fault_b1;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf0_0 (.I0(x_fault[0]), .O(x_fault_b0[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf0_1 (.I0(x_fault[0]), .O(x_fault_b0[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf1_0 (.I0(x_fault[1]), .O(x_fault_b1[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_xf1_1 (.I0(x_fault[1]), .O(x_fault_b1[1]));
+
+	wire [1:0] fw_act_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fa0 (.I0(fw_active), .O(fw_act_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fa1 (.I0(fw_active), .O(fw_act_b[1]));
+
+	wire [1:0] ring_fault_b, seq_fault_b;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rf0 (.I0(s_ring_fault), .O(ring_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rf1 (.I0(s_ring_fault), .O(ring_fault_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sf0 (.I0(s_seq_fault), .O(seq_fault_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_sf1 (.I0(s_seq_fault), .O(seq_fault_b[1]));
+	wire [1:0] fence_fault_b;
+
+	wire mc_flush_state;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mcf (.I0(s_mc_flush), .O(mc_flush_state));
+
+	wire open_ring, open_state, open_out;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_op_r (.I0(s_open), .O(open_ring));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_op_s (.I0(s_open), .O(open_state));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_op_o (.I0(s_open), .O(open_out));
+`else
+	wire [31:0] reg_wdata_regs = reg_wdata;
+	wire [31:0] reg_wdata_ring = s_hcr_wdata;
+	wire [31:0] reg_wdata_ctl = s_hcr_wdata;
+	wire [31:0] reg_wdata_fence = s_hcr_wdata;
+	wire [31:0] reg_wdata_dbg = s_hcr_wdata;
+	wire [31:0] reg_wdata_irq = s_hcr_wdata;
+	wire [31:0] reg_wdata_state = s_hcr_wdata;
+	wire [31:0] reg_wdata_disp = s_hcr_wdata;
+	wire [3:0] reg_wstrb_regs = reg_wstrb;
+	wire [3:0] reg_wstrb_ring = reg_wstrb;
+	wire [3:0] reg_wstrb_ctl = reg_wstrb;
+	wire [3:0] reg_wstrb_irq = reg_wstrb;
+	wire [16:0] reg_waddr_regs = reg_waddr;
+	wire [11:0] reg_waddr_ctl = reg_waddr[11:0];
+	wire [11:0] reg_waddr_ring = reg_waddr[11:0];
+	wire [11:0] reg_waddr_sub = reg_waddr[11:0];
+	wire [1:0] blt_err_b = {2{blt_error}};
+	wire [1:0] cpu_fault_b = {2{cpu_fault}};
+	wire [2:0] rsp_err_b = {3{s_i_rsp_error}};
+	wire [1:0] x_fault_b0 = {2{x_fault[0]}};
+	wire [1:0] x_fault_b1 = {2{x_fault[1]}};
+	wire [1:0] fw_act_b = {2{fw_active}};
+	wire [1:0] ring_fault_b = {2{s_ring_fault}};
+	wire [1:0] seq_fault_b = {2{s_seq_fault}};
+	wire [1:0] fence_fault_b;
+	wire mc_flush_state = s_mc_flush;
+	wire open_ring = s_open;
+	wire open_state = s_open;
+	wire open_out = s_open;
+	wire hcr_we_ctl = s_hcr_we;
+	wire hcr_we_ring = s_hcr_we;
+	wire hcr_we_fence = s_hcr_we;
+	wire hcr_we_dbg = s_hcr_we;
+	wire hcr_we_disp = s_hcr_we;
+	wire hcr_we_irq = s_hcr_we;
+	wire [9:0] hcr_ridx_ctl = s_hcr_ridx;
+	wire [9:0] hcr_ridx_ring = s_hcr_ridx;
+	wire [9:0] hcr_ridx_fence = s_hcr_ridx;
+	wire [9:0] hcr_ridx_dbg = s_hcr_ridx;
+	wire [9:0] hcr_ridx_disp = s_hcr_ridx;
+	wire [9:0] hcr_ridx_irq = s_hcr_ridx;
+	wire [9:0] hcr_widx_ctl = s_hcr_widx;
+	wire [9:0] hcr_widx_ring = s_hcr_widx;
+	wire [9:0] hcr_widx_fence = s_hcr_widx;
+	wire [9:0] hcr_widx_dbg = s_hcr_widx;
+	wire [9:0] hcr_widx_disp = s_hcr_widx;
+	wire [9:0] hcr_widx_irq = s_hcr_widx;
+	wire [31:0] hcr_wmask_ctl = s_hcr_wmask;
+	wire [31:0] hcr_wmask_ring = s_hcr_wmask;
+	wire [31:0] hcr_wmask_fence = s_hcr_wmask;
+	wire [31:0] hcr_wmask_dbg = s_hcr_wmask;
+	wire [31:0] hcr_wmask_irq = s_hcr_wmask;
+	wire [31:0] hcr_wmask_disp = s_hcr_wmask;
+	wire alias_we_state = s_alias_we;
+	wire [9:0] alias_idx_state = s_alias_idx;
+`endif
+
+`ifdef SYNTH_KINTEX7
+	reg [31:0] reg_rdata_r;
+	wire [31:0] reg_rdata_raw;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high)
+			reg_rdata_r <= 32'd0;
+		else
+			reg_rdata_r <= reg_rdata_raw;
+	end
+	assign reg_rdata = reg_rdata_r;
+
+	reg hcr_we_r;
+	reg [9:0] hcr_widx_r;
+	reg [31:0] hcr_wdata_r;
+	reg [31:0] hcr_wmask_r;
+	reg [9:0] hcr_ridx_r;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			hcr_we_r    <= 1'b0;
+			hcr_widx_r  <= 10'd0;
+			hcr_wdata_r <= 32'd0;
+			hcr_wmask_r <= 32'd0;
+			hcr_ridx_r  <= 10'd0;
+		end else begin
+			hcr_we_r    <= s_hcr_we;
+			hcr_widx_r  <= s_hcr_widx;
+			hcr_wdata_r <= reg_wdata_disp;
+			hcr_wmask_r <= hcr_wmask_disp;
+			hcr_ridx_r  <= hcr_ridx_disp;
+		end
+	end
+	assign hcr_we = hcr_we_r;
+	assign hcr_widx = hcr_widx_r;
+	assign hcr_wdata = hcr_wdata_r;
+	assign hcr_wmask = hcr_wmask_r;
+	assign hcr_ridx = hcr_ridx_r;
+`else
+	wire [31:0] reg_rdata_raw;
+	assign reg_rdata = reg_rdata_raw;
+
+	assign hcr_we = s_hcr_we;
+	assign hcr_widx = s_hcr_widx;
+	assign hcr_wdata = s_hcr_wdata;
+	assign hcr_wmask = s_hcr_wmask;
+	assign hcr_ridx = s_hcr_ridx;
+`endif
+
+	/* Authoritative capabilities block: single instance in atg_cp */
+	wire [31:0] s_cap_dev_caps;
+	wire [31:0] s_boot_caps;
+
+	/* CAPS internal read arbitration (Firmware sub-bus vs Sequencer CMD_QUERY_CAPS) */
+	reg [8:0] caps_index;
+	reg [31:0] caps_data;
+	reg caps_fw_stall;
+	wire [8:0] s_seq_caps_r_idx;
+	wire [31:0] s_caps_r_data;
+
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			caps_index <= 9'd0;
+			caps_data <= 32'd0;
+			caps_fw_stall <= 1'b0;
+		end else begin
+			caps_fw_stall <= 1'b0;
+			if (sb_we && (sb_idx == 6'h34)) begin
+				caps_index <= sb_wdata[8:0];
+				caps_fw_stall <= 1'b1;
+			end
+			if (caps_fw_stall) begin
+				caps_data <= s_caps_r_data;
+			end
+		end
+	end
+`else
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			caps_index <= 9'd0;
+			caps_data <= 32'd0;
+			caps_fw_stall <= 1'b0;
+		end else begin
+			caps_fw_stall <= 1'b0;
+			if (sb_we && (sb_idx == 6'h34)) begin
+				caps_index <= sb_wdata[8:0];
+				caps_fw_stall <= 1'b1;
+			end
+			if (caps_fw_stall) begin
+				caps_data <= s_caps_r_data;
+			end
+		end
+	end
+`endif
+
+	wire [8:0] s_caps_r_idx = caps_fw_stall ? caps_index : s_seq_caps_r_idx;
+
+	always @(*) begin
+		sb_rdata = 32'd0;
+		case (sb_idx)
+		6'h34: sb_rdata = {23'd0, caps_index};
+		6'h35: sb_rdata = caps_data;
+		6'h3E: sb_rdata = s_cap_dev_caps;
+		default: sb_rdata = 32'd0;
+		endcase
+	end
+
+	atg_cp_caps #(
+		.GCLK_HZ(GCLK_HZ),
+		.VENDOR_ID(VENDOR_ID),
+		.DEVICE_ID(DEVICE_ID),
+		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.DEVICE_VERSION(DEVICE_VERSION),
+		.NATIVE_ISA_ID(ISA),
+		.RESIDENT_WARPS(RESIDENT_WARPS),
+		.NREGS(NREGS),
+		.LOCAL_BASE(LOCAL_BASE),
+		.LOCAL_BYTES(LOCAL_BYTES),
+		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT),
+		.MEM_CACHE_CFG(MEM_CACHE_CFG),
+		.MRT_COUNT(MRT_COUNT),
+		.VA_BITS(VA_BITS),
+		.PA_BITS(PA_BITS),
+		.NSU(NSU),
+		.SU_NPHYS(SU_NPHYS),
+		.SU_PACKED(SU_PACKED),
+		.SU_SUBGROUP(SU_SUBGROUP),
+		.SU_LDS_KB(SU_LDS_KB),
+		.HAS_BLT(HAS_BLT),
+		.BLT_SCALE(BLT_SCALE),
+		.BLT_BLEND(BLT_BLEND),
+		.BLT_TILE(BLT_TILE),
+		.HAS_DISP(HAS_DISP),
+		.DC_HAS_CURSOR(DISP_PLANES > 1),
+		.HAS_TU(HAS_TU),
+		.TU_BILINEAR(TU_BILINEAR),
+		.HAS_FFILT(HAS_FFILT),
+		.HAS_ROP(HAS_ROP),
+		.HAS_ROP_PACK(HAS_ROP_PACK),
+		.HAS_D16(HAS_D16),
+		.HAS_D24S8(HAS_D24S8),
+		.HAS_D32F(HAS_D32F),
+		.HAS_STENCIL(HAS_STENCIL),
+		.HAS_FBLEND(HAS_FBLEND),
+		.HAS_VF(HAS_VF),
+		.HAS_TEX_ARRAY(HAS_TEX_ARRAY),
+		.HAS_TEX_3D_CUBE(HAS_TEX_3D_CUBE),
+		.HAS_TEX_TRILINEAR(HAS_TEX_TRILINEAR),
+		.HAS_FMT_SRGB(HAS_FMT_SRGB),
+		.HAS_FMT_RGB565(HAS_FMT_RGB565),
+		.HAS_MESH(HAS_MESH),
+		.HAS_ETC(HAS_ETC),
+		.MS4(MS4),
+		.HAS_PROT(HAS_PROT),
+		.PROT_SLOTS(PROT_SLOTS),
+		.PROT_GRANTS(PROT_GRANTS),
+		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
+		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
+		.HAS_HW_WALKER(HAS_HW_WALKER),
+		.HAS_CPU(HAS_CPU),
+		.HAS_DBG(HAS_DBG),
+		.HAS_SA(UNITS[7]),
+		.XCAP_MASK(XCAP_BLOCK),
+		.PERF_SRC(32'hFFFF0801),
+		.RX_ENABLE_CPOLY(RX_ENABLE_CPOLY),
+		.RX_ENABLE_EARLY_Z(RX_ENABLE_EARLY_Z),
+		.RX_COARSE_SCAN(RX_COARSE_SCAN),
+		.ROP_FAST_CLEAR(ROP_FAST_CLEAR),
+		.ROP_ENABLE_LOGICOP(ROP_ENABLE_LOGICOP),
+		.ROP_DUAL_SOURCE(ROP_DUAL_SOURCE)
+	) u_caps (
+		.clk(clk),
+		.rst_n(rst_n),
+		.r_idx(s_caps_r_idx),
+		.r_data(s_caps_r_data),
+		.boot_caps(s_boot_caps),
+		.device_caps(s_cap_dev_caps),
+		.ext_cap_feature(),
+		.ext_cap_fmt0(),
+		.resident_warps(),
+		.native_isa_id(),
+		.gclk_hz(),
+		.vendor_id(),
+		.device_id(),
+		.subsystem(),
+		.device_version(),
+		.mem_cache_cfg(),
+		.prot_caps(),
+		.perf_src(),
+		.fmt_limits(),
+		.extcap_present(),
+		.fmt_idx(8'd0),
+		.fmt_val()
+	);
+
+	wire [31:0] s_disp_rdata;
+	atg_cp_regs #(
+		.GCLK_HZ(GCLK_HZ), .VENDOR_ID(VENDOR_ID), .DEVICE_ID(DEVICE_ID),
+		.DEVICE_VERSION(DEVICE_VERSION), .ISA_ID(ISA), .NATIVE_ISA_ID(ISA),
+		.XCAP_MASK(XCAP_HOST), .PERF_SRC(32'hFFFF0801), .RESIDENT_WARPS(RESIDENT_WARPS),
+		.NREGS(NREGS), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
+		.WINDOW_BYTES(WINDOW_BYTES),
+		.HOST_LIMIT(HOST_LIMIT),
+		.SUBSYSTEM_VENDOR(SUBSYSTEM_VENDOR),
+		.SUBSYSTEM_DEVICE(SUBSYSTEM_DEVICE),
+		.MEM_CACHE_CFG(MEM_CACHE_CFG),
+		.VA_BITS(VA_BITS),
+		.PA_BITS(PA_BITS),
+		.NSU(NSU),
+		.SU_NPHYS(SU_NPHYS),
+		.SU_PACKED(SU_PACKED),
+		.SU_SUBGROUP(SU_SUBGROUP),
+		.SU_LDS_KB(SU_LDS_KB),
+		.HAS_BLT(HAS_BLT),
+		.HAS_DISP(HAS_DISP),
+		.HAS_TU(HAS_TU),
+		.TU_BILINEAR(TU_BILINEAR),
+		.HAS_FFILT(HAS_FFILT),
+		.HAS_ROP(HAS_ROP),
+		.HAS_ROP_PACK(HAS_ROP_PACK),
+		.HAS_MESH(HAS_MESH),
+		.HAS_ETC(HAS_ETC),
+		.MS4(MS4),
+		.HAS_PROT(HAS_PROT),
+		.PROT_SLOTS(PROT_SLOTS),
+		.PROT_GRANTS(PROT_GRANTS),
+		.HAS_INDIRECT_DRAW(HAS_INDIRECT_DRAW),
+		.HAS_SECONDARY_RING(HAS_SECONDARY_RING),
+		.HAS_HW_WALKER(HAS_HW_WALKER),
+		.HAS_VF(HAS_VF),
+		.HAS_TEX_ARRAY(HAS_TEX_ARRAY),
+		.HAS_TEX_3D_CUBE(HAS_TEX_3D_CUBE),
+		.HAS_TEX_TRILINEAR(HAS_TEX_TRILINEAR),
+		.HAS_FMT_SRGB(HAS_FMT_SRGB),
+		.HAS_FMT_RGB565(HAS_FMT_RGB565),
+		.HAS_D16(HAS_D16),
+		.HAS_D24S8(HAS_D24S8),
+		.HAS_D32F(HAS_D32F),
+		.HAS_STENCIL(HAS_STENCIL),
+		.HAS_FBLEND(HAS_FBLEND),
+		.TIMESTAMP_INIT(TIMESTAMP_INIT),
+		.MRT_COUNT(MRT_COUNT)
+	) u_regs (
+		.clk(clk), .rst_n(rst_n),
+		.reg_wr(reg_wr), .reg_waddr(reg_waddr_regs), .reg_wdata(reg_wdata_regs), .reg_wstrb(reg_wstrb_regs),
+		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata_raw),
+		.hcr_we(s_hcr_we), .hcr_widx(s_hcr_widx), .hcr_wdata(s_hcr_wdata),
+		.hcr_wmask(s_hcr_wmask), .hcr_ridx(s_hcr_ridx),
+		.alias_we(s_alias_we), .alias_idx(s_alias_idx), .alias_ridx(s_alias_ridx),
+		.ctl_rdata(s_ctl_rdata), .irq_rdata(s_irq_rdata), .ring_rdata(s_ring_rdata),
+		.fence_rdata(s_fence_rdata), .dbg_rdata(s_dbg_rdata), .state_rdata(s_state_rdata),
+		.x_rdata(x_rdata | s_disp_rdata), .perf_busy({2'd0, !mc_idle, blt_busy}),
+		.perf_reset(s_perf_reset), .win_en(win_en),
+		.diag_cp_pc(diag_cp_pc), .diag_cp_status(diag_cp_status), .diag_pipe_fsm(diag_pipe_fsm),
+		.cap_boot_caps(s_boot_caps)
+	);
+
+	/* Control: state machine, RESET order, watchdog, faults. */
+	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush, s_ctrl_irq_global;
+	(* keep = "true", dont_touch = "true" *) wire s_core_rst_n;
+	wire [3:0] s_cp_state;
+	wire [2:0] s_lc_state;
+	wire [2:0] s_host_kick;
+	wire s_ev_halted, s_ev_fault, s_ev_wdt;
+	wire s_replay_busy;
+	wire s_ring_empty, s_retire, s_ring_busy, s_seq_busy, s_cmd_active;
+	wire [3:0] s_seq_st;
+	wire s_lock_fault;
+	wire s_dbg_done, s_dbg_busy;
+	wire s_ring_fault, s_seq_fault, s_fence_fault, s_disp_fault;
+	assign fence_fault_b = {2{s_fence_fault}};
+	wire [3:0] s_ring_fault_kind, s_seq_fault_kind, s_fence_fault_kind, s_disp_fault_kind;
+	wire [31:0] s_ring_fault_addr, s_seq_fault_addr, s_fence_fault_addr, s_disp_fault_addr;
+	wire [7:0] s_ring_fault_tag, s_seq_fault_tag, s_fence_fault_tag, s_disp_fault_tag;
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire s_core_rst_inv;
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h1)) u_top_rst_inv (.I0(s_core_rst_n), .O(s_core_rst_inv));
+
+	reg r_ring_busy;
+	reg r_cp_busy0;
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			r_ring_busy <= 1'b0;
+			r_cp_busy0 <= 1'b0;
+		end else begin
+			r_ring_busy <= s_ring_busy;
+			r_cp_busy0 <= s_seq_busy || s_ring_busy || s_dbg_busy;
+		end
+	end
+	wire ring_busy_ctl = r_ring_busy;
+	wire cp_busy0_ctl = r_cp_busy0;
+`else
+	wire ring_busy_ctl = s_ring_busy;
+	wire cp_busy0_ctl = s_seq_busy || s_ring_busy || s_dbg_busy;
+`endif
+
+	/* Fault sources: 0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP. */
+	wire [3:0] su_effective_stage = su_fault_stage;
+	wire [3:0] su_fault_kind = (x_fault_kind[3:0] == 4'd8) ? GHCI_FAULT_KIND_INVALID_OP : x_fault_kind[3:0];
+
+	atg_cp_ctl #(
+		.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS), .NSRC(9),
+		.SRC_BLOCK(72'h00_00_06_00_02_00_00_00_00), .SRC_CLIENT(72'h00_00_00_00_00_00_00_00_00),
+		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF),
+		.APERTURE_BASE_INIT(APERTURE_BASE_INIT),
+		.APERTURE_LIMIT_INIT(APERTURE_LIMIT_INIT),
+		.C_CPU(C_CPU),
+		.C_VF(C_VF),
+		.C_TU(C_TU),
+		.C_ROP(C_ROP),
+		.C_ATOM(C_ATOM),
+		.C_SA(C_SA),
+		.C_DC(C_DC),
+		.C_SU(C_SU),
+		.HAS_PROT(HAS_PROT)
+	) u_ctl (
+		.clk(clk), .rst_n(rst_n),
+		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(reg_wdata_ctl),
+		.hcr_wmask(hcr_wmask_ctl), .hcr_ridx(hcr_ridx_ctl), .hcr_rdata(s_ctl_rdata),
+		.mc_idle(mc_idle), .mem_ready(mem_ready),
+		.busy_in({busy_ext[7:2], blt_busy, cp_busy0_ctl}),
+		.ring_empty(s_ring_empty), .ring_busy(ring_busy_ctl), .cmd_active(s_cmd_active || v_valid),
+		.wdt_hold(!s_cmd_active && cpu_stall),
+		.replay_busy(s_replay_busy),
+		.seq_st(s_seq_st), .f_busy(s_f_busy),
+		.mc_fault(mc_fault), .mc_fault_client(mc_fault_client), .mc_fault_addr(mc_fault_addr),
+		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
+		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
+		.mc_fault_req_tag(mc_fault_req_tag),
+		.wdt_tag(wdt_tag),
+		.src_fault({s_disp_fault, x_fault_b1[0], blt_err_b[0], cpu_fault_b[0], x_fault_b0[0], fence_fault_b[0],
+			s_lock_fault, seq_fault_b[0], ring_fault_b[0]}),
+		.src_kind({s_disp_fault_kind, x_fault_kind[7:4], blt_error_kind, GHCI_FAULT_KIND_INVALID_OP,
+			su_fault_kind, s_fence_fault_kind, GHCI_FAULT_KIND_LOCKED_REG, s_seq_fault_kind,
+			s_ring_fault_kind}),
+		.src_addr({s_disp_fault_addr, x_fault_addr[63:32], 32'd0, cpu_fault_addr,
+			x_fault_addr[31:0], s_fence_fault_addr, 32'd0, s_seq_fault_addr, s_ring_fault_addr}),
+		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], s_seq_fault_tag, 8'd0, x_fault_tag[7:0],
+			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
+		.src_stage({4'd0, 4'd0, 4'd0, 4'd0, su_effective_stage, 4'd0, 4'd0, 4'd0, 4'd0}),
+		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
+		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
+		.host_kick(s_host_kick), .step(s_step),
+		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt),
+		.fault_session_clear(fault_session_clear), .fault_session_tag(fault_session_tag),
+		.aperture_base(aperture_base), .aperture_limit(aperture_limit)
+	);
+
+	assign core_rst_n = s_core_rst_n;
+	assign mc_flush = s_mc_flush;
+	assign l2_flush = s_f_flush;
+	assign cp_halt = s_halt;
+	assign cp_open = open_out;
+
+	/* The state register file. */
+	wire s_uop_we;
+	wire [9:0] s_uop_idx;
+	wire [31:0] s_uop_wdata;
+
+	atg_cp_state u_state (
+		.clk(clk), .rst_n(rst_n),
+		.alias_we(alias_we_state), .alias_idx(alias_idx_state), .alias_wdata(reg_wdata_state),
+		.alias_ridx(s_alias_ridx), .alias_rdata(s_state_rdata),
+		.uop_we(s_uop_we && s_uop_idx[9:8] != 2'b11), .uop_idx(s_uop_idx),
+		.uop_wdata(s_uop_wdata), .open(open_state), .blt_busy(blt_busy), .lock_fault(s_lock_fault),
+		.st_we(s_st_we), .st_idx(s_st_idx), .st_wdata(s_st_wdata),
+		.cpu_ridx(cpu_st_ridx), .cpu_rdata(cpu_st_rdata),
+		.replay(mc_flush_state), .replay_busy(s_replay_busy)
+	);
+
+	/* The CP's memory users behind MC client 0: ring, fence, dbg, the records (DISP2). */
+	wire [3:0] s_i_req_valid, s_i_req_ready, s_i_req_write, s_i_rsp_valid;
+	wire [4*SLA_W-1:0] s_i_req_line;
+	wire [4*LINE_BYTES-1:0] s_i_req_be;
+	wire [4*SLB-1:0] s_i_req_wdata;
+	wire [31:0] s_i_req_tag;
+	wire s_i_rsp_write, s_i_rsp_error;
+	wire [7:0] s_i_rsp_tag;
+	wire [SLB-1:0] s_i_rsp_rdata;
+
+`ifdef SYNTH_KINTEX7
+	reg amb_lock;
+	reg [1:0] amb_lock_k;
+	wire [1:0] amb_pick = s_i_req_valid[0] ? 2'd0 :
+		s_i_req_valid[1] ? 2'd1 :
+		s_i_req_valid[2] ? 2'd2 : 2'd3;
+	wire [1:0] amb_k;
+	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'hFF00_4455)) u_amb_k0 (
+		.I0(s_i_req_valid[0]), .I1(s_i_req_valid[1]), .I2(s_i_req_valid[2]),
+		.I3(amb_lock_k[0]), .I4(amb_lock), .O(amb_k[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF011)) u_amb_k1 (
+		.I0(s_i_req_valid[0]), .I1(s_i_req_valid[1]),
+		.I2(amb_lock_k[1]), .I3(amb_lock), .O(amb_k[1])
+	);
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			amb_lock <= 1'b0;
+			amb_lock_k <= 2'd0;
+		end else if (|s_i_req_valid) begin
+			if (req_ready)
+				amb_lock <= 1'b0;
+			else if (!amb_lock) begin
+				amb_lock <= 1'b1;
+				amb_lock_k <= amb_pick;
+			end
+		end
+	end
+	wire [20:0] amb_k0_b, amb_k1_b;
+	genvar gi_ak;
+	generate
+		for (gi_ak = 0; gi_ak < 21; gi_ak = gi_ak + 1) begin : g_amb_k_buf
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ak0 (.I0(amb_k[0]), .O(amb_k0_b[gi_ak]));
+			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_ak1 (.I0(amb_k[1]), .O(amb_k1_b[gi_ak]));
+		end
+	endgenerate
+	wire amb_req_write = amb_k1_b[20] ?
+		(amb_k0_b[20] ? s_i_req_write[3] : s_i_req_write[2]) :
+		(amb_k0_b[20] ? s_i_req_write[1] : s_i_req_write[0]);
+	wire [SLA_W-1:0] amb_req_line;
+	assign amb_req_line[15:0] = amb_k1_b[18] ?
+		(amb_k0_b[18] ? s_i_req_line[3*SLA_W +: 16] : s_i_req_line[2*SLA_W +: 16]) :
+		(amb_k0_b[18] ? s_i_req_line[1*SLA_W +: 16] : s_i_req_line[0*SLA_W +: 16]);
+	assign amb_req_line[SLA_W-1:16] = amb_k1_b[19] ?
+		(amb_k0_b[19] ? s_i_req_line[3*SLA_W + 16 +: (SLA_W-16)] : s_i_req_line[2*SLA_W + 16 +: (SLA_W-16)]) :
+		(amb_k0_b[19] ? s_i_req_line[1*SLA_W + 16 +: (SLA_W-16)] : s_i_req_line[0*SLA_W + 16 +: (SLA_W-16)]);
+	wire [LINE_BYTES-1:0] amb_req_be;
+	assign amb_req_be[15:0] = amb_k1_b[16] ?
+		(amb_k0_b[16] ? s_i_req_be[3*LINE_BYTES +: 16] : s_i_req_be[2*LINE_BYTES +: 16]) :
+		(amb_k0_b[16] ? s_i_req_be[1*LINE_BYTES +: 16] : s_i_req_be[0*LINE_BYTES +: 16]);
+	assign amb_req_be[LINE_BYTES-1:16] = amb_k1_b[17] ?
+		(amb_k0_b[17] ? s_i_req_be[3*LINE_BYTES + 16 +: (LINE_BYTES-16)] : s_i_req_be[2*LINE_BYTES + 16 +: (LINE_BYTES-16)]) :
+		(amb_k0_b[17] ? s_i_req_be[1*LINE_BYTES + 16 +: (LINE_BYTES-16)] : s_i_req_be[0*LINE_BYTES + 16 +: (LINE_BYTES-16)]);
+	wire [SLB-1:0] amb_req_wdata;
+	genvar gi_aw;
+	generate
+		for (gi_aw = 0; gi_aw < 16; gi_aw = gi_aw + 1) begin : g_amb_wdata
+			assign amb_req_wdata[gi_aw*16 +: 16] = amb_k1_b[gi_aw] ?
+				(amb_k0_b[gi_aw] ? s_i_req_wdata[3*SLB + gi_aw*16 +: 16] : s_i_req_wdata[2*SLB + gi_aw*16 +: 16]) :
+				(amb_k0_b[gi_aw] ? s_i_req_wdata[1*SLB + gi_aw*16 +: 16] : s_i_req_wdata[0*SLB + gi_aw*16 +: 16]);
+		end
+	endgenerate
+	wire [5:0] amb_tag_low = amb_k1_b[20] ?
+		(amb_k0_b[20] ? s_i_req_tag[3*8 +: 6] : s_i_req_tag[2*8 +: 6]) :
+		(amb_k0_b[20] ? s_i_req_tag[1*8 +: 6] : s_i_req_tag[0*8 +: 6]);
+	wire [7:0] amb_req_tag = {amb_k1_b[20], amb_k0_b[20], amb_tag_low};
+
+	reg req_valid_r;
+	(* extract_reset = "no" *) reg req_write_r;
+	(* extract_reset = "no" *) reg [SLA_W-1:0] req_line_r;
+	(* extract_reset = "no" *) reg [LINE_BYTES-1:0] req_be_r;
+	(* extract_reset = "no" *) reg [SLB-1:0] req_wdata_r;
+	(* extract_reset = "no" *) reg [7:0] req_tag_r;
+	always @(posedge clk or posedge cp_rst_high) begin
+		if (cp_rst_high) begin
+			req_valid_r <= 1'b0;
+			req_write_r <= 1'b0;
+			req_line_r  <= {SLA_W{1'b0}};
+			req_be_r    <= {LINE_BYTES{1'b0}};
+			req_wdata_r <= {SLB{1'b0}};
+			req_tag_r   <= 8'd0;
+		end else begin
+			req_valid_r <= |s_i_req_valid;
+			req_write_r <= amb_req_write;
+			req_line_r  <= amb_req_line;
+			req_be_r    <= amb_req_be;
+			req_wdata_r <= amb_req_wdata;
+			req_tag_r   <= amb_req_tag;
+		end
+	end
+	assign req_valid = req_valid_r;
+	assign req_write = req_write_r;
+	assign req_line  = req_line_r;
+	assign req_be    = req_be_r;
+	assign req_wdata = req_wdata_r;
+	assign req_tag   = req_tag_r;
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'h11F0)) u_rdy0 (
+		.I0(amb_lock_k[0]), .I1(amb_lock_k[1]), .I2(amb_lock), .I3(req_ready), .O(s_i_req_ready[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h002200F0)) u_rdy1 (
+		.I0(amb_lock_k[0]), .I1(amb_lock_k[1]), .I2(amb_lock), .I3(s_i_req_valid[0]), .I4(req_ready), .O(s_i_req_ready[1])
+	);
+	assign s_i_req_ready[2] = req_ready && ({amb_k1_b[20], amb_k0_b[20]} == 2'd2) && s_i_req_valid[2];
+	assign s_i_req_ready[3] = req_ready && ({amb_k1_b[20], amb_k0_b[20]} == 2'd3) && s_i_req_valid[3];
+	wire rsp_tag_hi_z;
+	(* DONT_TOUCH = "TRUE" *) LUT6 #(.INIT(64'h0000000000000001)) u_rthz (
+		.I0(rsp_tag[2]), .I1(rsp_tag[3]), .I2(rsp_tag[4]),
+		.I3(rsp_tag[5]), .I4(rsp_tag[6]), .I5(rsp_tag[7]),
+		.O(rsp_tag_hi_z)
+	);
+	assign s_i_rsp_valid[0] = rsp_valid && rsp_tag_hi_z;
+	assign s_i_rsp_valid[1] = rsp_valid && (rsp_tag[7:6] == 2'd1);
+	assign s_i_rsp_valid[2] = rsp_valid && (rsp_tag[7:6] == 2'd2);
+	assign s_i_rsp_valid[3] = rsp_valid && (rsp_tag[7:6] == 2'd3);
+	assign s_i_rsp_write = rsp_write;
+	assign s_i_rsp_tag = {2'b00, rsp_tag[5:0]};
+	assign s_i_rsp_rdata = rsp_rdata;
+	assign s_i_rsp_error = rsp_error;
+`else
+	am_amb_mux #(
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(4), .ID_W(2)
+	) u_amb (
+		.clk(clk), .rst_n(rst_n),
+		.i_req_valid(s_i_req_valid), .i_req_ready(s_i_req_ready),
+		.i_req_write(s_i_req_write), .i_req_line(s_i_req_line), .i_req_be(s_i_req_be),
+		.i_req_wdata(s_i_req_wdata), .i_req_tag(s_i_req_tag),
+		.i_rsp_valid(s_i_rsp_valid), .i_rsp_write(s_i_rsp_write), .i_rsp_tag(s_i_rsp_tag),
+		.i_rsp_rdata(s_i_rsp_rdata), .i_rsp_error(s_i_rsp_error),
+		.o_req_valid(req_valid), .o_req_ready(req_ready), .o_req_write(req_write),
+		.o_req_line(req_line), .o_req_be(req_be), .o_req_wdata(req_wdata),
+		.o_req_tag(req_tag),
+		.o_rsp_valid(rsp_valid), .o_rsp_write(rsp_write), .o_rsp_tag(rsp_tag),
+		.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
+	);
+`endif
+
+	/* Only the fence unit's (requester 1) requests carry the protection side band. */
+	wire s_f_req_chk;
+	wire [5:0] s_f_req_slot;
+	wire s_pick_f = req_tag[7:6] == 2'd1;
+	assign req_chk = s_pick_f && s_f_req_chk;
+	assign req_slot = s_pick_f ? s_f_req_slot : 6'd0;
+
+	/* The MC holds the blocks' new requests; its client 0 (this) is exempt. */
+	assign mc_quiesce = s_quiesce;
+
+	/* The ring. */
+	wire s_n_valid, s_n_ready, s_n_last;
+	wire [31:0] s_n_data;
+	wire [1:0] s_queue_id;
+	wire s_preempt_ev;
+	wire s_dma_req_valid, s_dma_empty, s_dma_busy;
+	wire [31:0] s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride;
+	wire [31:0] s_dma_src_slice_stride, s_dma_dst_slice_stride;
+	wire [15:0] s_dma_copy_w, s_dma_copy_h, s_dma_copy_d;
+
+	wire s_n_valid_raw, s_n_ready_raw;
+	wire [31:0] s_n_data_raw;
+
+	atg_cp_ring #(
+		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+		.CLASS_V(HAS_CPU != 0)
+	) u_ring (
+		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
+		.hcr_we(hcr_we_ring), .hcr_widx(hcr_widx_ring), .hcr_wdata(reg_wdata_ring),
+		.hcr_wmask(hcr_wmask_ring), .hcr_ridx(hcr_ridx_ring), .hcr_rdata(s_ring_rdata),
+		.run(s_run), .halt(s_halt), .step(s_step), .open(open_ring),
+		.n_valid(s_n_valid_raw), .n_ready(s_n_ready_raw), .n_data(s_n_data_raw), .n_last(s_n_last),
+		.v_valid(v_valid), .v_addr(v_addr), .v_dwords(v_dwords), .v_tag(v_tag),
+		.v_done(v_done),
+		.dma_req_valid(s_dma_req_valid), .dma_req_ready(1'b1),
+		.dma_src_base(s_dma_src_base), .dma_dst_base(s_dma_dst_base),
+		.dma_src_row_stride(s_dma_src_row_stride), .dma_dst_row_stride(s_dma_dst_row_stride),
+		.dma_src_slice_stride(s_dma_src_slice_stride), .dma_dst_slice_stride(s_dma_dst_slice_stride),
+		.dma_copy_w(s_dma_copy_w), .dma_copy_h(s_dma_copy_h), .dma_copy_d(s_dma_copy_d),
+		.dma_done(1'b0), .dma_empty(s_dma_empty), .dma_busy(s_dma_busy),
+		.empty(s_ring_empty), .retire(s_retire), .busy(s_ring_busy),
+		.queue_id(s_queue_id), .preempt_ev(s_preempt_ev),
+		.fault(s_ring_fault), .fault_kind(s_ring_fault_kind), .fault_addr(s_ring_fault_addr),
+		.fault_tag(s_ring_fault_tag),
+		.req_valid(s_i_req_valid[0]), .req_ready(s_i_req_ready[0]),
+		.req_write(s_i_req_write[0]), .req_line(s_i_req_line[0*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[0*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[0*SLB +: SLB]), .req_tag(s_i_req_tag[0*8 +: 8]),
+		.rsp_valid(s_i_rsp_valid[0]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[0])
+	);
+
+`ifdef SYNTH_KINTEX7
+	reg        rs_in_ready, rs_out_valid, rs_skid_valid;
+	(* max_fanout = 16, extract_reset = "no" *) reg [31:0] rs_out_data, rs_skid_data;
+	wire [1:0] rs_load_out_b, rs_load_skid_b, rs_skid_sel_b;
+	wire rs_load_skid_raw = s_n_valid_raw && rs_in_ready;
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF8CC)) u_rslo0 (
+		.I0(rs_out_valid), .I1(s_n_ready), .I2(s_n_valid_raw), .I3(rs_skid_valid), .O(rs_load_out_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF8CC)) u_rslo1 (
+		.I0(rs_out_valid), .I1(s_n_ready), .I2(s_n_valid_raw), .I3(rs_skid_valid), .O(rs_load_out_b[1])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsls0 (.I0(rs_load_skid_raw), .O(rs_load_skid_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsls1 (.I0(rs_load_skid_raw), .O(rs_load_skid_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsss0 (.I0(rs_skid_valid),    .O(rs_skid_sel_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_rsss1 (.I0(rs_skid_valid),    .O(rs_skid_sel_b[1]));
+
+	wire [31:0] rs_out_next;
+	genvar gi_rso;
+	generate
+		for (gi_rso = 0; gi_rso < 32; gi_rso = gi_rso + 1) begin : g_rs_out_mux
+			(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'hCA)) u_rsom (
+				.I0(s_n_data_raw[gi_rso]),
+				.I1(rs_skid_data[gi_rso]),
+				.I2(rs_skid_sel_b[gi_rso >= 16 ? 1 : 0]),
+				.O(rs_out_next[gi_rso])
+			);
+		end
+	endgenerate
+
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			rs_in_ready   <= 1'b1;
+			rs_out_valid  <= 1'b0;
+			rs_skid_valid <= 1'b0;
+			rs_out_data   <= 32'd0;
+			rs_skid_data  <= 32'd0;
+		end else begin
+			if (rs_skid_valid) begin
+				if (s_n_ready) begin
+					rs_out_valid  <= 1'b1;
+					rs_skid_valid <= 1'b0;
+					rs_in_ready   <= 1'b1;
+				end
+			end else begin
+				if (s_n_ready || !rs_out_valid) begin
+					rs_out_valid <= s_n_valid_raw;
+				end else if (s_n_valid_raw && rs_in_ready) begin
+					rs_skid_valid <= 1'b1;
+					rs_in_ready   <= 1'b0;
+				end
+			end
+			if (rs_load_out_b[0])  rs_out_data[15:0]   <= rs_out_next[15:0];
+			if (rs_load_out_b[1])  rs_out_data[31:16]  <= rs_out_next[31:16];
+			if (rs_load_skid_b[0]) rs_skid_data[15:0]  <= s_n_data_raw[15:0];
+			if (rs_load_skid_b[1]) rs_skid_data[31:16] <= s_n_data_raw[31:16];
+		end
+	end
+	assign s_n_ready_raw = rs_in_ready;
+	assign s_n_valid     = rs_out_valid;
+	assign s_n_data      = rs_out_data;
+`else
+	am_skid #(.W(32)) u_skid_ring_seq (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(s_n_valid_raw),
+		.in_ready(s_n_ready_raw),
+		.in_data(s_n_data_raw),
+		.out_valid(s_n_valid),
+		.out_ready(s_n_ready),
+		.out_data(s_n_data)
+	);
+`endif
+
+	/* The sequencer; it stops only in FAULTED and RESETTING. */
+	wire s_kick, s_disp_wait, s_ev_flip;
+	wire [2:0] s_kick_code;
+	wire [3:0] s_seq_inv;
+	wire s_seq_occ_clear;
+	wire s_f_valid, s_f_ready, s_f_irq, s_f_mem, s_f_flush, s_f_busy;
+	wire [1:0] s_f_op;
+	wire [63:0] s_f_addr;
+	wire [31:0] s_f_value, s_f_aux;
+	wire lc_halting   = s_lc_state == GHCI_LC_HALTING;
+	wire lc_halted    = s_lc_state == GHCI_LC_HALTED;
+	wire lc_faulted   = s_lc_state == GHCI_LC_FAULTED;
+	wire lc_resetting = s_lc_state == GHCI_LC_RESETTING;
+	wire s_seq_abort  = lc_faulted || lc_resetting;
+
+	reg step_active;
+`ifdef SYNTH_KINTEX7
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			step_active <= 1'b0;
+		end else begin
+			if (!lc_halted || s_seq_abort)
+				step_active <= 1'b0;
+			else if (s_step)
+				step_active <= 1'b1;
+			else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
+				step_active <= 1'b0;
+		end
+	end
+`else
+	always @(posedge clk or negedge s_core_rst_n) begin
+		if (!s_core_rst_n) begin
+			step_active <= 1'b0;
+		end else begin
+			if (!lc_halted || s_seq_abort)
+				step_active <= 1'b0;
+			else if (s_step)
+				step_active <= 1'b1;
+			else if (s_n_valid && s_n_ready && (s_seq_st == 4'd0))
+				step_active <= 1'b0;
+		end
+	end
+`endif
+	wire step_en = step_active || s_step;
+	wire s_seq_halt = lc_halting || (lc_halted && !step_en) || s_seq_abort;
+
+	wire s_fw_valid, s_fw_ready;
+	wire [31:0] s_fw_data;
+	wire [6:0] s_fw_side;
+
+`ifdef SYNTH_KINTEX7
+	reg        fw_in_ready, fw_out_valid, fw_skid_valid;
+	(* max_fanout = 16, extract_reset = "no" *) reg [31:0] fw_out_data, fw_skid_data;
+	(* max_fanout = 16, extract_reset = "no" *) reg [6:0] fw_out_side, fw_skid_side;
+	wire [6:0] fw_side_next = fw_skid_sel_b[0] ? fw_skid_side : fw_side;
+	wire [1:0] fw_load_out_b, fw_load_skid_b, fw_skid_sel_b;
+	wire fw_load_skid_raw = fw_valid && fw_in_ready;
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF8CC)) u_fwlo0 (
+		.I0(fw_out_valid), .I1(s_fw_ready), .I2(fw_valid), .I3(fw_skid_valid), .O(fw_load_out_b[0])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT4 #(.INIT(16'hF8CC)) u_fwlo1 (
+		.I0(fw_out_valid), .I1(s_fw_ready), .I2(fw_valid), .I3(fw_skid_valid), .O(fw_load_out_b[1])
+	);
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwls0 (.I0(fw_load_skid_raw), .O(fw_load_skid_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwls1 (.I0(fw_load_skid_raw), .O(fw_load_skid_b[1]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwss0 (.I0(fw_skid_valid),    .O(fw_skid_sel_b[0]));
+	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_fwss1 (.I0(fw_skid_valid),    .O(fw_skid_sel_b[1]));
+
+	wire [31:0] fw_out_next;
+	genvar gi_fwo;
+	generate
+		for (gi_fwo = 0; gi_fwo < 32; gi_fwo = gi_fwo + 1) begin : g_fw_out_mux
+			(* DONT_TOUCH = "TRUE" *) LUT3 #(.INIT(8'hCA)) u_fwom (
+				.I0(fw_data[gi_fwo]),
+				.I1(fw_skid_data[gi_fwo]),
+				.I2(fw_skid_sel_b[gi_fwo >= 16 ? 1 : 0]),
+				.O(fw_out_next[gi_fwo])
+			);
+		end
+	endgenerate
+
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			fw_in_ready   <= 1'b1;
+			fw_out_valid  <= 1'b0;
+			fw_skid_valid <= 1'b0;
+			fw_out_data   <= 32'd0;
+			fw_out_side   <= 7'd0;
+			fw_skid_data  <= 32'd0;
+			fw_skid_side  <= 7'd0;
+		end else begin
+			if (fw_skid_valid) begin
+				if (s_fw_ready) begin
+					fw_out_valid  <= 1'b1;
+					fw_skid_valid <= 1'b0;
+					fw_in_ready   <= 1'b1;
+				end
+			end else begin
+				if (s_fw_ready || !fw_out_valid) begin
+					fw_out_valid <= fw_valid;
+				end else if (fw_valid && fw_in_ready) begin
+					fw_skid_valid <= 1'b1;
+					fw_in_ready   <= 1'b0;
+				end
+			end
+			if (fw_load_out_b[0])  fw_out_data[15:0]   <= fw_out_next[15:0];
+			if (fw_load_out_b[1])  fw_out_data[31:16]  <= fw_out_next[31:16];
+			if (fw_load_out_b[0])  fw_out_side         <= fw_side_next;
+			if (fw_load_skid_b[0]) fw_skid_data[15:0]  <= fw_data[15:0];
+			if (fw_load_skid_b[1]) fw_skid_data[31:16] <= fw_data[31:16];
+			if (fw_load_skid_b[0]) fw_skid_side        <= fw_side;
+		end
+	end
+	assign fw_ready   = fw_in_ready;
+	assign s_fw_valid = fw_out_valid;
+	assign s_fw_data  = fw_out_data;
+	assign s_fw_side  = fw_out_side;
+`else
+	am_skid #(.W(39)) u_skid_fw (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.in_valid(fw_valid),
+		.in_ready(fw_ready),
+		.in_data({fw_side, fw_data}),
+		.out_valid(s_fw_valid),
+		.out_ready(s_fw_ready),
+		.out_data({s_fw_side, s_fw_data})
+	);
+`endif
+
+	wire s_seq_cs_mesh;
+	atg_cp_seq #(
+		.UNITS(UNITS),
+		.HAS_VSYNC(HAS_VSYNC),
+		.HAS_DISP(HAS_DISP),
+		.HAS_HW_WALKER(HAS_HW_WALKER),
+		.HAS_MESH(HAS_MESH),
+		.HAS_SECONDARY_RING(HAS_SECONDARY_RING)
+	) u_seq (
+		.clk(clk), .rst_n(s_core_rst_n),
+		.n_valid(s_n_valid), .n_ready(s_n_ready), .n_data(s_n_data),
+		.fw_valid(s_fw_valid), .fw_ready(s_fw_ready), .fw_data(s_fw_data),
+		.fw_active(fw_act_b[0]), .fw_side(s_fw_side), .halt(s_seq_halt), .seq_abort(s_seq_abort),
+		.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
+		.kick(s_kick), .kick_code(s_kick_code), .cs_mesh(s_seq_cs_mesh), .inv(s_seq_inv),
+		.busy_in({s_disp_wait, busy_ext[7:2], blt_busy, busy_ext[0]}), .vsync(vsync),
+		.l2_flush_done(l2_flush_done), .l2_idle(l2_idle),
+		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_64(s_f_64), .f_busy(s_f_busy),
+		.occ_count(occ_count), .occ_clear(s_seq_occ_clear),
+		.busy(s_seq_busy), .cmd_active(s_cmd_active), .seq_st(s_seq_st),
+		.fault(s_seq_fault), .fault_kind(s_seq_fault_kind), .fault_addr(s_seq_fault_addr),
+		.fault_tag(s_seq_fault_tag),
+		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok), .u_active(u_active),
+		.caps_r_idx(s_seq_caps_r_idx),
+		.caps_r_data(s_caps_r_data),
+		.caps_fw_stall(caps_fw_stall)
+	);
+	assign u_tag = s_seq_fault_tag;
+
+	/* The kick codes (atg_cp_seq's K_*). */
+`ifdef SYNTH_KINTEX7
+	reg blt_kick_r, draw_kick_r, cs_kick_r, cs_mesh_r, lc_kick_r, raw_kick_r, occ_clear_r;
+	reg perf_reset_r, kick_flip_r, kick_idle_r;
+	(* extract_reset = "no" *) reg [3:0] inv_r;
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv) begin
+			blt_kick_r   <= 1'b0;
+			draw_kick_r  <= 1'b0;
+			cs_kick_r    <= 1'b0;
+			cs_mesh_r    <= 1'b0;
+			lc_kick_r    <= 1'b0;
+			raw_kick_r   <= 1'b0;
+			inv_r        <= 4'd0;
+			occ_clear_r  <= 1'b0;
+			perf_reset_r <= 1'b0;
+			kick_flip_r  <= 1'b0;
+			kick_idle_r  <= 1'b0;
+		end else begin
+			blt_kick_r   <= s_host_kick[0] || s_kick && s_kick_code == 3'd0;
+			draw_kick_r  <= s_host_kick[1] || s_kick && s_kick_code == 3'd1;
+			cs_kick_r    <= s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+			cs_mesh_r    <= s_seq_cs_mesh;
+			lc_kick_r    <= s_kick && s_kick_code == 3'd3;
+			raw_kick_r   <= s_kick && s_kick_code == 3'd4;
+			inv_r        <= s_seq_inv;
+			occ_clear_r  <= s_seq_occ_clear;
+			perf_reset_r <= s_kick && s_kick_code == 3'd5;
+			kick_flip_r  <= s_kick && s_kick_code == 3'd6;
+			kick_idle_r  <= s_kick && s_kick_code == 3'd7;
+		end
+	end
+	assign blt_kick = blt_kick_r;
+	assign draw_kick = draw_kick_r;
+	assign cs_kick = cs_kick_r;
+	assign cs_mesh = cs_mesh_r;
+	assign lc_kick = lc_kick_r;
+	assign raw_kick = raw_kick_r;
+	assign inv = inv_r;
+	assign occ_clear = occ_clear_r;
+	assign s_perf_reset = perf_reset_r;
+	wire s_kick_flip = kick_flip_r;
+	wire s_kick_idle = kick_idle_r;
+`else
+	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
+	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
+	assign cs_kick = s_host_kick[2] || s_kick && s_kick_code == 3'd2;
+	assign cs_mesh = s_seq_cs_mesh;
+	assign lc_kick = s_kick && s_kick_code == 3'd3;
+	assign raw_kick = s_kick && s_kick_code == 3'd4;
+	assign inv = s_seq_inv;
+	assign occ_clear = s_seq_occ_clear;
+	assign s_perf_reset = s_kick && s_kick_code == 3'd5;
+	wire s_kick_flip = s_kick && s_kick_code == 3'd6;
+	wire s_kick_idle = s_kick && s_kick_code == 3'd7;
+`endif
+
+	/* Fences. */
+	wire s_ev_fence, s_f_64;
+`ifdef SYNTH_KINTEX7
+	reg cp_fence_ev_r;
+	always @(posedge clk or posedge s_core_rst_inv) begin
+		if (s_core_rst_inv)
+			cp_fence_ev_r <= 1'b0;
+		else
+			cp_fence_ev_r <= s_ev_fence;
+	end
+	assign cp_fence_ev = cp_fence_ev_r;
+`else
+	assign cp_fence_ev = s_ev_fence;
+`endif
+
+	atg_cp_fence #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_fence (
+		.clk(clk), .rst_n(s_core_rst_n),
+		.hcr_we(hcr_we_fence), .hcr_widx(hcr_widx_fence), .hcr_wdata(reg_wdata_fence),
+		.hcr_wmask(hcr_wmask_fence), .hcr_ridx(hcr_ridx_fence), .hcr_rdata(s_fence_rdata),
+		.f_valid(s_f_valid), .f_ready(s_f_ready), .f_op(s_f_op), .f_addr(s_f_addr[ADDR_W-1:0]),
+		.f_value(s_f_value), .f_aux(s_f_aux), .f_irq(s_f_irq),
+		.f_mem(s_f_mem), .f_flush(s_f_flush), .f_64(s_f_64), .f_chk(f_chk),
+		.f_slot(f_slot), .f_busy(s_f_busy),
+		.ev_fence(s_ev_fence), .fence_last(cp_fence_last),
+		.fault(s_fence_fault), .fault_kind(s_fence_fault_kind),
+		.fault_addr(s_fence_fault_addr), .fault_tag(s_fence_fault_tag),
+		.req_valid(s_i_req_valid[1]), .req_ready(s_i_req_ready[1]),
+		.req_write(s_i_req_write[1]), .req_line(s_i_req_line[1*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[1*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[1*SLB +: SLB]), .req_tag(s_i_req_tag[1*8 +: 8]),
+		.req_chk(s_f_req_chk), .req_slot(s_f_req_slot),
+		.rsp_valid(s_i_rsp_valid[1]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[1])
+	);
+
+	/* Interrupts and the debug port. */
+
+	atg_cp_irq u_irq (
+		.clk(clk), .rst_n(rst_n), .core_rst_n(s_core_rst_n),
+		.ctrl_irq_global(s_ctrl_irq_global),
+		.hcr_we(hcr_we_irq), .hcr_widx(hcr_widx_irq), .hcr_wdata(reg_wdata_irq),
+		.hcr_wmask(hcr_wmask_irq), .hcr_ridx(hcr_ridx_irq), .hcr_rdata(s_irq_rdata),
+		.ev({s_ev_halted, 1'b0, 1'b0, dc_irq_display, s_ev_wdt, s_ev_fault, cp_fence_ev}),
+		.irq(irq)
+	);
+
+	atg_cp_dbg #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) u_dbg (
+		.clk(clk), .rst_n(s_core_rst_n),
+		.hcr_we(hcr_we_dbg), .hcr_widx(hcr_widx_dbg), .hcr_wdata(reg_wdata_dbg),
+		.hcr_wmask(hcr_wmask_dbg), .hcr_ridx(hcr_ridx_dbg), .hcr_rdata(s_dbg_rdata),
+		.ev_done(s_dbg_done), .dbg_busy(s_dbg_busy),
+		.req_valid(s_i_req_valid[2]), .req_ready(s_i_req_ready[2]),
+		.req_write(s_i_req_write[2]), .req_line(s_i_req_line[2*SLA_W +: SLA_W]),
+		.req_be(s_i_req_be[2*LINE_BYTES +: LINE_BYTES]),
+		.req_wdata(s_i_req_wdata[2*SLB +: SLB]), .req_tag(s_i_req_tag[2*8 +: 8]),
+		.rsp_valid(s_i_rsp_valid[2]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+		.rsp_rdata(s_i_rsp_rdata), .rsp_error(rsp_err_b[2])
+	);
+
+	/* The DISP2 display controller's side (board reset). */
+	generate
+	if (HAS_DISP != 0) begin : g_disp
+		atg_cp_disp #(
+			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.NPLANES(DISP_PLANES), .LOCAL_BASE(LOCAL_BASE), .LOCAL_BYTES(LOCAL_BYTES),
+			.BASE_IDX(GHCI_DISP2_BASE[11:2])
+		) u_disp (
+			.clk(clk), .rst_n(rst_n),
+			.hcr_we(hcr_we_disp), .hcr_widx(hcr_widx_disp), .hcr_wdata(reg_wdata_disp),
+			.hcr_wmask(hcr_wmask_disp), .hcr_ridx(hcr_ridx_disp), .hcr_rdata(s_disp_rdata),
+			.lc_state(s_lc_state),
+			.uop_we(s_uop_we), .uop_idx(s_uop_idx), .uop_wdata(s_uop_wdata),
+			.kick_flip(s_kick_flip), .kick_idle(s_kick_idle), .seq_tag(s_seq_fault_tag),
+			.disp_wait(s_disp_wait), .aperture_base(aperture_base),
+			.aperture_limit(aperture_limit),
+			.fault(s_disp_fault), .fault_kind(s_disp_fault_kind),
+			.fault_addr(s_disp_fault_addr), .fault_tag(s_disp_fault_tag),
+			.d_we(d_we), .d_idx(d_idx), .d_wdata(d_wdata), .d_wmask(d_wmask), .d_ridx(d_ridx),
+			.d_rdata(d_rdata), .flip_valid(flip_valid), .flip_plane(flip_plane),
+			.flip_base(flip_base), .taken(taken), .taken_cancel(taken_cancel),
+			.dc_pending(dc_pending), .dc_idle(dc_idle), .frame_count(frame_count),
+			.dc_err(dc_err),
+			.req_valid(s_i_req_valid[3]), .req_ready(s_i_req_ready[3]),
+			.req_write(s_i_req_write[3]), .req_line(s_i_req_line[3*SLA_W +: SLA_W]),
+			.req_be(s_i_req_be[3*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(s_i_req_wdata[3*SLB +: SLB]), .req_tag(s_i_req_tag[3*8 +: 8]),
+			.rsp_valid(s_i_rsp_valid[3]), .rsp_write(s_i_rsp_write), .rsp_tag(s_i_rsp_tag),
+			.rsp_rdata(s_i_rsp_rdata), .rsp_error(s_i_rsp_error),
+			.ev_flip(s_ev_flip)
+		);
+	end else begin : g_no_disp
+		assign s_disp_rdata = 32'd0;
+		assign s_disp_wait = 1'b0;
+		assign s_disp_fault = 1'b0;
+		assign s_disp_fault_kind = 4'd0;
+		assign s_disp_fault_addr = 32'd0;
+		assign s_disp_fault_tag = 8'd0;
+		assign s_ev_flip = 1'b0;
+		assign d_we = 1'b0;
+		assign d_idx = 6'd0;
+		assign d_wdata = 32'd0;
+		assign d_wmask = 32'd0;
+		assign d_ridx = 6'd0;
+		assign flip_valid = 1'b0;
+		assign flip_plane = 1'b0;
+		assign flip_base = 32'd0;
+		assign dc_err = 2'b00;
+		assign s_i_req_valid[3] = 1'b0;
+		assign s_i_req_write[3] = 1'b0;
+		assign s_i_req_line[3*SLA_W +: SLA_W] = {SLA_W{1'b0}};
+		assign s_i_req_be[3*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
+		assign s_i_req_wdata[3*SLB +: SLB] = {SLB{1'b0}};
+		assign s_i_req_tag[3*8 +: 8] = 8'd0;
+		wire unused_no_disp = &{1'b0, s_i_req_ready[3], s_i_rsp_valid[3], d_rdata, taken,
+			taken_cancel, dc_pending, dc_idle, frame_count, dc_ev, s_kick_flip, s_kick_idle};
+	end
+	endgenerate
+
+	/* Indirect draw fetcher (Phase 008, ws002-p008) */
+	wire ind_cmd_valid = 1'b0;
+	wire ind_cmd_ready;
+	wire [31:0] ind_arg_buffer_addr = 32'd0;
+	wire [31:0] ind_draw_count = 32'd0;
+	wire [31:0] ind_stride = 32'd0;
+	wire ind_is_indexed = 1'b0;
+	wire ind_dma_req_valid;
+	wire ind_dma_req_ready = 1'b0;
+	wire [25:0] ind_dma_req_line;
+	wire ind_dma_rsp_valid = 1'b0;
+	wire [255:0] ind_dma_rsp_data = 256'd0;
+	wire ind_draw_valid;
+	wire ind_draw_ready = 1'b1;
+	wire [31:0] ind_vertex_count;
+	wire [31:0] ind_instance_count;
+	wire [31:0] ind_first_vertex;
+	wire [31:0] ind_first_instance;
+	wire [31:0] ind_first_index;
+	wire [31:0] ind_vertex_offset;
+
+	atg_cp_indirect u_indirect (
+		.clk(clk),
+		.rst_n(s_core_rst_n),
+		.cmd_valid(ind_cmd_valid),
+		.cmd_ready(ind_cmd_ready),
+		.arg_buffer_addr(ind_arg_buffer_addr),
+		.draw_count(ind_draw_count),
+		.stride(ind_stride),
+		.is_indexed(ind_is_indexed),
+		.dma_req_valid(ind_dma_req_valid),
+		.dma_req_ready(ind_dma_req_ready),
+		.dma_req_line(ind_dma_req_line),
+		.dma_rsp_valid(ind_dma_rsp_valid),
+		.dma_rsp_data(ind_dma_rsp_data),
+		.draw_valid(ind_draw_valid),
+		.draw_ready(ind_draw_ready),
+		.vertex_count(ind_vertex_count),
+		.instance_count(ind_instance_count),
+		.first_vertex(ind_first_vertex),
+		.first_instance(ind_first_instance),
+		.first_index(ind_first_index),
+		.vertex_offset(ind_vertex_offset)
+	);
+
+	wire unused_indirect = &{1'b0, ind_cmd_ready, ind_dma_req_valid, ind_dma_req_line,
+		ind_draw_valid, ind_vertex_count, ind_instance_count, ind_first_vertex,
+		ind_first_instance, ind_first_index, ind_vertex_offset};
+
+	wire unused_ok = &{1'b0, busy_ext[1], s_i_rsp_tag, s_n_last, fw_last, s_queue_id, s_preempt_ev, unused_indirect,
+		dc_ev, cpu_result, s_retire, s_dbg_done, s_ev_flip,
+		s_f_addr[63:32], sb_re,
+		s_dma_req_valid, s_dma_empty, s_dma_busy,
+		s_dma_src_base, s_dma_dst_base, s_dma_src_row_stride, s_dma_dst_row_stride,
+		s_dma_src_slice_stride, s_dma_dst_slice_stride,
+		s_dma_copy_w, s_dma_copy_h, s_dma_copy_d};
+endmodule
+
+`default_nettype wire

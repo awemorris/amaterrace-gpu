@@ -1,0 +1,236 @@
+# ==============================================================================
+# Amaterrace GPU (ATG1) Build Configuration Template
+# Copyright (C) 2026 Awe Morris
+# SPDX-License-Identifier: Zlib
+# ==============================================================================
+# Copy this file to `config.mk` and customize it for your target board,
+# simulation parameters, or FPGA resource budget.
+# `include/atg_config.vh` is generated automatically from `config.mk`.
+# ==============================================================================
+
+# Target Board Preset: kc705, basys3, arty_a7, minimal_sim
+TARGET_PRESET            ?= kc705
+
+# ------------------------------------------------------------------------------
+# 1. Shader Unit (SU) Scaling & Capabilities
+# ------------------------------------------------------------------------------
+# CONFIG_SU_NPHYS: Number of physical SIMD execution lanes per SU.
+#   Logical warp width is fixed at 32 threads.
+#   Execution latency per instruction is 32 / NPHYS cycles:
+#     32 : 1 cycle/inst  (High-end FPGA, Kintex UltraScale+, Virtex-7)
+#     16 : 2 cycles/inst (Mid-range FPGA, Kintex-7 325T, Zynq-7030)
+#      8 : 4 cycles/inst (Default standard configuration, Kintex-7 KC705, Artix-7 100T)
+#      4 : 8 cycles/inst (Entry-level FPGA, Artix-7 50T, Gowin GW2A-55)
+CONFIG_SU_NPHYS          ?= 8
+
+# CONFIG_SU_NWARPS: Maximum concurrent resident warp slots (2, 4, 8). Default: 4.
+CONFIG_SU_NWARPS         ?= 4
+
+# CONFIG_SU_NREGS: General purpose registers (GPRs) allocated per thread (32 or 64). Default: 32.
+CONFIG_SU_NREGS          ?= 32
+
+# CONFIG_SU_ENABLE_FP16: Packed FP16x2 arithmetic support (1: Enabled, 0: Disabled).
+#   Provides 2x compute throughput for half-precision floating-point.
+CONFIG_SU_ENABLE_FP16    ?= 1
+
+# CONFIG_SU_ENABLE_SUBGROUP: Intra-warp communication instructions (shfl, vote, ballot).
+#   1: Enabled (Vulkan subgroup support), 0: Disabled.
+CONFIG_SU_ENABLE_SUBGROUP ?= 1
+
+# CONFIG_SU_ENABLE_SFU: Special Function Unit for transcendental math (rcp, rsq, sin, cos).
+#   1: Hardware SFU, 0: Software emulation / trap.
+CONFIG_SU_ENABLE_SFU     ?= 1
+
+# CONFIG_SU_LDS_KB: Workgroup Local Data Share (shared memory) size in KB: 0, 1, 2, 4. Default: 4.
+CONFIG_SU_LDS_KB         ?= 4
+
+# CONFIG_SU_ENABLE_SA: Systolic Tensor Accelerator attachment.
+#   1: Enabled (AI/GEMM coprocessor attached to SU), 0: Disabled.
+CONFIG_SU_ENABLE_SA      ?= 0
+
+# CONFIG_SU_ENABLE_MESH: VK_EXT_mesh_shader capability (Task & Mesh Shaders, WS004).
+#   1: Enabled, 0: Disabled.
+CONFIG_SU_ENABLE_MESH    ?= 0
+
+# ------------------------------------------------------------------------------
+# 2. Rasterizer (RX) Configuration
+# ------------------------------------------------------------------------------
+# CONFIG_RX_ENABLE_MSAA: Multisample Anti-Aliasing support.
+#   1: Enabled (2x/4x sample generation), 0: 1x sampling only.
+CONFIG_RX_ENABLE_MSAA    ?= 1
+
+# CONFIG_RX_MSAA_SAMPLES: Maximum MSAA sample count when MSAA is enabled (2 or 4). Default: 4.
+CONFIG_RX_MSAA_SAMPLES   ?= 4
+
+# CONFIG_RX_ENABLE_EARLY_Z: Hierarchical Hi-Z occlusion culling RAM.
+#   1: Early-Z active (saves shader work), 0: Late-Z only (reduces BRAM usage).
+CONFIG_RX_ENABLE_EARLY_Z ?= 1
+
+# CONFIG_RX_COARSE_SCAN: Two-level hierarchical tile scanning.
+#   1: Coarse 8x8 / 4x4 tile traversal before fine scan, 0: Direct fine bounding-box scan.
+CONFIG_RX_COARSE_SCAN    ?= 1
+
+# CONFIG_RX_ENABLE_CPOLY: Dedicated hardware Sutherland-Hodgman polygon clipper.
+#   1: Enabled (clips polygons against clip planes in HW), 0: Guard-band bypass mode.
+CONFIG_RX_ENABLE_CPOLY   ?= 1
+
+# ------------------------------------------------------------------------------
+# 3. Texture Unit (TU) Configuration
+# ------------------------------------------------------------------------------
+# CONFIG_TU_ENABLE_BC: Block Compression hardware decompressors (BC1 - BC7).
+#   1: Enabled (decompresses desktop compressed textures in HW), 0: Uncompressed only.
+CONFIG_TU_ENABLE_BC      ?= 0
+
+# CONFIG_TU_ENABLE_ETC2: Mobile standard ETC2 / EAC texture format decompressors.
+#   1: Enabled (formats 147..156 supported in HW), 0: Disabled.
+CONFIG_TU_ENABLE_ETC2    ?= 0
+
+# CONFIG_TU_ENABLE_ANISO: Elliptical Weighted Average (EWA) anisotropic filtering up to 16x.
+#   1: Enabled, 0: Isotropic (trilinear/bilinear) only.
+CONFIG_TU_ENABLE_ANISO   ?= 0
+
+# CONFIG_TU_ENABLE_SEAMLESS_CUBE: Seamless Cube Map edge interpolation.
+#   1: Enabled, 0: Standard face-clamped cube mapping.
+CONFIG_TU_ENABLE_SEAMLESS_CUBE ?= 0
+
+# CONFIG_TU_ENABLE_FP_FILTER: Hardware floating-point texture filtering (FP16/FP32).
+#   1: Enabled (DEVICE_CAPS[25] set), 0: Nearest-only float sampling.
+CONFIG_TU_ENABLE_FP_FILTER ?= 0
+
+# CONFIG_TU_ENABLE_ARRAY: 1D/2D Texture Array layer addressing and coordinate calculation.
+#   1: Enabled, 0: Standard 2D/3D only.
+CONFIG_TU_ENABLE_ARRAY   ?= 0
+
+# CONFIG_TU_ENABLE_TRILINEAR: Mipmap level filtering and trilinear interpolation.
+#   1: Trilinear filtering enabled, 0: Bilinear / Nearest only.
+CONFIG_TU_ENABLE_TRILINEAR ?= 1
+
+# CONFIG_TU_ENABLE_BILINEAR: Hardware bilinear texture filtering.
+#   1: 4-texel footprint & bilinear blending enabled, 0: Nearest-neighbor only.
+CONFIG_TU_ENABLE_BILINEAR ?= 1
+
+# CONFIG_TU_ENABLE_3D_CUBE: 3D volumetric textures and Cube map addressing.
+#   1: Enabled, 0: 2D textures only.
+CONFIG_TU_ENABLE_3D_CUBE ?= 0
+
+# CONFIG_TU_L1_BANKS: Texture cache L1 bank count (1, 2, 4). Default: 4.
+CONFIG_TU_L1_BANKS       ?= 4
+
+# CONFIG_TU_ENABLE_MSHR: Non-blocking Miss Status Holding Registers for L1 cache.
+#   1: Non-blocking MSHR pipeline, 0: Blocking single-issue cache access.
+CONFIG_TU_ENABLE_MSHR    ?= 1
+
+# CONFIG_TU_L1_CACHE_KB: Texture L1 Cache size in KB (4, 8, 16). Default: 8.
+CONFIG_TU_L1_CACHE_KB    ?= 8
+
+# ------------------------------------------------------------------------------
+# 4. Render Output Backend (ROP) & Formats
+# ------------------------------------------------------------------------------
+# CONFIG_FMT_ENABLE_FP16: Half-precision 16-bit float color formats (R16F, RGBA16F).
+#   1: Enabled, 0: Integer only.
+CONFIG_FMT_ENABLE_FP16   ?= 0
+
+# CONFIG_FMT_ENABLE_FP32: Single-precision 32-bit float color formats (R32F, RGBA32F).
+#   1: Enabled, 0: Integer only.
+CONFIG_FMT_ENABLE_FP32   ?= 0
+
+# CONFIG_FMT_ENABLE_SRGB: Hardware sRGB gamma conversion and sRGB framebuffers.
+#   1: Enabled, 0: Linear RGB only.
+CONFIG_FMT_ENABLE_SRGB   ?= 1
+
+# CONFIG_FMT_ENABLE_RGB565: 16-bit packed integer color formats (RGB565, RGBA4, ARGB1555).
+#   1: Enabled, 0: 32-bit RGBA only.
+CONFIG_FMT_ENABLE_RGB565 ?= 1
+
+# CONFIG_FMT_ENABLE_DEPTH24_S8: Standard 24-bit fixed depth with 8-bit stencil (D24_UNORM_S8_UINT).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH24_S8 ?= 1
+
+# CONFIG_FMT_ENABLE_DEPTH32F: High-precision 32-bit float depth (D32_SFLOAT).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH32F ?= 0
+
+# CONFIG_FMT_ENABLE_DEPTH16: Compact 16-bit depth (D16_UNORM).
+#   1: Enabled, 0: Disabled.
+CONFIG_FMT_ENABLE_DEPTH16 ?= 1
+
+# CONFIG_ROP_DUAL_SOURCE: Vulkan Dual-Source Blending (Src1Color / Src1Alpha).
+#   1: Enabled (required for complex font/subpixel blending), 0: Disabled.
+CONFIG_ROP_DUAL_SOURCE   ?= 0
+
+# CONFIG_ROP_ENABLE_LOGICOP: Vulkan 16-mode bitwise LogicOp operations.
+#   1: Enabled, 0: Standard alpha blending only.
+CONFIG_ROP_ENABLE_LOGICOP ?= 0
+
+# CONFIG_ROP_ENABLE_PACK: ROP Path 2 integer and float render target packing.
+#   1: Enabled, 0: Path 0 UNORM formats only.
+CONFIG_ROP_ENABLE_PACK    ?= 1
+
+# CONFIG_ROP_ENABLE_FBLEND: ROP floating-point blending pipeline.
+#   1: Enabled, 0: Disabled.
+CONFIG_ROP_ENABLE_FBLEND  ?= 1
+
+# CONFIG_HAS_BLT: Hardware 2D blitter execution engine (atg_blt).
+#   1: Enabled (CMD_COPY_*, CMD_BLIT), 0: Omitted from synthesis (copies/clears via compute/graphics shaders).
+CONFIG_HAS_BLT           ?= 1
+
+# CONFIG_BLT_ENABLE_SCALE: Hardware 2D blitter arbitrary scaling and window alignment.
+#   1: Enabled (atg_blt_align), 0: 1:1 direct rectangular copies & fills only.
+CONFIG_BLT_ENABLE_SCALE  ?= 1
+
+# CONFIG_BLT_ENABLE_BLEND: Blitter 32-bit color blend-over acceleration.
+#   1: Enabled (atg_blt_blend), 0: Opaque transfers and fills only.
+CONFIG_BLT_ENABLE_BLEND  ?= 1
+
+# CONFIG_BLT_ENABLE_TILE: Blitter 4x4 optimal tiled layout conversions (TILE/UNTILE).
+#   1: Enabled, 0: Linear memory layouts only (tiling via compute/graphics shaders).
+CONFIG_BLT_ENABLE_TILE   ?= 1
+
+# CONFIG_ROP_FAST_CLEAR: Tile metadata fast clear mechanism.
+#   1: Enabled (clears color/depth tile buffer tags instantaneously), 0: Direct write clear.
+CONFIG_ROP_FAST_CLEAR    ?= 1
+
+# CONFIG_ROP_MRT_COUNT: Simultaneous Multiple Render Targets (1..8; typically 1, 2, 4, or 8). Default: 1.
+CONFIG_ROP_MRT_COUNT     ?= 1
+
+# ------------------------------------------------------------------------------
+# 5. Command Processor (CP) & Memory Hierarchy
+# ------------------------------------------------------------------------------
+# Address Width Configuration by Profile:
+#   - Minimal Profile (minimal_sim, basys3, arty_a7):
+#       CONFIG_GPU_VA_BITS  = 30 (1 GiB VA, 18-bit VPN, minimal TLB CAM area & latency)
+#       CONFIG_HOST_PA_BITS = 40 (1 TiB PA, baseline 40-bit PCIe host address)
+#   - Balanced Profile (kc705 standard default):
+#       CONFIG_GPU_VA_BITS  = 32 (4 GiB VA, standard 32-bit GPU virtual address)
+#       CONFIG_HOST_PA_BITS = 40 (1 TiB PA, standard PCIe root complex)
+#   - High-Performance Profile (workstation / server / large FPGA / future ASIC):
+#       CONFIG_GPU_VA_BITS  = 40 (1 TiB VA, large-scale unified virtual space)
+#       CONFIG_HOST_PA_BITS = 48 (256 TiB PA, full 48-bit server physical space)
+#
+# CONFIG_GPU_VA_BITS: GPU Virtual Address Width in bits: 30 (1 GiB), 32 (4 GiB), 36 (64 GiB), 40 (1 TiB). Default: 32.
+CONFIG_GPU_VA_BITS       ?= 32
+
+# CONFIG_HOST_PA_BITS: Host Physical Address Width for PCIe DMA in bits: 40 (1 TiB), 44 (16 TiB), 48 (256 TiB). Default: 40.
+CONFIG_HOST_PA_BITS      ?= 40
+
+# CONFIG_CP_AUTONOMOUS_MMU: Two-level hardware page table walker.
+#   1: Autonomous hardware page walking, 0: Static address mapping or software walk.
+#   (ATG1 では hardware walker は未統合で、DEVICE_CAPS の HW_WALKER は 0)
+CONFIG_CP_AUTONOMOUS_MMU ?= 1
+
+# CONFIG_CP_USE_RV32_CORE: RV32IM microcode processor for complex packet sequencing.
+#   1: RV32IM core active, 0: Lightweight hardwired FSM (minimal resource footprint).
+CONFIG_CP_USE_RV32_CORE  ?= 1
+
+# CONFIG_MC_L2_CACHE_KB: Shared Last-Level Cache (L2) capacity in KB (0, 16, 32, 64, 128). Default: 64.
+CONFIG_MC_L2_CACHE_KB    ?= 64
+
+# CONFIG_MC_L2_WAYS: Shared L2 Cache associativity ways (4, 8, 16). Default: 8.
+CONFIG_MC_L2_WAYS        ?= 8
+
+# CONFIG_VF_CACHE_LINES: Vertex Fetch Cache capacity in lines (2, 4, 8, 16). Default: 8.
+CONFIG_VF_CACHE_LINES    ?= 8
+
+# CONFIG_DC_ENABLE_CURSOR: Display Controller hardware cursor plane.
+#   1: Hardware cursor plane active, 0: Software cursor.
+CONFIG_DC_ENABLE_CURSOR  ?= 1

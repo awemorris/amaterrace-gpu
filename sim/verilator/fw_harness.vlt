@@ -1,0 +1,6 @@
+`verilator_config
+// The firmware harness (fw_harness.cpp) reads the CPU's µop stream into
+// the sequencer: these atg_top wires stay visible to the C++.
+public_flat_rd -module "atg_top" -var "fw_valid"
+public_flat_rd -module "atg_top" -var "fw_ready"
+public_flat_rd -module "atg_top" -var "fw_data"

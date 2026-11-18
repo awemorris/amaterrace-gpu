@@ -1,0 +1,90 @@
+# atg_tu_foot
+
+RTL: `rtl/gpu/tu/atg_tu_foot.v`.  Parent: atg_tu_addr.  Implemented in: p009 (part F, split off atg_tu_addr).
+
+## 1. Purpose and place
+
+One lane's footprint and texel addresses (combinational; stage B of atg_tu_addr).  Children: `atg_tu_toff` (a texel's byte offset, one a slot), `atg_tu_iclamp` (texf's clamps).
+
+## 2. Parameters
+
+None.
+
+## 3. Ports
+
+Combinational.
+
+| Name | Dir | Width | Meaning, handshake and timing |
+| --- | --- | --- | --- |
+| `op` | in | 2 | 0 texl, 1 texb, 2 texf, 3 texsz. |
+| `gather` | in | 1 | Gather (nearest slice of a 3D image). |
+| `cube` | in | 1 | Cube map. |
+| `is3d` | in | 1 | 3D image. |
+| `tiled` | in | 1 | 4×4 tiled layout. |
+| `lin` | in | 1 | Bilinear (and linear in depth for 3D). |
+| `ms` | in | 1 | A multisampled image (texf: texel 4 i + smp of rows of roundup(wl, 2) × 4 texels). |
+| `smp` | in | 2 | texf's sample. |
+| `psl` | in | 3 | log2 of the texel's bytes (0-4). |
+| `ra` | in | 2 | Linear rows: wl rounded up to a multiple of 2^ra texels (TEX_ROW; atg_tu_desc gives 0 for the tiled, compressed and multisampled slots). |
+| `blk` | in | 1 | Compressed 4 × 4 blocks of 2^psl bytes. |
+| `row` | in | 1 | 8-byte texels: the pass's second row (j1). |
+| `col` | in | 1 | 16-byte blocks: the pass's second column (i1). |
+| `gwi` | in | 2 | Gather: the word of the texel that holds the component (8- and 16-byte texels). |
+| `p0` | in | 1 | The pass's second slice. |
+| `mu` | in | 2 | Address mode u. |
+| `mv` | in | 2 | v. |
+| `mw` | in | 2 | w. |
+| `off` | in | 12 | Texel offsets {dw, dv, du} (0 for a cube). |
+| `x` | in | 32 | texf: the integer x (word 0). |
+| `y` | in | 32 | texf: y (word 1). |
+| `z` | in | 32 | texf: z of a 3D image (word 4). |
+| `cu` | in | 31 | The texel coordinate u, 8 fraction bits, signed. |
+| `cv` | in | 31 | v. |
+| `cw` | in | 31 | w (3D). |
+| `wl` | in | 16 | The level's width. |
+| `hl` | in | 16 | Height. |
+| `dl` | in | 16 | Depth. |
+| `face` | in | 3 | A cube lane's face. |
+| `lbase` | in | 32 | The level base (BASE + layer × stride + level offset). |
+| `plane` | in | 32 | The level's plane in bytes. |
+| `stride` | in | 32 | The layer stride (a cube's faces). |
+| `addr` | out | 128 | Slots 0-3: byte address (atg_tu_addr.md §4, "Slots"). |
+| `bord` | out | 4 | Slots 0-3: a border texel. |
+| `fuv` | out | 16 | {fv, fu}. |
+| `fw` | out | 8 | The depth weight (3D linear), else 0. |
+
+36 ports.
+
+## 4. Behaviour
+
+As spec/gpu/tu/atg_tu_addr.md §4, "Footprint" and "Address" (`tools/tumodel.py` `lane_addr`), with the modules `atg_tu_wrap` (the former `tu_wrap`, `tu_mod`) and `atg_tu_cube_texel`.
+
+## 5. State machine
+
+None.
+
+## 6. Latency and throughput
+
+Combinational; atg_tu_addr registers its outputs in LB.
+
+## 7. Corner cases and errors
+
+- `tu_mod` takes an index within 9 texels of [0, p): one correction for p ≥ 16, a 5-bit remainder below.
+
+## 8. What the TB checks
+
+No unit testbench of its own: `sim/tb/atg_tu_addr_tb.v` (every group).
+
+## 9. References
+
+docs/ghci.md §8.4.
+
+## 10. Status
+
+Split off atg_tu_addr in WS288 p009 part F (P3) with the integer wrap, the offsets, the slice and the cube edges.
+
+Multisampling and RGB565 (the MSAA work): new inputs `ms` (a multisampled image: texf's texel 4 i + smp of rows of roundup(wl, 2) × 4 texels), `smp` (the sample), `b2` (2-byte texels: rows of wl × 2 bytes, 32-byte tiles); address bit 1 is kept (the half word of a 2-byte texel), bit 0 the border.
+
+TEX_FORMAT (2026-10-25): `b2` became `psl` (texels of 1-16 bytes: rows of wl × 2^psl bytes; tiled with psl 1, the earlier RGB565, 32-byte tiles), the slots of 8- and 16-byte texels (`row`) and gather's word (`gwi`); the border bit moved from address bit 0 to `bord` (a 1-byte texel's address uses bit 0).  `-DMUT_TU_ROW` reads the second row as the first.
+
+TEX_ROW (2026-10-25): new input `ra`; a linear row is wl rounded up to a multiple of 2^ra texels (17 bits).  `-DMUT_TU_PITCH` reads packed rows (fails `PASS atg_tu_addr.rows`).

@@ -1,0 +1,220 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_tu_tcrd: a lane's texel coordinates with 8 fraction bits for
+ * atg_tu_addr's stage A: (the normalized coordinate's atg_tu_coord) ×
+ * size >> 16, a cube's face coordinate × the face size >> 16, or an
+ * unnormalized coordinate's floor(x × 256) (atg_tu_unnorm).
+ *
+ * Latency:
+ * - LAT = 0: combinational
+ * - LAT = 1: 1 cycle pipeline register in input + 1 cycle in multiplier (total 2 cycles)
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+module atg_tu_tcrd #(
+	parameter LAT = 1,
+	parameter ENABLE_3D_CUBE = 1
+) (
+	input wire clk,
+	input wire rst_n,
+	input wire en,
+	input wire [31:0] cw0,	/* the lane's u, v and w (r) words */
+	input wire [31:0] cw1,
+	input wire [31:0] cw4,
+	input wire [31:0] cw0_un,
+	input wire [31:0] cw1_un,
+	input wire [1:0] mu,
+	input wire [1:0] mv,
+	input wire [1:0] mw,
+	input wire [15:0] wl,
+	input wire [15:0] hl,
+	input wire [15:0] dl,
+	input wire signed [26:0] fcs,	/* a cube's face coordinates */
+	input wire signed [26:0] fct,
+	input wire cube,
+	input wire unn,
+	output wire signed [30:0] cu,
+	output wire signed [30:0] cv,
+	output wire signed [30:0] cw
+);
+	wire rst_inv = !rst_n;
+
+	wire signed [29:0] nu, nv, nw, un0, un1;
+	wire signed [46:0] pu, pv, pw;
+	wire signed [43:0] qu, qv;
+	atg_tu_coord #(.LAT(LAT)) u_nu (.clk(clk), .rst_n(rst_n), .en(en), .f(cw0), .mode(mu), .c(nu));
+	atg_tu_coord #(.LAT(LAT)) u_nv (.clk(clk), .rst_n(rst_n), .en(en), .f(cw1), .mode(mv), .c(nv));
+	generate
+	if (ENABLE_3D_CUBE) begin : g_nw
+		atg_tu_coord #(.LAT(LAT)) u_nw (.clk(clk), .rst_n(rst_n), .en(en), .f(cw4), .mode(mw), .c(nw));
+	end else begin : g_no_nw
+		assign nw = 30'sd0;
+	end
+	endgenerate
+	atg_tu_unnorm #(.LAT(LAT)) u_un0 (.clk(clk), .rst_n(rst_n), .en(en), .f(cw0_un), .c(un0));
+	atg_tu_unnorm #(.LAT(LAT)) u_un1 (.clk(clk), .rst_n(rst_n), .en(en), .f(cw1_un), .c(un1));
+
+	/* LAT >= 1 pipeline registers */
+	reg signed [29:0] r_nu, r_nv, r_nw;
+	reg signed [29:0] r_un0, r_un1;
+	reg signed [29:0] r_un0_d, r_un1_d;
+	reg signed [29:0] r_un0_d2, r_un1_d2;
+	reg signed [26:0] r_fcs, r_fct;
+	reg r_cube, r_unn;
+	reg r_cube_d, r_unn_d;
+	reg r_cube_d2, r_unn_d2;
+
+	always @(posedge clk or posedge rst_inv) begin
+		if (rst_inv) begin
+			r_nu      <= 30'sd0;
+			r_nv      <= 30'sd0;
+			r_nw      <= 30'sd0;
+			r_un0     <= 30'sd0;
+			r_un1     <= 30'sd0;
+			r_un0_d   <= 30'sd0;
+			r_un1_d   <= 30'sd0;
+			r_un0_d2  <= 30'sd0;
+			r_un1_d2  <= 30'sd0;
+			r_fcs     <= 27'sd0;
+			r_fct     <= 27'sd0;
+			r_cube    <= 1'b0;
+			r_unn     <= 1'b0;
+			r_cube_d  <= 1'b0;
+			r_unn_d   <= 1'b0;
+			r_cube_d2 <= 1'b0;
+			r_unn_d2  <= 1'b0;
+		end else if (en) begin
+			r_nu      <= nu;
+			r_nv      <= nv;
+			r_nw      <= nw;
+			r_un0     <= un0;
+			r_un1     <= un1;
+			r_un0_d   <= r_un0;
+			r_un1_d   <= r_un1;
+			r_un0_d2  <= r_un0_d;
+			r_un1_d2  <= r_un1_d;
+			r_fcs     <= fcs;
+			r_fct     <= fct;
+			r_cube    <= cube;
+			r_unn     <= unn;
+			r_cube_d  <= r_cube;
+			r_unn_d   <= r_unn;
+			r_cube_d2 <= r_cube_d;
+			r_unn_d2  <= r_unn_d;
+		end
+	end
+
+	wire signed [29:0] in_nu  = (LAT >= 1) ? r_nu : nu;
+	wire signed [29:0] in_nv  = (LAT >= 1) ? r_nv : nv;
+	wire signed [29:0] in_nw  = (LAT >= 1) ? r_nw : nw;
+	wire signed [26:0] in_fcs = (LAT >= 1) ? r_fcs : fcs;
+	wire signed [26:0] in_fct = (LAT >= 1) ? r_fct : fct;
+	wire signed [29:0] un0_val = (LAT >= 1) ? r_un0_d2 : un0;
+	wire signed [29:0] un1_val = (LAT >= 1) ? r_un1_d2 : un1;
+	wire final_cube            = (LAT >= 1) ? r_cube_d2 : cube;
+	wire final_unn             = (LAT >= 1) ? r_unn_d2  : unn;
+
+	wire mclk = (LAT >= 1) ? clk : 1'b0;
+	localparam MLAT = (LAT >= 1) ? 2 : 0;
+
+	am_mul #(.AW(30), .BW(17), .SIGNED(1), .LAT(MLAT)) u_pu (.clk(mclk), .en(en), .a(in_nu), .b({1'b0, wl}),
+		.p(pu));
+	am_mul #(.AW(30), .BW(17), .SIGNED(1), .LAT(MLAT)) u_pv (.clk(mclk), .en(en), .a(in_nv), .b({1'b0, hl}),
+		.p(pv));
+	generate
+	if (ENABLE_3D_CUBE) begin : g_mul_3d_cube
+		am_mul #(.AW(30), .BW(17), .SIGNED(1), .LAT(MLAT)) u_pw (.clk(mclk), .en(en), .a(in_nw), .b({1'b0, dl}),
+			.p(pw));
+		am_mul #(.AW(27), .BW(17), .SIGNED(1), .LAT(MLAT)) u_qu (.clk(mclk), .en(en), .a(in_fcs), .b({1'b0, wl}),
+			.p(qu));
+		am_mul #(.AW(27), .BW(17), .SIGNED(1), .LAT(MLAT)) u_qv (.clk(mclk), .en(en), .a(in_fct), .b({1'b0, wl}),
+			.p(qv));
+	end else begin : g_no_mul_3d_cube
+		assign pw = 47'sd0;
+		assign qu = 44'sd0;
+		assign qv = 44'sd0;
+	end
+	endgenerate
+
+	/* Post-DSP output registers (when LAT >= 2) */
+	reg signed [30:0] r2_pu, r2_pv, r2_pw;
+	reg signed [27:0] r2_qu, r2_qv;
+	reg signed [29:0] r_un0_d3, r_un1_d3;
+	reg r_cube_u_lo, r_cube_u_hi, r_cube_v_lo, r_cube_v_hi;
+	reg r_unn_u_lo, r_unn_u_hi, r_unn_v_lo, r_unn_v_hi;
+	always @(posedge clk or posedge rst_inv) begin
+		if (rst_inv) begin
+			r2_pu       <= 31'sd0;
+			r2_pv       <= 31'sd0;
+			r2_pw       <= 31'sd0;
+			r2_qu       <= 28'sd0;
+			r2_qv       <= 28'sd0;
+			r_un0_d3    <= 30'sd0;
+			r_un1_d3    <= 30'sd0;
+			r_cube_u_lo <= 1'b0;
+			r_cube_u_hi <= 1'b0;
+			r_cube_v_lo <= 1'b0;
+			r_cube_v_hi <= 1'b0;
+			r_unn_u_lo  <= 1'b0;
+			r_unn_u_hi  <= 1'b0;
+			r_unn_v_lo  <= 1'b0;
+			r_unn_v_hi  <= 1'b0;
+		end else if (en) begin
+			r2_pu       <= pu[46:16];
+			r2_pv       <= pv[46:16];
+			r2_pw       <= pw[46:16];
+			r2_qu       <= qu[43:16];
+			r2_qv       <= qv[43:16];
+			r_un0_d3    <= r_un0_d2;
+			r_un1_d3    <= r_un1_d2;
+			r_cube_u_lo <= r_cube_d2;
+			r_cube_u_hi <= r_cube_d2;
+			r_cube_v_lo <= r_cube_d2;
+			r_cube_v_hi <= r_cube_d2;
+			r_unn_u_lo  <= r_unn_d2;
+			r_unn_u_hi  <= r_unn_d2;
+			r_unn_v_lo  <= r_unn_d2;
+			r_unn_v_hi  <= r_unn_d2;
+		end
+	end
+
+	wire signed [30:0] s2_pu    = (LAT >= 2) ? r2_pu     : pu[46:16];
+	wire signed [30:0] s2_pv    = (LAT >= 2) ? r2_pv     : pv[46:16];
+	wire signed [30:0] s2_pw    = (LAT >= 2) ? r2_pw     : pw[46:16];
+	wire signed [27:0] s2_qu    = (LAT >= 2) ? r2_qu     : qu[43:16];
+	wire signed [27:0] s2_qv    = (LAT >= 2) ? r2_qv     : qv[43:16];
+	wire signed [29:0] s2_un0   = (LAT >= 2) ? r_un0_d3  : un0_val;
+	wire signed [29:0] s2_un1   = (LAT >= 2) ? r_un1_d3  : un1_val;
+	wire s2_cube_u_lo = (LAT >= 2) ? r_cube_u_lo : final_cube;
+	wire s2_cube_u_hi = (LAT >= 2) ? r_cube_u_hi : final_cube;
+	wire s2_cube_v_lo = (LAT >= 2) ? r_cube_v_lo : final_cube;
+	wire s2_cube_v_hi = (LAT >= 2) ? r_cube_v_hi : final_cube;
+	wire s2_unn_u_lo  = (LAT >= 2) ? r_unn_u_lo  : final_unn;
+	wire s2_unn_u_hi  = (LAT >= 2) ? r_unn_u_hi  : final_unn;
+	wire s2_unn_v_lo  = (LAT >= 2) ? r_unn_v_lo  : final_unn;
+	wire s2_unn_v_hi  = (LAT >= 2) ? r_unn_v_hi  : final_unn;
+
+	wire [30:0] qu_ext  = {{3{s2_qu[27]}}, s2_qu};
+	wire [30:0] qv_ext  = {{3{s2_qv[27]}}, s2_qv};
+	wire [30:0] un0_ext = {s2_un0[29], s2_un0};
+	wire [30:0] un1_ext = {s2_un1[29], s2_un1};
+
+	assign cu[15:0]  = s2_cube_u_lo ? qu_ext[15:0]  : s2_unn_u_lo ? un0_ext[15:0]  : s2_pu[15:0];
+	assign cu[30:16] = s2_cube_u_hi ? qu_ext[30:16] : s2_unn_u_hi ? un0_ext[30:16] : s2_pu[30:16];
+	assign cv[15:0]  = s2_cube_v_lo ? qv_ext[15:0]  : s2_unn_v_lo ? un1_ext[15:0]  : s2_pv[15:0];
+	assign cv[30:16] = s2_cube_v_hi ? qv_ext[30:16] : s2_unn_v_hi ? un1_ext[30:16] : s2_pv[30:16];
+	assign cw = s2_pw;
+
+	wire unused_lat0 = (LAT == 0) ? &{1'b0, clk, rst_n, en} : 1'b0;
+	wire unused_ok = &{1'b0, pu[15:0], pv[15:0], pw[15:0], qu[15:0], qv[15:0], unused_lat0};
+endmodule
+
+`default_nettype wire

@@ -1,0 +1,28 @@
+# Build outputs stay out of the tree: Vivado runs, IP output products,
+# bitstreams, simulation binaries and waves.
+/build/
+.Xil/
+*.jou
+*.log
+*.bit
+*.dcp
+*.vvp
+*.vcd
+*.fst
+a.out
+err.txt
+obj_dir/
+# Editor backups.
+*~
+# Python byte code.
+__pycache__/
+# Local configuration and generated headers.
+/config.mk
+/include/atg_config.vh
+/.gen/
+/.srcs/
+
+# The plan records live in a separate private repository; plan is a local symlink to it
+/plan
+/AGENTS.md
+/.agents/skills

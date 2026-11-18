@@ -1,0 +1,325 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_rx: The rasterizer (design §3.8): clip, setup, quad scan into
+ * fragment warps (or direct quads), sequence numbers for the ROP order.
+ *
+ * Wiring of its children; see spec/gpu/rx/atg_rx.md.
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+`include "atg_config.vh"
+`ifdef CFG_ENABLE_MSAA
+`define ATG_DEFAULT_ENABLE_MSAA (`CFG_ENABLE_MSAA != 0)
+`else
+`define ATG_DEFAULT_ENABLE_MSAA 0
+`endif
+
+`ifdef CFG_MSAA_SAMPLES
+`define ATG_DEFAULT_MSAA_SAMPLES `CFG_MSAA_SAMPLES
+`else
+`define ATG_DEFAULT_MSAA_SAMPLES 1
+`endif
+
+`ifdef CFG_ENABLE_EARLY_Z
+`define ATG_DEFAULT_ENABLE_EARLY_Z (`CFG_ENABLE_EARLY_Z != 0)
+`else
+`define ATG_DEFAULT_ENABLE_EARLY_Z 0
+`endif
+
+`ifdef CFG_COARSE_SCAN
+`define ATG_DEFAULT_COARSE_SCAN (`CFG_COARSE_SCAN != 0)
+`else
+`define ATG_DEFAULT_COARSE_SCAN 0
+`endif
+
+module atg_rx #(
+	parameter HAS_SU = 1,	/* Fragment warps to an SU (0: DEBUG_COLOR quads to the ROP) */
+	parameter ENABLE_MSAA = `ATG_DEFAULT_ENABLE_MSAA,
+	parameter MSAA_SAMPLES = `ATG_DEFAULT_MSAA_SAMPLES,
+	parameter ENABLE_EARLY_Z = `ATG_DEFAULT_ENABLE_EARLY_Z,
+	parameter COARSE_SCAN = `ATG_DEFAULT_COARSE_SCAN
+) (
+	input wire clk,
+	input wire rst_n,
+	/* STATE broadcast (from atg_cp_state) */
+	input wire st_we,
+	input wire [8:0] st_idx,
+	input wire [31:0] st_wdata,
+	input wire raw_kick,
+	output wire busy,
+	output wire [3:0] fsm,
+	/* Primitives to the RX */
+	input wire prim_valid,
+	output wire prim_ready,
+	input wire [25:0] prim_vtx,
+	input wire [2:0] prim_free,
+	input wire prim_last,
+	/* PT of SU 0 (atg_su pt_*) */
+	output wire pt_rd,
+	output wire [7:0] pt_idx,
+	output wire [6:0] pt_word,
+	input wire [31:0] pt_rdata,
+	output wire pt_free,
+	output wire [7:0] pt_free_idx,
+	/* Fragment warps to the SU (atg_su fl_*) */
+	output wire fl_req,
+	input wire fl_gnt,
+	output wire fl_we,
+	output wire [5:0] fl_reg,
+	output wire [4:0] fl_lane,
+	output wire [31:0] fl_data,
+	output wire fl_pw_we,
+	output wire [11:0] fl_pw_addr,
+	output wire [31:0] fl_pw_data,
+	output wire fl_go,
+	output wire [31:0] fl_mask,
+	output wire [63:0] fl_info,
+	/* Direct fragments to the ROP (no SU: DEBUG_COLOR) */
+	output wire dx_valid,
+	input wire dx_ready,
+	output wire [15:0] dx_seq,
+	output wire [31:0] dx_xy,
+	output wire [3:0] dx_mask,
+	output wire [127:0] dx_depth,
+	output wire dx_last,
+	/* Sequence numbers to the ROP */
+	output wire ord_valid,
+	output wire [15:0] ord_seq,
+	/* Mesh Stream (from atg_su_exp_mesh) */
+	input wire mesh_valid,
+	output wire mesh_ready,
+	input wire [701:0] mesh_tri,
+	input wire mesh_last,
+	input wire [15:0] mesh_id
+);
+	wire cl_valid, cl_ready, cl_last;
+	wire [701:0] cl_tri;
+	wire sp_valid, sp_ready, sp_last;
+	wire [767:0] sp_tri;
+	wire c_pt_rd, f_pt_rd, f_pt_busy;
+	wire [7:0] c_pt_idx, f_pt_idx;
+	wire [6:0] c_pt_word, f_pt_word;
+	wire s_sq_req, f_sq_req, sq_req;
+	wire [15:0] sq_seq;
+	wire clip_busy, setup_busy, scan_busy, frag_busy;
+	wire fq_valid, fq_ready, fq_end;
+	wire [31:0] fq_xy;
+	wire [15:0] fq_scov;
+	wire [3:0] fq_ccov;
+
+	/* One PT read port: atg_rx_frag's copy has priority, the clip waits while pt_busy. */
+	assign pt_rd = c_pt_rd || f_pt_rd;
+	assign pt_idx = f_pt_rd ? f_pt_idx : c_pt_idx;
+	assign pt_word = f_pt_rd ? f_pt_word : c_pt_word;
+	/* Sequence numbers: the scan's (direct quads) and the warps' never overlap. */
+	assign sq_req = s_sq_req || f_sq_req;
+
+	wire [29:0] prim_in_data = {prim_last, prim_free, prim_vtx};
+	wire prim_pipe_valid, prim_pipe_ready;
+	wire [29:0] prim_pipe_data;
+
+	wire prim_pipe_valid_lo, prim_pipe_valid_hi;
+	wire prim_pipe_ready_lo, prim_pipe_ready_hi;
+	wire [14:0] prim_pipe_data_lo, prim_pipe_data_hi;
+
+`ifdef SYNTH_KINTEX7
+	(* keep = "true", dont_touch = "true" *) wire rst_sync;
+	LUT1 #(.INIT(2'b01)) u_rst_inv (.I0(rst_n), .O(rst_sync));
+`else
+	wire rst_sync = !rst_n;
+`endif
+
+	atg_rx_skid #(.W(15)) u_prim_skid_lo (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(prim_valid),
+		.in_ready(prim_pipe_ready_lo),
+		.in_data(prim_in_data[14:0]),
+		.out_valid(prim_pipe_valid_lo),
+		.out_ready(prim_pipe_ready),
+		.out_data(prim_pipe_data_lo)
+	);
+
+	atg_rx_skid #(.W(15)) u_prim_skid_hi (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(prim_valid),
+		.in_ready(prim_pipe_ready_hi),
+		.in_data(prim_in_data[29:15]),
+		.out_valid(prim_pipe_valid_hi),
+		.out_ready(prim_pipe_ready),
+		.out_data(prim_pipe_data_hi)
+	);
+
+	assign prim_ready = prim_pipe_ready_lo;
+	assign prim_pipe_valid = prim_pipe_valid_lo;
+	assign prim_pipe_data = {prim_pipe_data_hi, prim_pipe_data_lo};
+	wire unused_skid = prim_pipe_ready_hi ^ prim_pipe_valid_hi;
+
+	wire prim_c_valid = prim_pipe_valid;
+	wire prim_c_ready;
+	assign prim_pipe_ready = prim_c_ready;
+	wire [25:0] prim_c_vtx = prim_pipe_data[25:0];
+	wire [2:0]  prim_c_free = prim_pipe_data[28:26];
+	wire        prim_c_last = prim_pipe_data[29];
+
+	reg r_fl_pw_we;
+	reg [11:0] r_fl_pw_addr;
+	reg [31:0] r_fl_pw_data;
+
+	wire w_fl_pw_we;
+	wire [11:0] w_fl_pw_addr;
+	wire [31:0] w_fl_pw_data;
+
+	always @(posedge clk) begin
+		if (rst_sync) begin
+			r_fl_pw_we <= 1'b0;
+			r_fl_pw_addr <= 12'd0;
+			r_fl_pw_data <= 32'd0;
+		end else begin
+			r_fl_pw_we <= w_fl_pw_we;
+			r_fl_pw_addr <= w_fl_pw_addr;
+			r_fl_pw_data <= w_fl_pw_data;
+		end
+	end
+
+	assign fl_pw_we = r_fl_pw_we;
+	assign fl_pw_addr = r_fl_pw_addr;
+	assign fl_pw_data = r_fl_pw_data;
+
+`ifdef SYNTH_KINTEX7
+	wire clip_st_we, setup_st_we, scan_st_we, frag_st_we;
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	LUT1 #(.INIT(2'h2)) u_buf_we_c (.I0(st_we), .O(clip_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	LUT1 #(.INIT(2'h2)) u_buf_we_u (.I0(st_we), .O(setup_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	LUT1 #(.INIT(2'h2)) u_buf_we_s (.I0(st_we), .O(scan_st_we));
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	LUT1 #(.INIT(2'h2)) u_buf_we_f (.I0(st_we), .O(frag_st_we));
+
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+	wire rst_n_clip, rst_n_setup, rst_n_scan, rst_n_frag, rst_n_order;
+	LUT1 #(.INIT(2'h2)) u_rst_c (.I0(rst_n), .O(rst_n_clip));
+	LUT1 #(.INIT(2'h2)) u_rst_u (.I0(rst_n), .O(rst_n_setup));
+	LUT1 #(.INIT(2'h2)) u_rst_s (.I0(rst_n), .O(rst_n_scan));
+	LUT1 #(.INIT(2'h2)) u_rst_f (.I0(rst_n), .O(rst_n_frag));
+	LUT1 #(.INIT(2'h2)) u_rst_o (.I0(rst_n), .O(rst_n_order));
+
+	wire cl_valid_setup = cl_valid;
+
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) wire dx_ready_scan;
+	LUT1 #(.INIT(2'h2)) u_buf_dxr (.I0(dx_ready), .O(dx_ready_scan));
+
+	wire [8:0] clip_st_idx, setup_st_idx, scan_st_idx, frag_st_idx;
+	wire [31:0] clip_st_wdata, setup_st_wdata, scan_st_wdata, frag_st_wdata;
+	genvar g_st;
+	generate
+	for (g_st = 0; g_st < 9; g_st = g_st + 1) begin : g_buf_st_idx
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_idx_c (.I0(st_idx[g_st]), .O(clip_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_idx_u (.I0(st_idx[g_st]), .O(setup_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_idx_s (.I0(st_idx[g_st]), .O(scan_st_idx[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_idx_f (.I0(st_idx[g_st]), .O(frag_st_idx[g_st]));
+	end
+	for (g_st = 0; g_st < 32; g_st = g_st + 1) begin : g_buf_st_wdata
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_wd_c (.I0(st_wdata[g_st]), .O(clip_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_wd_u (.I0(st_wdata[g_st]), .O(setup_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_wd_s (.I0(st_wdata[g_st]), .O(scan_st_wdata[g_st]));
+		(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
+		LUT1 #(.INIT(2'h2)) u_wd_f (.I0(st_wdata[g_st]), .O(frag_st_wdata[g_st]));
+	end
+	endgenerate
+`else
+	wire clip_st_we = st_we, setup_st_we = st_we, scan_st_we = st_we, frag_st_we = st_we;
+	wire [8:0] clip_st_idx = st_idx, setup_st_idx = st_idx, scan_st_idx = st_idx, frag_st_idx = st_idx;
+	wire [31:0] clip_st_wdata = st_wdata, setup_st_wdata = st_wdata, scan_st_wdata = st_wdata, frag_st_wdata = st_wdata;
+	wire cl_valid_setup = cl_valid;
+	wire dx_ready_scan = dx_ready;
+	wire rst_n_clip = rst_n, rst_n_setup = rst_n, rst_n_scan = rst_n, rst_n_frag = rst_n, rst_n_order = rst_n;
+`endif
+
+	atg_rx_clip clip (
+		.clk(clk), .rst_n(rst_n_clip), .st_we(clip_st_we), .st_idx(clip_st_idx), .st_wdata(clip_st_wdata),
+		.raw_kick(raw_kick),
+		.prim_valid(prim_c_valid), .prim_ready(prim_c_ready), .prim_vtx(prim_c_vtx),
+		.prim_free(prim_c_free), .prim_last(prim_c_last),
+		.pt_rd(c_pt_rd), .pt_idx(c_pt_idx), .pt_word(c_pt_word), .pt_rdata(pt_rdata),
+		.pt_busy(f_pt_busy),
+		.cl_valid(cl_valid), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
+		.busy(clip_busy)
+	);
+
+	wire [2:0] rx_prim_type;
+	wire [15:0] rx_line_width, rx_point_size;
+	wire [3:0] rx_viewport_idx;
+
+	atg_rx_setup setup (
+		.clk(clk), .rst_n(rst_n_setup), .st_we(setup_st_we), .st_idx(setup_st_idx), .st_wdata(setup_st_wdata),
+		.cl_valid(cl_valid_setup), .cl_ready(cl_ready), .cl_tri(cl_tri), .cl_last(cl_last),
+		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri),
+		.mesh_last(mesh_last), .mesh_id(mesh_id),
+		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
+		.busy(setup_busy),
+		.prim_type(rx_prim_type),
+		.cur_line_width(rx_line_width),
+		.cur_point_size(rx_point_size),
+		.cur_viewport_idx(rx_viewport_idx)
+	);
+
+	atg_rx_scan #(
+		.HAS_SU(HAS_SU),
+		.ENABLE_MSAA(ENABLE_MSAA),
+		.MSAA_SAMPLES(MSAA_SAMPLES),
+		.ENABLE_EARLY_Z(ENABLE_EARLY_Z),
+		.COARSE_SCAN(COARSE_SCAN)
+	) scan (
+		.clk(clk), .rst_n(rst_n_scan), .st_we(scan_st_we), .st_idx(scan_st_idx), .st_wdata(scan_st_wdata),
+		.sp_valid(sp_valid), .sp_ready(sp_ready), .sp_tri(sp_tri), .sp_last(sp_last),
+		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
+		.fq_end(fq_end), .f_busy(frag_busy),
+		.dx_valid(dx_valid), .dx_ready(dx_ready_scan), .dx_seq(dx_seq), .dx_xy(dx_xy),
+		.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
+		.sq_req(s_sq_req), .sq_seq(sq_seq), .busy(scan_busy)
+	);
+
+	atg_rx_frag frag (
+		.clk(clk), .rst_n(rst_n_frag), .st_we(frag_st_we), .st_idx(frag_st_idx), .st_wdata(frag_st_wdata),
+		.t_load(sp_valid && sp_ready), .t_tri(sp_tri),
+		.fq_valid(fq_valid), .fq_ready(fq_ready), .fq_xy(fq_xy), .fq_scov(fq_scov), .fq_ccov(fq_ccov),
+		.fq_end(fq_end), .busy(frag_busy),
+		.pt_rd(f_pt_rd), .pt_idx(f_pt_idx), .pt_word(f_pt_word), .pt_rdata(pt_rdata),
+		.pt_busy(f_pt_busy),
+		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane),
+		.fl_data(fl_data), .fl_pw_we(w_fl_pw_we), .fl_pw_addr(w_fl_pw_addr), .fl_pw_data(w_fl_pw_data),
+		.fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
+		.sq_req(f_sq_req), .sq_seq(sq_seq)
+	);
+
+	atg_rx_order order (
+		.clk(clk), .rst_n(rst_n_order), .sq_req(sq_req), .sq_seq(sq_seq),
+		.ord_valid(ord_valid), .ord_seq(ord_seq)
+	);
+
+	assign busy = clip_busy || setup_busy || scan_busy || frag_busy;
+	assign fsm = {frag_busy, scan_busy, setup_busy, clip_busy};
+
+	wire unused_ok = &{1'b0, rx_prim_type, rx_line_width, rx_point_size, rx_viewport_idx};
+endmodule
+
+`default_nettype wire

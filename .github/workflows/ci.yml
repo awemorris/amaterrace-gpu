@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint and simulation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator iverilog python3
+
+      - name: Lint (Verilator)
+        run: make lint
+
+      - name: Testbenches (Icarus Verilog)
+        run: make sim
+
+      - name: System harness and raster scene (Verilator)
+        run: make verilator
+
+      - name: Keep the raster image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raster-png
+          path: build/verilator/raster.png
+          if-no-files-found: ignore
+
+  openxc7-synth:
+    name: openXC7 synthesis (GPU core, KC705 shape)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu's yosys is old and needs far more memory on this design than
+      # the runner has; use a pinned OSS CAD Suite (yosys) instead.
+      - name: Cache OSS CAD Suite
+        id: ocs
+        uses: actions/cache@v4
+        with:
+          path: ~/oss-cad-suite
+          key: oss-cad-suite-linux-x64-20261003
+
+      - name: Install OSS CAD Suite
+        if: steps.ocs.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/ocs.tgz \
+            https://github.com/YosysHQ/oss-cad-suite-build/releases/download/2026-10-03/oss-cad-suite-linux-x64-20261003.tgz
+          tar -xzf /tmp/ocs.tgz -C ~
+          rm -f /tmp/ocs.tgz
+
+      - name: Synthesize the GPU core (yosys synth_xilinx)
+        run: |
+          export PATH=~/oss-cad-suite/bin:$PATH
+          yosys -V
+          /usr/bin/time -v make oxc-core 2>&1 | tail -40
+
+      - name: Keep the synthesis log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openxc7-synth-log
+          path: |
+            build/openxc7/core/yosys.log
+            build/openxc7/core/stat.txt
+          if-no-files-found: ignore

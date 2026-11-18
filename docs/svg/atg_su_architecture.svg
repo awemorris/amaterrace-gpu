@@ -1,0 +1,352 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 720" width="1020" height="720">
+    <style><![CDATA[
+    /* Fonts & Resets */
+    text {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #0f172a;
+    }
+    .subtitle {
+        font-size: 13px;
+        font-weight: 500;
+        fill: #475569;
+    }
+    .badge-text {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #ffffff;
+    }
+    .card-title {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .card-subtitle {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-body {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #334155;
+    }
+    .card-bullet {
+        font-size: 11px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .card-sub {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #64748b;
+    }
+    .card-desc {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .conn-label {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .conn-sub {
+        font-size: 9.5px;
+        font-weight: 400;
+        fill: #64748b;
+    }
+    .group-label {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+    }
+    .seq-actor {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .seq-step {
+        font-size: 11px;
+        font-weight: 600;
+        fill: #1e293b;
+    }
+    .seq-desc {
+        font-size: 10px;
+        font-weight: 400;
+        fill: #475569;
+    }
+    .seq-num {
+        font-size: 10.5px;
+        font-weight: 700;
+        fill: #ffffff;
+    }
+    .flow-label {
+        font-size: 9.5px;
+        font-weight: 600;
+        fill: #334155;
+    }
+    .sec-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+]]></style>
+    
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+        <marker id="arrow-fuchsia" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#c026d3"/>
+        </marker>
+        <marker id="arrow-cyan" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0891b2"/>
+        </marker>
+
+        <!-- Linear Gradients -->
+        <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+        </linearGradient>
+    </defs>
+
+
+    <!-- Background Canvas -->
+    <rect width="1020" height="720" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="1018" height="718" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 24)">
+        <text class="title" x="0" y="20">Amaterrace Shader Unit (SU) — Scalable SIMT Warp Architecture</text>
+        <text class="subtitle" x="0" y="40">32-Thread Logical Warp • Configurable NPHYS Scalar PEs (1 / 2 / 4 / 8 / 16 / 32) • G = 32/NPHYS Cycles • FP16×2 Packed Math</text>
+        <rect x="730" y="4" width="260" height="28" rx="14" fill="#d97706" opacity="0.12"/>
+        <text x="860" y="23" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">SCALABLE SIMT WARP (NPHYS)</text>
+    </g>
+
+    <!-- Top Frontend: Instruction & Warp Management -->
+    <g transform="translate(30, 80)">
+        <rect width="960" height="120" rx="10" fill="#ffffff" stroke="#fcd34d" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#fffbeb"/>
+        <text class="group-label" x="18" y="21" fill="#b45309">Frontend &amp; Warp Scheduling (GSI1 64-bit ISA Standard)</text>
+
+        <!-- Sub components -->
+        <g transform="translate(18, 44)">
+            <rect width="210" height="62" rx="6" fill="#fef3c7" stroke="#fde68a" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#92400e">Instruction Cache &amp; Fetch</text>
+            <text class="card-body" x="12" y="38">• atg_su_icache + atg_su_fetch</text>
+            <text class="card-body" x="12" y="52">• 64-bit Instruction Stream</text>
+        </g>
+
+        <g transform="translate(244, 44)">
+            <rect width="230" height="62" rx="6" fill="#fef3c7" stroke="#fde68a" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#92400e">Warp Scheduler &amp; Scoreboard</text>
+            <text class="card-body" x="12" y="38">• Parameterized Resident Warps</text>
+            <text class="card-body" x="12" y="52">• Zero-Bubble Scoreboard Issue</text>
+        </g>
+
+        <g transform="translate(490, 44)">
+            <rect width="230" height="62" rx="6" fill="#fef3c7" stroke="#fde68a" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#92400e">Branch &amp; Divergence Stack</text>
+            <text class="card-body" x="12" y="38">• Per-Thread 32-bit EXEC Mask</text>
+            <text class="card-body" x="12" y="52">• Hardware Re-convergence Stack</text>
+        </g>
+
+        <g transform="translate(736, 44)">
+            <rect width="206" height="62" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#0369a1">TU &amp; LSU Interfaces</text>
+            <text class="card-body" x="12" y="38">• Non-blocking Texture Requests</text>
+            <text class="card-body" x="12" y="52">• Memory Coalescing Interface</text>
+        </g>
+    </g>
+
+    <!-- Middle: Parameterizable Physical Lanes Array (Configurable NPHYS Scalar PEs) -->
+    <g transform="translate(30, 215)">
+        <rect width="960" height="340" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#f8fafc"/>
+        <text class="group-label" x="18" y="21" fill="#334155">Physical Execution Array: Configurable NPHYS Scalar PEs (NPHYS = 1, 2, 4, 8, 16, or 32 Lanes; G = 32/NPHYS Cycles)</text>
+
+        <!-- Lane 0 / PE 0 -->
+        <g transform="translate(18, 44)">
+            <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+            <text class="card-title" x="14" y="22" fill="#b45309">SCALAR PE 0</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">Physical Lane 0 (atg_su_lane)</text>
+
+            <g transform="translate(10, 48)">
+                <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">Register File (GPR)</text>
+                <text class="card-body" x="10" y="34" font-size="10">32/64 GPRs (r0..r62, rq)</text>
+            </g>
+            <g transform="translate(10, 102)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Direct Instantiation</text>
+                <text class="card-body" x="10" y="46" font-size="10">6-Stage Latency Pipeline</text>
+            </g>
+            <g transform="translate(10, 160)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP16×2 Packed Math</text>
+                <text class="card-body" x="10" y="32" font-size="10">fadd2, fsub2, fmul2, ffma2</text>
+                <text class="card-body" x="10" y="46" font-size="10">packh / unpackh / swaph</text>
+            </g>
+            <g transform="translate(10, 218)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">32-bit ALU &amp; SFU</text>
+                <text class="card-body" x="10" y="32" font-size="10">Add, Sub, Logic, Shift, Cmp</text>
+                <text class="card-body" x="10" y="46" font-size="10">rcp, rsq, sin, cos (atg_su_fpu_op)</text>
+            </g>
+        </g>
+
+        <!-- Lane 1 / PE 1 -->
+        <g transform="translate(254, 44)">
+            <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+            <text class="card-title" x="14" y="22" fill="#b45309">SCALAR PE 1</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">Physical Lane 1 (atg_su_lane)</text>
+
+            <g transform="translate(10, 48)">
+                <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">Register File (GPR)</text>
+                <text class="card-body" x="10" y="34" font-size="10">32/64 GPRs (r0..r62, rq)</text>
+            </g>
+            <g transform="translate(10, 102)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Direct Instantiation</text>
+                <text class="card-body" x="10" y="46" font-size="10">6-Stage Latency Pipeline</text>
+            </g>
+            <g transform="translate(10, 160)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP16×2 Packed Math</text>
+                <text class="card-body" x="10" y="32" font-size="10">fadd2, fsub2, fmul2, ffma2</text>
+                <text class="card-body" x="10" y="46" font-size="10">packh / unpackh / swaph</text>
+            </g>
+            <g transform="translate(10, 218)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">32-bit ALU &amp; SFU</text>
+                <text class="card-body" x="10" y="32" font-size="10">Add, Sub, Logic, Shift, Cmp</text>
+                <text class="card-body" x="10" y="46" font-size="10">rcp, rsq, sin, cos (atg_su_fpu_op)</text>
+            </g>
+        </g>
+
+        <!-- Ellipsis separator for scalable lanes -->
+        <g transform="translate(485, 170)">
+            <text x="0" y="0" font-size="28" font-weight="700" fill="#94a3b8" letter-spacing="4">•••</text>
+            <text x="0" y="24" font-size="10" font-weight="600" fill="#64748b">Scalable to NPHYS</text>
+        </g>
+
+        <!-- Lane NPHYS-1 / Scalar PE NPHYS-1 -->
+        <g transform="translate(540, 44)">
+            <rect width="220" height="280" rx="6" fill="#fffbeb" stroke="#fde68a" stroke-width="1.2"/>
+            <text class="card-title" x="14" y="22" fill="#b45309">SCALAR PE (NPHYS - 1)</text>
+            <text class="card-subtitle" x="14" y="38" fill="#d97706">Physical Lane (NPHYS-1)</text>
+
+            <g transform="translate(10, 48)">
+                <rect width="200" height="48" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">Register File (GPR)</text>
+                <text class="card-body" x="10" y="34" font-size="10">32/64 GPRs (r0..r62, rq)</text>
+            </g>
+            <g transform="translate(10, 102)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP32 FMA / am_mul</text>
+                <text class="card-body" x="10" y="32" font-size="10">DSP48E1 Direct Instantiation</text>
+                <text class="card-body" x="10" y="46" font-size="10">6-Stage Latency Pipeline</text>
+            </g>
+            <g transform="translate(10, 160)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">FP16×2 Packed Math</text>
+                <text class="card-body" x="10" y="32" font-size="10">fadd2, fsub2, fmul2, ffma2</text>
+                <text class="card-body" x="10" y="46" font-size="10">packh / unpackh / swaph</text>
+            </g>
+            <g transform="translate(10, 218)">
+                <rect width="200" height="52" rx="4" fill="#ffffff" stroke="#fcd34d" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11.5">32-bit ALU &amp; SFU</text>
+                <text class="card-body" x="10" y="32" font-size="10">Add, Sub, Logic, Shift, Cmp</text>
+                <text class="card-body" x="10" y="46" font-size="10">rcp, rsq, sin, cos (atg_su_fpu_op)</text>
+            </g>
+        </g>
+
+        <!-- Cross-Lane Unit (qd & subgroup) -->
+        <g transform="translate(775, 44)">
+            <rect width="168" height="280" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+            <text class="card-title" x="12" y="22" fill="#15803d">Cross-Lane Unit</text>
+            <text class="card-subtitle" x="12" y="38" fill="#16a34a">atg_su_lane</text>
+
+            <g transform="translate(8, 48)">
+                <rect width="152" height="65" rx="4" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11">Quad Diff (qd)</text>
+                <text class="card-body" x="10" y="34" font-size="9.5">• Screen-space derivatives</text>
+                <text class="card-body" x="10" y="48" font-size="9.5">• ddx / ddy texture LOD</text>
+            </g>
+            <g transform="translate(8, 122)">
+                <rect width="152" height="75" rx="4" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11">Subgroup Ops</text>
+                <text class="card-body" x="10" y="34" font-size="9.5">• shfl (shuffle)</text>
+                <text class="card-body" x="10" y="48" font-size="9.5">• vote / ballot</text>
+                <text class="card-body" x="10" y="62" font-size="9.5">• Cross-lane exchange</text>
+            </g>
+            <g transform="translate(8, 206)">
+                <rect width="152" height="64" rx="4" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+                <text class="card-title" x="10" y="18" font-size="11">Write-Back Bus</text>
+                <text class="card-body" x="10" y="34" font-size="9.5">• atg_su_wb arbiter</text>
+                <text class="card-body" x="10" y="48" font-size="9.5">• 1 short result / cyc</text>
+            </g>
+        </g>
+    </g>
+
+    <!-- Bottom: LDS, Data Cache & Memory Subsystem -->
+    <g transform="translate(30, 570)">
+        <rect width="960" height="120" rx="10" fill="#ffffff" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 10 Q 0 0 10 0 L 950 0 Q 960 0 960 10 L 960 32 L 0 32 Z" fill="#ecfdf5"/>
+        <text class="group-label" x="18" y="21" fill="#047857">Memory &amp; Local Storage (LDS / Data Cache / Shared L2C)</text>
+
+        <g transform="translate(18, 44)">
+            <rect width="290" height="62" rx="6" fill="#f0fdf4" stroke="#a7f3d0" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#065f46">Local Data Share (LDS / atg_su_lds)</text>
+            <text class="card-body" x="12" y="38">• Multi-Banked Workgroup Shared Memory</text>
+            <text class="card-body" x="12" y="52">• Low-latency cross-lane scratchpad sharing</text>
+        </g>
+
+        <g transform="translate(322, 44)">
+            <rect width="300" height="62" rx="6" fill="#f0fdf4" stroke="#a7f3d0" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#065f46">L1 Data Cache &amp; Load/Store Unit (LSU)</text>
+            <text class="card-body" x="12" y="38">• atg_su_dcache + atg_su_lsu</text>
+            <text class="card-body" x="12" y="52">• Memory Access Coalescing Engine</text>
+        </g>
+
+        <g transform="translate(636, 44)">
+            <rect width="306" height="62" rx="6" fill="#f0fdf4" stroke="#a7f3d0" stroke-width="1"/>
+            <text class="card-title" x="12" y="20" fill="#065f46">Shared L2 Cache (LLC) Client Interface</text>
+            <text class="card-body" x="12" y="38">• Unified AMB/AXI4-Coherent Client Port</text>
+            <text class="card-body" x="12" y="52">• Hardware-enforced cache invalidation on barrier</text>
+        </g>
+    </g>
+</svg>

@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""
+Generate docs/svg/atg_data_paths.svg and validate its structure.
+"""
+import os
+import xml.etree.ElementTree as ET
+
+def generate_atg_data_paths():
+    width, height = 1040, 770
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
+    <defs>
+        <!-- Dropshadow Filters -->
+        <filter id="shadow-sm" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+        <filter id="shadow-md" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+
+        <!-- Arrow Markers -->
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0284c7"/>
+        </marker>
+        <marker id="arrow-emerald" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arrow-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d97706"/>
+        </marker>
+        <marker id="arrow-rose" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#e11d48"/>
+        </marker>
+    </defs>
+
+    <style><![CDATA[
+        text {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }}
+        .title {{
+            font-size: 20px;
+            font-weight: 700;
+            fill: #0f172a;
+        }}
+        .subtitle {{
+            font-size: 13px;
+            font-weight: 500;
+            fill: #475569;
+        }}
+        .sec-title {{
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .card-title {{
+            font-size: 12px;
+            font-weight: 700;
+            fill: #1e293b;
+        }}
+        .card-sub {{
+            font-size: 9.5px;
+            font-weight: 600;
+            fill: #64748b;
+        }}
+        .card-desc {{
+            font-size: 9px;
+            font-weight: 400;
+            fill: #475569;
+        }}
+        .flow-label {{
+            font-size: 9px;
+            font-weight: 600;
+            fill: #334155;
+        }}
+        .highlight-text {{
+            font-size: 9.5px;
+            font-weight: 700;
+        }}
+    ]]></style>
+
+    <!-- Background Canvas -->
+    <rect width="{width}" height="{height}" fill="#f8fafc" rx="12"/>
+    <rect x="1" y="1" width="{width-2}" height="{height-2}" fill="none" stroke="#e2e8f0" stroke-width="1.5" rx="11"/>
+
+    <!-- Header Block -->
+    <g transform="translate(30, 22)">
+        <text class="title" x="0" y="20">Amaterrace GPU Execution Data Paths</text>
+        <text class="subtitle" x="0" y="38">Hardware Streaming Dataflow: 3D Graphics, 2D Blit, Systolic Matrix Acceleration, and Display Scanout</text>
+        <rect x="760" y="4" width="220" height="26" rx="13" fill="#1e293b" opacity="0.08"/>
+        <text x="870" y="21" text-anchor="middle" font-size="11" font-weight="700" fill="#0f172a">EXECUTION DATAPATHS</text>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- 1. 3D GRAPHICS PIPELINE                                        -->
+    <!-- ============================================================== -->
+    <g transform="translate(25, 72)">
+        <rect width="990" height="255" rx="8" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <!-- Section Header Banner -->
+        <path d="M 0 8 Q 0 0 8 0 L 982 0 Q 990 0 990 8 L 990 28 L 0 28 Z" fill="#0284c7"/>
+        <text class="sec-title" x="15" y="19" fill="#ffffff">1. 3D Graphics Pipeline (Geometry → Setup &amp; Raster → Fragment &amp; Texture → Tile Blend &amp; Cache Writeback)</text>
+
+        <!-- Block 1: CP -->
+        <g transform="translate(15, 42)">
+            <rect width="95" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="95" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="47" y="15" text-anchor="middle" fill="#0369a1">CP</text>
+            <text class="card-sub" x="47" y="36" text-anchor="middle">Command Dispatch</text>
+            <text class="card-desc" x="47" y="52" text-anchor="middle">• Ring Fetcher</text>
+            <text class="card-desc" x="47" y="66" text-anchor="middle">• Immutable PSO</text>
+            <text class="card-desc" x="47" y="80" text-anchor="middle">• Draw Packet</text>
+            <text class="card-desc" x="47" y="94" text-anchor="middle">• HW Page Walk</text>
+        </g>
+
+        <!-- Arrow CP -> VF -->
+        <path d="M 110 97 L 133 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="122" y="90" text-anchor="middle">Draw</text>
+
+        <!-- Block 2: VF -->
+        <g transform="translate(135, 42)">
+            <rect width="110" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="110" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="55" y="15" text-anchor="middle" fill="#0369a1">VF</text>
+            <text class="card-sub" x="55" y="36" text-anchor="middle">Vertex Fetch &amp; PT-VC</text>
+            <text class="card-desc" x="55" y="52" text-anchor="middle">• 4-Stream DMA</text>
+            <text class="card-desc" x="55" y="66" text-anchor="middle">• 32-Entry PT-VC</text>
+            <text class="card-desc" x="55" y="80" text-anchor="middle" fill="#0284c7" font-weight="700">78% Shader Bypass</text>
+            <text class="card-desc" x="55" y="94" text-anchor="middle">• Primitive Asm</text>
+        </g>
+
+        <!-- Arrow VF -> SU (VS) -->
+        <path d="M 245 97 L 268 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="256" y="90" text-anchor="middle">Attribs</text>
+
+        <!-- Block 3: SU (Vertex Shader) -->
+        <g transform="translate(270, 42)">
+            <rect width="115" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="115" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="57" y="15" text-anchor="middle" fill="#0369a1">SU (Vertex Shader)</text>
+            <text class="card-sub" x="57" y="36" text-anchor="middle">32-Thread SIMT Warp</text>
+            <text class="card-desc" x="57" y="52" text-anchor="middle">• Scalar PE Array</text>
+            <text class="card-desc" x="57" y="66" text-anchor="middle">• True 6-Stage Pipe</text>
+            <text class="card-desc" x="57" y="80" text-anchor="middle">• DSP48E1 am_mul</text>
+            <text class="card-desc" x="57" y="94" text-anchor="middle">• Clip / Position</text>
+        </g>
+
+        <!-- Arrow SU (VS) -> RX -->
+        <path d="M 385 97 L 408 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="396" y="90" text-anchor="middle">Clip Pos</text>
+
+        <!-- Block 4: RX -->
+        <g transform="translate(410, 42)">
+            <rect width="135" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="135" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="67" y="15" text-anchor="middle" fill="#0369a1">RX (Rasterizer)</text>
+            <text class="card-sub" x="67" y="36" text-anchor="middle">Setup &amp; Coarse Raster</text>
+            <text class="card-desc" x="67" y="52" text-anchor="middle">• 1-cyc Setup Pipeline</text>
+            <text class="card-desc" x="67" y="66" text-anchor="middle" fill="#0284c7" font-weight="700">8×8 Tile Skip (1 cyc)</text>
+            <text class="card-desc" x="67" y="80" text-anchor="middle">• 16-Sample MSAA 4x</text>
+            <text class="card-desc" x="67" y="94" text-anchor="middle">• Fast DDA Plane Eval</text>
+        </g>
+
+        <!-- Arrow RX -> SU (FS) -->
+        <path d="M 545 97 L 568 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="556" y="90" text-anchor="middle">Quads</text>
+
+        <!-- Block 5: SU (Fragment Shader) -->
+        <g transform="translate(570, 42)">
+            <rect width="125" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="125" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="62" y="15" text-anchor="middle" fill="#0369a1">SU (Fragment Shader)</text>
+            <text class="card-sub" x="62" y="36" text-anchor="middle">Pixel Warps &amp; Math</text>
+            <text class="card-desc" x="62" y="52" text-anchor="middle">• 32-Pixel Warps</text>
+            <text class="card-desc" x="62" y="66" text-anchor="middle">• Packed FP16×2 Math</text>
+            <text class="card-desc" x="62" y="80" text-anchor="middle">• 32 KiB Multi-Bank LDS</text>
+            <text class="card-desc" x="62" y="94" text-anchor="middle">• Scoreboard Schedule</text>
+        </g>
+
+        <!-- Arrow SU (FS) -> ROP -->
+        <path d="M 695 97 L 718 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="706" y="90" text-anchor="middle">Color/Z</text>
+
+        <!-- Block 6: ROP -->
+        <g transform="translate(720, 42)">
+            <rect width="120" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="120" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="60" y="15" text-anchor="middle" fill="#0369a1">ROP</text>
+            <text class="card-sub" x="60" y="36" text-anchor="middle">Blend &amp; Tile Cache</text>
+            <text class="card-desc" x="60" y="52" text-anchor="middle">• On-Chip Tile Buffer</text>
+            <text class="card-desc" x="60" y="66" text-anchor="middle">• Hazard Pixel Lock</text>
+            <text class="card-desc" x="60" y="80" text-anchor="middle">• Dual-Source Blend</text>
+            <text class="card-desc" x="60" y="94" text-anchor="middle">• Lossless Tile Pack</text>
+        </g>
+
+        <!-- Arrow ROP -> MC/L2C -->
+        <path d="M 840 97 L 863 97" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="851" y="90" text-anchor="middle">Tile WB</text>
+
+        <!-- Block 7: MC Flat Crossbar & Shared L2 LLC -->
+        <g transform="translate(865, 42)">
+            <rect width="110" height="110" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="110" height="22" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="55" y="15" text-anchor="middle" fill="#0369a1">MC &amp; L2 LLC</text>
+            <text class="card-sub" x="55" y="36" text-anchor="middle">Crossbar &amp; Cache</text>
+            <text class="card-desc" x="55" y="52" text-anchor="middle">• 2-cyc Flat Xbar</text>
+            <text class="card-desc" x="55" y="66" text-anchor="middle">• DWRR Arbiter</text>
+            <text class="card-desc" x="55" y="80" text-anchor="middle">• 256KB-2MB LLC</text>
+            <text class="card-desc" x="55" y="94" text-anchor="middle">• AXI4 Host DRAM</text>
+        </g>
+
+        <!-- Branch: Texture Unit (TU) -->
+        <g transform="translate(570, 168)">
+            <rect width="270" height="74" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.2"/>
+            <rect x="0" y="0" width="270" height="20" rx="6" fill="#eff6ff"/>
+            <text class="card-title" x="135" y="14" text-anchor="middle" fill="#0369a1">TU (Texture Unit) — atg_tu</text>
+            <text class="card-desc" x="135" y="34" text-anchor="middle">• 4-Entry MSHR (Hit-Under-Miss: Non-blocking texture access)</text>
+            <text class="card-desc" x="135" y="48" text-anchor="middle">• 4-Bank Interleaved L1 Texture Cache (1-cyc quad texel fetch)</text>
+            <text class="card-desc" x="135" y="62" text-anchor="middle">• 2D/3D/Cube Bilinear &amp; Trilinear Filter • Format Decompression</text>
+        </g>
+
+        <!-- Bidirectional link SU(FS) <-> TU -->
+        <path d="M 625 152 L 625 166" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <path d="M 640 166 L 640 152" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="655" y="162" font-size="8.5">Sample / Texels</text>
+
+        <!-- TU fetch link to MC & L2C -->
+        <path d="M 840 205 L 920 205 L 920 154" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-blue)"/>
+        <text class="flow-label" x="880" y="198" text-anchor="middle" font-size="8.5">MSHR Refill</text>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- 2. 2D BLIT & STREAMING COPY PIPELINE                           -->
+    <!-- ============================================================== -->
+    <g transform="translate(25, 337)">
+        <rect width="990" height="130" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 8 Q 0 0 8 0 L 982 0 Q 990 0 990 8 L 990 26 L 0 26 Z" fill="#059669"/>
+        <text class="sec-title" x="15" y="18" fill="#ffffff">2. 2D Blitter &amp; Fast Memory Copy Pipeline (Fill / Copy / Format Convert / MSAA 4x Resolve)</text>
+
+        <!-- Block 1: CP -->
+        <g transform="translate(15, 36)">
+            <rect width="140" height="82" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.2"/>
+            <rect x="0" y="0" width="140" height="20" rx="6" fill="#f0fdf4"/>
+            <text class="card-title" x="70" y="14" text-anchor="middle" fill="#047857">CP (Command Ring)</text>
+            <text class="card-desc" x="70" y="35" text-anchor="middle">• Dedicated Copy Queue</text>
+            <text class="card-desc" x="70" y="50" text-anchor="middle">• Async Compute / Copy Ring</text>
+            <text class="card-desc" x="70" y="65" text-anchor="middle">• Zero-MMIO DMA Trigger</text>
+        </g>
+
+        <!-- Arrow CP -> BLT -->
+        <path d="M 155 77 L 193 77" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <text class="flow-label" x="174" y="70" text-anchor="middle">Blit Cmd</text>
+
+        <!-- Block 2: BLT Engine -->
+        <g transform="translate(195, 36)">
+            <rect width="395" height="82" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.2"/>
+            <rect x="0" y="0" width="395" height="20" rx="6" fill="#f0fdf4"/>
+            <text class="card-title" x="197" y="14" text-anchor="middle" fill="#047857">BLT (Streaming 2D Blitter &amp; Resolve Engine) — atg_blt</text>
+            <text class="card-desc" x="197" y="35" text-anchor="middle">• 1 KiB Dual Ping-Pong DMA Buffers (Sustained 2.0+ GB/s Streaming Throughput)</text>
+            <text class="card-desc" x="197" y="50" text-anchor="middle">• 1-Cycle Parallel MSAA 4x Resolve (4-Sample Downsample Box Average without Stall)</text>
+            <text class="card-desc" x="197" y="65" text-anchor="middle">• Fast Color Fill, Alpha-Over Blending, and Linear ↔ Tiled Texture Layout Transposition</text>
+        </g>
+
+        <!-- Arrow BLT -> MC Xbar -->
+        <path d="M 590 77 L 628 77" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <text class="flow-label" x="609" y="70" text-anchor="middle">Burst DMA</text>
+
+        <!-- Block 3: MC Flat Crossbar -->
+        <g transform="translate(630, 36)">
+            <rect width="165" height="82" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.2"/>
+            <rect x="0" y="0" width="165" height="20" rx="6" fill="#f0fdf4"/>
+            <text class="card-title" x="82" y="14" text-anchor="middle" fill="#047857">MC Flat Crossbar</text>
+            <text class="card-desc" x="82" y="35" text-anchor="middle">• Level 0 DWRR Fair Schedule</text>
+            <text class="card-desc" x="82" y="50" text-anchor="middle">• Registered Skid Buffer (1 cyc)</text>
+            <text class="card-desc" x="82" y="65" text-anchor="middle">• Multi-Flit Packet Atomic Lock</text>
+        </g>
+
+        <!-- Arrow MC Xbar -> L2C/MC -->
+        <path d="M 795 77 L 833 77" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arrow-emerald)"/>
+        <text class="flow-label" x="814" y="70" text-anchor="middle">Writeback</text>
+
+        <!-- Block 4: Shared L2C & MC -->
+        <g transform="translate(835, 36)">
+            <rect width="140" height="82" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.2"/>
+            <rect x="0" y="0" width="140" height="20" rx="6" fill="#f0fdf4"/>
+            <text class="card-title" x="70" y="14" text-anchor="middle" fill="#047857">Shared L2C &amp; MC</text>
+            <text class="card-desc" x="70" y="35" text-anchor="middle">• Write-Combining Buffers</text>
+            <text class="card-desc" x="70" y="50" text-anchor="middle">• Coherent Flush / Invalidate</text>
+            <text class="card-desc" x="70" y="65" text-anchor="middle">• AXI4-Full Master</text>
+        </g>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- 3. SYSTOLIC MATRIX & LLM ACCELERATOR PIPELINE                  -->
+    <!-- ============================================================== -->
+    <g transform="translate(25, 477)">
+        <rect width="990" height="130" rx="8" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 8 Q 0 0 8 0 L 982 0 Q 990 0 990 8 L 990 26 L 0 26 Z" fill="#7c3aed"/>
+        <text class="sec-title" x="15" y="18" fill="#ffffff">3. Systolic Matrix Multiplication &amp; LLM Accelerator Pipeline (Scalable to 100 TOPS)</text>
+
+        <!-- Block 1: CP -->
+        <g transform="translate(15, 36)">
+            <rect width="135" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="135" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="67" y="14" text-anchor="middle" fill="#6b21a8">CP (Tensor Dispatch)</text>
+            <text class="card-desc" x="67" y="35" text-anchor="middle">• Compute Queue</text>
+            <text class="card-desc" x="67" y="50" text-anchor="middle">• Tensor Descriptor Parse</text>
+            <text class="card-desc" x="67" y="65" text-anchor="middle">• Matrix Shape / Strides</text>
+        </g>
+
+        <!-- Arrow CP -> VF/DMA -->
+        <path d="M 150 77 L 183 77" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="166" y="70" text-anchor="middle">Shape</text>
+
+        <!-- Block 2: VF/DMA -->
+        <g transform="translate(185, 36)">
+            <rect width="130" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="130" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="65" y="14" text-anchor="middle" fill="#6b21a8">VF / Stream DMA</text>
+            <text class="card-desc" x="65" y="35" text-anchor="middle">• High-Bandwidth Fetch</text>
+            <text class="card-desc" x="65" y="50" text-anchor="middle">• FP16 / BF16 / INT8</text>
+            <text class="card-desc" x="65" y="65" text-anchor="middle">• Weight Matrix Stream</text>
+        </g>
+
+        <!-- Arrow VF -> SU Scheduler -->
+        <path d="M 315 77 L 348 77" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="331" y="70" text-anchor="middle">Weights</text>
+
+        <!-- Block 3: SU Scheduler -->
+        <g transform="translate(350, 36)">
+            <rect width="145" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="145" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="72" y="14" text-anchor="middle" fill="#6b21a8">SU (Warp Scheduler)</text>
+            <text class="card-desc" x="72" y="35" text-anchor="middle">• 32 KiB Multi-Bank LDS</text>
+            <text class="card-desc" x="72" y="50" text-anchor="middle">• Activation Staging</text>
+            <text class="card-desc" x="72" y="65" text-anchor="middle">• Systolic Feed Orchestrator</text>
+        </g>
+
+        <!-- Arrow SU -> SA -->
+        <path d="M 495 77 L 528 77" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="511" y="70" text-anchor="middle">A Stream</text>
+
+        <!-- Block 4: SA (Systolic Array) -->
+        <g transform="translate(530, 36)">
+            <rect width="190" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="190" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="95" y="14" text-anchor="middle" fill="#6b21a8">SA (32×32 Systolic Array)</text>
+            <text class="card-desc" x="95" y="35" text-anchor="middle">• 1,024 MAC Processing Elements</text>
+            <text class="card-desc" x="95" y="50" text-anchor="middle" fill="#7c3aed" font-weight="700">0.8 TOPS / SU @ 200 MHz</text>
+            <text class="card-desc" x="95" y="65" text-anchor="middle">• Scalable to 100 TOPS Multi-Core</text>
+        </g>
+
+        <!-- Arrow SA -> SU Norm -->
+        <path d="M 720 77 L 753 77" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="736" y="70" text-anchor="middle">Partial Sums</text>
+
+        <!-- Block 5: SU Norm/Act -->
+        <g transform="translate(755, 36)">
+            <rect width="115" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="115" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="57" y="14" text-anchor="middle" fill="#6b21a8">SU (Post-Process)</text>
+            <text class="card-desc" x="57" y="35" text-anchor="middle">• LayerNorm / RMSNorm</text>
+            <text class="card-desc" x="57" y="50" text-anchor="middle">• SiLU / GELU / ReLU</text>
+            <text class="card-desc" x="57" y="65" text-anchor="middle">• Quantize / Output</text>
+        </g>
+
+        <!-- Arrow SU Norm -> L2C -->
+        <path d="M 870 77 L 903 77" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-purple)"/>
+        <text class="flow-label" x="886" y="70" text-anchor="middle">Results</text>
+
+        <!-- Block 6: L2C & MC -->
+        <g transform="translate(905, 36)">
+            <rect width="70" height="82" rx="6" fill="#ffffff" stroke="#c084fc" stroke-width="1.2"/>
+            <rect x="0" y="0" width="70" height="20" rx="6" fill="#faf5ff"/>
+            <text class="card-title" x="35" y="14" text-anchor="middle" fill="#6b21a8">L2C / MC</text>
+            <text class="card-desc" x="35" y="42" text-anchor="middle">• LLC</text>
+            <text class="card-desc" x="35" y="58" text-anchor="middle">• DRAM</text>
+        </g>
+    </g>
+
+    <!-- ============================================================== -->
+    <!-- 4. DISPLAY CONTROLLER SCANOUT & PREEMPTION PATH                -->
+    <!-- ============================================================== -->
+    <g transform="translate(25, 617)">
+        <rect width="990" height="135" rx="8" fill="#fffbeb" stroke="#fde68a" stroke-width="1.5" filter="url(#shadow-sm)"/>
+        <path d="M 0 8 Q 0 0 8 0 L 982 0 Q 990 0 990 8 L 990 26 L 0 26 Z" fill="#d97706"/>
+        <text class="sec-title" x="15" y="18" fill="#ffffff">4. Display Controller (DC) Scanout &amp; Multi-Level Watermark Preemption Path (Tear-Free 1080p@60Hz)</text>
+
+        <!-- Block 1: Host / Local DRAM Framebuffer -->
+        <g transform="translate(15, 36)">
+            <rect width="140" height="86" rx="6" fill="#ffffff" stroke="#fcd34d" stroke-width="1.2"/>
+            <rect x="0" y="0" width="140" height="20" rx="6" fill="#fffbeb"/>
+            <text class="card-title" x="70" y="14" text-anchor="middle" fill="#b45309">DRAM Framebuffer</text>
+            <text class="card-desc" x="70" y="35" text-anchor="middle">• 1920×1080 @ 60 Hz</text>
+            <text class="card-desc" x="70" y="50" text-anchor="middle">• 148.5 MHz Dot Clock</text>
+            <text class="card-desc" x="70" y="65" text-anchor="middle">• Zero-Copy Shared Pool</text>
+            <text class="card-desc" x="70" y="78" text-anchor="middle">• Linear Scanout Buffer</text>
+        </g>
+
+        <!-- Arrow DRAM -> MC Crossbar -->
+        <path d="M 155 79 L 198 79" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-amber)"/>
+        <text class="flow-label" x="176" y="72" text-anchor="middle">Scanout</text>
+
+        <!-- Block 2: MC Flat Crossbar (Level 1 Strict Priority) -->
+        <g transform="translate(200, 36)">
+            <rect width="180" height="86" rx="6" fill="#ffffff" stroke="#fcd34d" stroke-width="1.2"/>
+            <rect x="0" y="0" width="180" height="20" rx="6" fill="#fffbeb"/>
+            <text class="card-title" x="90" y="14" text-anchor="middle" fill="#b45309">MC Flat Crossbar Arbiter</text>
+            <text class="card-desc" x="90" y="35" text-anchor="middle">• Level 1 Strict Priority Channel</text>
+            <text class="card-desc" x="90" y="50" text-anchor="middle">• Instant DC Grant on Valid</text>
+            <text class="card-desc" x="90" y="65" text-anchor="middle">• Zero-Bubble Panic Preempt</text>
+            <text class="card-desc" x="90" y="78" text-anchor="middle" fill="#d97706" font-weight="700">2-Cycle Roundtrip Latency</text>
+        </g>
+
+        <!-- Arrow MC Crossbar -> BRAM AFIFO -->
+        <path d="M 380 79 L 418 79" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-amber)"/>
+        <text class="flow-label" x="399" y="72" text-anchor="middle">DMA Read</text>
+
+        <!-- Block 3: 2048-Word BRAM AFIFO -->
+        <g transform="translate(420, 36)">
+            <rect width="210" height="86" rx="6" fill="#ffffff" stroke="#fcd34d" stroke-width="1.2"/>
+            <rect x="0" y="0" width="210" height="20" rx="6" fill="#fffbeb"/>
+            <text class="card-title" x="105" y="14" text-anchor="middle" fill="#b45309">2048-Word BRAM AFIFO</text>
+            <text class="card-desc" x="105" y="35" text-anchor="middle">• am_afifo_bram (Dual-Clock CDC)</text>
+            <text class="card-desc" x="105" y="50" text-anchor="middle">• gclk (200 MHz) ↔ pclk (200 MHz)</text>
+            <text class="card-desc" x="105" y="65" text-anchor="middle" fill="#b45309" font-weight="700">Urgent (&lt;40%) / Panic (&lt;20%) WMs</text>
+            <text class="card-desc" x="105" y="78" text-anchor="middle">• 32-Line Continuous Burst Prefetch</text>
+        </g>
+
+        <!-- Arrow AFIFO -> DC -->
+        <path d="M 630 79 L 668 79" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-amber)"/>
+        <text class="flow-label" x="649" y="72" text-anchor="middle">pclk Data</text>
+
+        <!-- Block 4: DC (Display Controller) -->
+        <g transform="translate(670, 36)">
+            <rect width="165" height="86" rx="6" fill="#ffffff" stroke="#fcd34d" stroke-width="1.2"/>
+            <rect x="0" y="0" width="165" height="20" rx="6" fill="#fffbeb"/>
+            <text class="card-title" x="82" y="14" text-anchor="middle" fill="#b45309">DC (Display Controller)</text>
+            <text class="card-desc" x="82" y="35" text-anchor="middle">• Independent 200 MHz Domain</text>
+            <text class="card-desc" x="82" y="50" text-anchor="middle">• Hardware Cursor &amp; Color LUT</text>
+            <text class="card-desc" x="82" y="65" text-anchor="middle">• YCbCr / RGB Conversion</text>
+            <text class="card-desc" x="82" y="78" text-anchor="middle">• Survives Full 3D Core Reset</text>
+        </g>
+
+        <!-- Arrow DC -> Output -->
+        <path d="M 835 79 L 873 79" fill="none" stroke="#d97706" stroke-width="2" marker-end="url(#arrow-amber)"/>
+        <text class="flow-label" x="854" y="72" text-anchor="middle">TMDS</text>
+
+        <!-- Block 5: HDMI / DVI Output -->
+        <g transform="translate(875, 36)">
+            <rect width="100" height="86" rx="6" fill="#ffffff" stroke="#fcd34d" stroke-width="1.2"/>
+            <rect x="0" y="0" width="100" height="20" rx="6" fill="#fffbeb"/>
+            <text class="card-title" x="50" y="14" text-anchor="middle" fill="#b45309">HDMI / DVI</text>
+            <text class="card-desc" x="50" y="42" text-anchor="middle">• 1080p @ 60Hz</text>
+            <text class="card-desc" x="50" y="58" text-anchor="middle">• Tear-Free Scan</text>
+            <text class="card-desc" x="50" y="74" text-anchor="middle">• Zero Jitter</text>
+        </g>
+
+        <!-- Preemption Feedback Loop: Urgent / Panic from AFIFO back to MC Crossbar -->
+        <path d="M 525 122 L 525 130 L 290 130 L 290 122" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-dasharray="3,3" marker-end="url(#arrow-rose)"/>
+        <text class="flow-label" x="407" y="127" text-anchor="middle" fill="#e11d48" font-size="8.5" font-weight="700">dc_urgent (&lt;40%) / dc_panic (&lt;20%) Preemption Feedback (Throttles 3D Traffic)</text>
+    </g>
+</svg>
+"""
+
+def main():
+    content = generate_atg_data_paths()
+    # Validate XML
+    ET.fromstring(content)
+    out_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "svg", "atg_data_paths.svg")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print(f"Successfully generated {out_path} ({len(content)} bytes)")
+
+if __name__ == "__main__":
+    main()

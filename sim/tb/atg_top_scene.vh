@@ -1,0 +1,502 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_top_scene.vh: the scene harness of atg_top_raster_tb,
+ * atg_top_shade_tb, atg_top_tex_tb and atg_top_msaa_tb: the GPU (HAS_RX,
+ * HAS_ROP, and HAS_VF/NSU/HAS_TU/MS4 when given) driven only through its
+ * host port runs the ring of a scene file (the I/R/E lines of
+ * tools/rx-raster-scene.py, tools/rx-shade-scene.py, tools/rx-tex-scene.py
+ * and tools/rx-msaa-scene.py) and the memory words of the E lines must
+ * equal the model's.  A line "C NAME" among the E lines starts a case:
+ * the harness prints "PASS TB(NAME).CASE" (or FAIL) for the E lines up to
+ * the next C line.  CAPS[29] must be MS4 && HAS_VF && HAS_TU && NSU,
+ * CAPS[30] and CAPS[9] (Vulkan 1.0 core rendering, the KC705's shape)
+ * HAS_VF && HAS_TU && NSU && SU_VARY_WORDS >= 64.  Lines "F vkformat
+ * optimal linear buffer limits" (before the first E line, CORE scenes)
+ * are the FMT capability's words for that format, checked before the ring
+ * starts (PASS TB(NAME).fmt).
+ */
+
+module atg_top_scene_harness #(
+	parameter LINE_BYTES = 32,
+	parameter LINE_SHIFT = 5,
+	parameter DATA_W = 64,
+	parameter NAME = "dut",
+	parameter TB = "atg_top_raster",
+	parameter SCENE = "sim/vec/raster_scene.txt",
+	parameter SEED = 1,
+	/* the blocks (atg_top's parameters) */
+	parameter HAS_VF = 0,
+	parameter NSU = 0,
+	parameter HAS_TU = 0,
+	parameter SU_NPHYS = 8,
+	parameter SU_GRP_W = 2,
+	parameter SU_VARY_WORDS = 16,
+	/* the rest of the SU shape and the ROP (atg_top's defaults; the KC705
+	 * board top's values in atg_top_shade_tb's kc705 instance) */
+	parameter SU_NREGS = 32,
+	parameter SU_SB_ENTRIES = 4,
+	parameter SU_SBE_W = 2,
+	parameter SU_PACKED = 0,
+	parameter SU_SUBGROUP = 0,
+	parameter SU_FRAG_RESERVE = 1,
+	parameter SU_LDS_BYTES = 4096,
+	parameter ROP_STENCIL = 0,
+	parameter MS4 = 0,
+	parameter [3:0] MRT_COUNT = 4'd1,
+	parameter HAS_FFILT = 0,
+	parameter HAS_ROP_PACK = 0,
+	parameter HAS_ETC = 0,
+	/* where the ring is, log2 of its bytes (RING_SIZE), and how many
+	 * FENCE_LAST reads to wait for the scene's end */
+	parameter [31:0] RING = 32'h0005F000,
+	parameter RING_LOG2 = 11,
+	parameter WAIT_READS = 200000,
+	/* the memory's bytes (log2) and the aperture's limit */
+	parameter MEM_LOG2 = 19,
+	parameter [31:0] APER_LIMIT = 32'h00060000,
+	parameter ENABLE_CASE_SELECT = 0
+) (
+	input wire clk,
+	input wire rst_n,
+	output reg finished,
+	output integer errors
+);
+	`include "ghci_regs.vh"
+
+	integer seed = SEED;
+
+	reg [16:0] h_awaddr = 0;
+	reg [11:0] h_awid = 0;
+	reg h_awvalid = 1'b0;
+	wire h_awready;
+	reg [63:0] h_wdata = 0;
+	reg [7:0] h_wstrb = 0;
+	reg h_wlast = 1'b0;
+	reg h_wvalid = 1'b0;
+	wire h_wready;
+	wire [11:0] h_bid;
+	wire [1:0] h_bresp;
+	wire h_bvalid;
+	reg h_bready = 1'b0;
+	reg [16:0] h_araddr = 0;
+	reg [11:0] h_arid = 0;
+	reg [3:0] h_arlen = 0;
+	reg h_arvalid = 1'b0;
+	wire h_arready;
+	wire [63:0] h_rdata;
+	wire [11:0] h_rid;
+	wire [1:0] h_rresp;
+	wire h_rlast;
+	wire h_rvalid;
+	reg h_rready = 1'b0;
+	wire irq;
+
+	wire [63:0] awaddr, araddr;
+	wire [7:0] awlen, arlen;
+	wire [2:0] awsize, arsize, awprot, arprot;
+	wire [1:0] awburst, arburst, bresp, rresp;
+	wire [3:0] awcache, arcache;
+	wire awvalid, awready, wlast, wvalid, wready, bvalid, bready;
+	wire arvalid, arready, rlast, rvalid, rready;
+	wire [DATA_W-1:0] wdata, rdata;
+	wire [DATA_W/8-1:0] wstrb;
+
+	atg_top #(.LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .DATA_W(DATA_W),
+		.HAS_RX(1), .HAS_ROP(1), .HAS_VF(HAS_VF), .NSU(NSU), .HAS_TU(HAS_TU), .SU_NPHYS(SU_NPHYS),
+		.SU_GRP_W(SU_GRP_W), .SU_VARY_WORDS(SU_VARY_WORDS), .SU_NREGS(SU_NREGS),
+		.SU_SB_ENTRIES(SU_SB_ENTRIES), .SU_SBE_W(SU_SBE_W), .SU_PACKED(SU_PACKED),
+		.SU_SUBGROUP(SU_SUBGROUP), .SU_FRAG_RESERVE(SU_FRAG_RESERVE),
+		.SU_LDS_BYTES(SU_LDS_BYTES), .ROP_STENCIL(ROP_STENCIL), .MS4(MS4),
+		.MRT_COUNT(MRT_COUNT),
+		.HAS_FFILT(HAS_FFILT),
+		.HAS_ROP_PACK(HAS_ROP_PACK),
+		.HAS_ETC(HAS_ETC),
+		.APERTURE_BASE_INIT(32'h00020000), .APERTURE_LIMIT_INIT(APER_LIMIT),
+		.HAS_BLT(1), .HAS_L2(0)) dut (
+		.clk(clk), .rst_n(rst_n), .irq(irq), .mem_ready(1'b1),
+		.s_awaddr(h_awaddr), .s_awid(h_awid), .s_awvalid(h_awvalid), .s_awready(h_awready),
+		.s_wdata(h_wdata), .s_wstrb(h_wstrb), .s_wlast(h_wlast), .s_wvalid(h_wvalid),
+		.s_wready(h_wready), .s_bid(h_bid), .s_bresp(h_bresp), .s_bvalid(h_bvalid),
+		.s_bready(h_bready), .s_araddr(h_araddr), .s_arid(h_arid), .s_arlen(h_arlen),
+		.s_arvalid(h_arvalid), .s_arready(h_arready), .s_rdata(h_rdata), .s_rid(h_rid),
+		.s_rresp(h_rresp), .s_rlast(h_rlast), .s_rvalid(h_rvalid), .s_rready(h_rready),
+		.m_awid(), .m_bid(1'b0), .m_arid(), .m_rid(1'b0),
+		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
+		.m_awcache(awcache), .m_awprot(awprot), .m_awvalid(awvalid), .m_awready(awready),
+		.m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wvalid(wvalid),
+		.m_wready(wready), .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready),
+		.m_araddr(araddr), .m_arlen(arlen), .m_arsize(arsize), .m_arburst(arburst),
+		.m_arcache(arcache), .m_arprot(arprot), .m_arvalid(arvalid), .m_arready(arready),
+		.m_rdata(rdata), .m_rresp(rresp), .m_rlast(rlast), .m_rvalid(rvalid),
+		.m_rready(rready),
+		/* Nothing outside the GPU here. */
+		.xr_wr(), .xr_waddr(), .xr_wdata(), .xr_wstrb(), .xr_rd(), .xr_raddr(),
+		.xr_rdata(32'd0),
+		.x_req_valid(1'b0), .x_req_ready(), .x_req_write(1'b0), .x_req_line({(32-LINE_SHIFT){1'b0}}),
+		.x_req_be({LINE_BYTES{1'b0}}), .x_req_wdata({(LINE_BYTES*8){1'b0}}), .x_req_tag(8'd0),
+		.x_rsp_valid(), .x_rsp_write(), .x_rsp_tag(), .x_rsp_rdata(), .x_rsp_error(),
+		.x_vsync(1'b0),
+		.pclk(1'b0), .prst_n(1'b0), .scl_i(1'b1), .sda_i(1'b1),
+		.j_wr(1'b0), .j_waddr(17'd0), .j_wdata(32'd0), .j_wstrb(4'd0), .j_rd(1'b0),
+		.j_raddr(17'd0), .j_rdata(), .j_busy()
+	);
+
+	axi_mem #(.DATA_W(DATA_W), .MEM_BYTES(1 << MEM_LOG2), .READ_EARLY(1), .SEED(SEED + 7)) mem (
+		.clk(clk), .rst_n(rst_n),
+		.awaddr(awaddr[31:0]), .awlen(awlen), .awsize(awsize), .awburst(awburst),
+		.awvalid(awvalid), .awready(awready), .wdata(wdata), .wstrb(wstrb),
+		.wlast(wlast), .wvalid(wvalid), .wready(wready), .bresp(bresp),
+		.bvalid(bvalid), .bready(bready), .araddr(araddr[31:0]), .arlen(arlen),
+		.arsize(arsize), .arburst(arburst), .arvalid(arvalid), .arready(arready),
+		.rdata(rdata), .rresp(rresp), .rlast(rlast), .rvalid(rvalid), .rready(rready)
+	);
+
+	`include "axi_host.vh"
+
+	task wait_reg;
+		input [31:0] off;
+		input [31:0] want;
+		input [31:0] mask;
+		reg [31:0] got;
+		reg [31:0] st, fi, fa;
+		integer n;
+		reg faulted;
+		begin
+			faulted = 1'b0;
+			n = 0;
+			host_read(off, got);
+			while ((got & mask) != (want & mask) && n < WAIT_READS && !faulted) begin
+				host_read(GHCI_REG_STATUS, st);
+				if (st[GHCI_STATUS_FAULTED]) begin
+					host_read(GHCI_REG_FAULT_INFO, fi);
+					host_read(GHCI_REG_FAULT_ADDR_LO, fa);
+					$display("FAIL %0s(%0s): FAULTED, FAULT_INFO %08x FAULT_ADDR %08x", TB, NAME, fi, fa);
+					errors = errors + 1;
+					faulted = 1'b1;
+				end else begin
+					host_read(off, got);
+					n = n + 1;
+				end
+			end
+			if (!faulted && (got & mask) != (want & mask)) begin
+				errors = errors + 1;
+				$display("FAIL %0s(%0s): reg %h stays %h, waiting for %h", TB, NAME,
+					off, got, want);
+			end
+		end
+	endtask
+
+	integer fd, rc, nr, wp, bad, bad_rt, bad_ds, cbad, ncase, nfmt, fmt_bad, fk;
+	reg [31:0] fmt_w [0:1279];	/* the F lines: 5 words each */
+	reg [31:0] fmt_regs, xoff, xw, f0, f1, f2, f3, f4;
+	reg [8*2-1:0] kind;
+	reg [8*32-1:0] cname;
+	reg [31:0] a, v, got;
+	reg [8*256-1:0] scene_path;
+	reg [8*64-1:0] case_name;
+	reg fmt_only_req;
+
+	initial begin
+		finished = 1'b0;
+		errors = 0;
+		bad = 0;
+		bad_rt = 0;
+		bad_ds = 0;
+		cbad = 0;
+		ncase = 0;
+		nfmt = 0;
+		fmt_bad = 0;
+		wp = 0;
+		@(posedge rst_n);
+		repeat (8) @(posedge clk);
+
+		got = dut.cp.u_caps.device_caps;
+		if (got[31] !== (MS4 != 0)) begin
+			errors = errors + 1;
+			$display("FAIL %0s(%0s): CAPS %h, bit 31 (MSAA) not as the shape", TB, NAME, got);
+		end
+		if (got[29] !== 1'b1) begin
+			errors = errors + 1;
+			$display("FAIL %0s(%0s): CAPS %h, bit 29 (BLT) not as the shape", TB, NAME, got);
+		end
+		host_write(GHCI_LEGACY_APERTURE_BASE, 32'h00020000);
+		host_write(GHCI_LEGACY_APERTURE_LIMIT, APER_LIMIT);
+		scene_path = SCENE;
+		fmt_only_req = 1'b0;
+		if ($value$plusargs("scene=%s", scene_path)) begin
+			/* explicit scene override */
+		end else if (ENABLE_CASE_SELECT) begin
+			if ($value$plusargs("case=%s", case_name)) begin
+				if (case_name == "fmt") begin
+					scene_path = "sim/vec/core_fmt.txt";
+					fmt_only_req = 1'b1;
+				end else begin
+					$sformat(scene_path, "sim/vec/core_%0s.txt", case_name);
+				end
+			end else if ($test$plusargs("fmt_only") || $test$plusargs("fmt")) begin
+				scene_path = "sim/vec/core_fmt.txt";
+				fmt_only_req = 1'b1;
+			end else if ($test$plusargs("stencil")) begin
+				scene_path = "sim/vec/core_stencil.txt";
+			end else if ($test$plusargs("d16")) begin
+				scene_path = "sim/vec/core_d16.txt";
+			end else if ($test$plusargs("mrt")) begin
+				scene_path = "sim/vec/core_mrt.txt";
+			end else if ($test$plusargs("fblend")) begin
+				scene_path = "sim/vec/core_fblend.txt";
+			end else if ($test$plusargs("lines_points")) begin
+				scene_path = "sim/vec/core_lines_points.txt";
+			end else if ($test$plusargs("lines_4x")) begin
+				scene_path = "sim/vec/core_lines_4x.txt";
+			end else if ($test$plusargs("bias")) begin
+				scene_path = "sim/vec/core_bias.txt";
+			end else if ($test$plusargs("clamp_far")) begin
+				scene_path = "sim/vec/core_clamp_far.txt";
+			end else if ($test$plusargs("occlusion")) begin
+				scene_path = "sim/vec/core_occlusion.txt";
+			end else if ($test$plusargs("texfmt")) begin
+				scene_path = "sim/vec/core_texfmt.txt";
+			end else if ($test$plusargs("vfmt")) begin
+				scene_path = "sim/vec/core_vfmt.txt";
+			end else if ($test$plusargs("blt_keep")) begin
+				scene_path = "sim/vec/core_blt_keep.txt";
+			end else if ($test$plusargs("guard")) begin
+				scene_path = "sim/vec/core_guard.txt";
+			end else if ($test$plusargs("ms_stencil_mrt")) begin
+				scene_path = "sim/vec/core_ms_stencil_mrt.txt";
+			end else if ($test$plusargs("backtoback")) begin
+				scene_path = "sim/vec/core_backtoback.txt";
+			end else if ($test$plusargs("reversez")) begin
+				scene_path = "sim/vec/core_reversez.txt";
+			end else if ($test$plusargs("vp_flat")) begin
+				scene_path = "sim/vec/core_vp_flat.txt";
+			end else if ($test$plusargs("resolve_fmt")) begin
+				scene_path = "sim/vec/core_resolve_fmt.txt";
+			end else if ($test$plusargs("etc2")) begin
+				scene_path = "sim/vec/core_etc2.txt";
+			end else if ($test$plusargs("vary64")) begin
+				scene_path = "sim/vec/core_vary64.txt";
+			end else if ($test$plusargs("vs_tex")) begin
+				scene_path = "sim/vec/core_vs_tex.txt";
+			end else if ($test$plusargs("bounds")) begin
+				scene_path = "sim/vec/core_bounds.txt";
+			end
+		end
+		fd = $fopen(scene_path, "r");
+		if (fd == 0) begin
+			errors = errors + 1;
+			$display("FAIL %0s(%0s): no %0s", TB, NAME, scene_path);
+		end else begin
+			rc = $fscanf(fd, "%s %d\n", kind, nr);
+			/* Initial memory and the ring's words, up to the first E or C line. */
+			while (!$feof(fd) && kind != "E" && kind != "C") begin
+				rc = $fscanf(fd, "%s", kind);
+				if (kind == "I") begin
+					rc = $fscanf(fd, " %h %h\n", a, v);
+					mem.poke32(a, v);
+				end else if (kind == "R") begin
+					rc = $fscanf(fd, " %h\n", v);
+					mem.poke32(RING + wp * 4, v);
+					wp = wp + 1;
+				end else if (kind == "F") begin
+					rc = $fscanf(fd, " %h %h %h %h %h\n", f0, f1, f2, f3, f4);
+					fmt_w[5 * nfmt] = f0;
+					fmt_w[5 * nfmt + 1] = f1;
+					fmt_w[5 * nfmt + 2] = f2;
+					fmt_w[5 * nfmt + 3] = f3;
+					fmt_w[5 * nfmt + 4] = f4;
+					nfmt = nfmt + 1;
+				end
+			end
+			if (nfmt != 0)
+				check_fmt;
+			if ($test$plusargs("fmt_only") || fmt_only_req || wp == 0) begin
+				$fclose(fd);
+			end else begin
+				host_write(GHCI_RING_BASE, RING);
+				host_write(GHCI_RING_SIZE, 32'h00010000);	/* 64 KiB */
+				host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
+				host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+				host_write(GHCI_RING_WPTR, wp);
+				wait_reg(GHCI_LEGACY_FENCE_LAST, 32'd1, 32'hFFFFFFFF);
+				expect_status;
+				/* The first E or C line's kind was read already. */
+				rc = 1;
+				while (rc == 1) begin
+					if (kind == "E") begin
+						rc = $fscanf(fd, " %h %h\n", a, v);
+						if (rc == 2)
+							check(a, v);
+					end else if (kind == "C") begin
+						end_case;
+						rc = $fscanf(fd, " %s\n", cname);
+						ncase = ncase + 1;
+					end
+					rc = $feof(fd) ? 0 : $fscanf(fd, "%s", kind);
+				end
+				end_case;
+				$fclose(fd);
+				if (bad != 0) begin
+					errors = errors + 1;
+					if (ncase != 0)
+						$display("FAIL %0s(%0s): %0d words differ from the model", TB, NAME, bad);
+					else
+						$display("FAIL %0s(%0s): %0d words differ from the model (colour %0d, depth %0d)",
+							TB, NAME, bad, bad_rt, bad_ds);
+				end else
+					$display("PASS %0s(%0s).scene: %0d ring words", TB, NAME, wp);
+			end
+		end
+		finished = 1'b1;
+	end
+
+
+	/* Assert: DRAW_RAW kicks the clip only after all nine payload words have
+	 * reached it (the CP registers the STATE broadcast; without that the
+	 * kick came a cycle early, the third vertex's z still unwritten). */
+	integer k9;
+	always @(posedge clk)
+		if (dut.g_rx.rx.clip.raw_kick)
+			for (k9 = 0; k9 < 9; k9 = k9 + 1)
+				if (^dut.g_rx.rx.clip.rw[k9] === 1'bx) begin
+					errors = errors + 1;
+					$display("FAIL %0s(%0s): DRAW_RAW kicked with word %0d unwritten", TB, NAME, k9);
+				end
+
+	/* The end of a case (C line): its words against the model. */
+	task end_case;
+		begin
+			if (ncase != 0) begin
+				if (cbad != 0)
+					$display("FAIL %0s(%0s).%0s: %0d words differ from the model", TB, NAME,
+						cname, cbad);
+				else
+					$display("PASS %0s(%0s).%0s", TB, NAME, cname);
+			end
+			cbad = 0;
+		end
+	endtask
+
+	task check;
+		input [31:0] addr;
+		input [31:0] want;
+		begin
+			got = mem.peek32(addr);
+			if (got !== want) begin
+				if (cbad < 4 || bad < 8)
+					$display("FAIL %0s(%0s): mem %h = %h, model %h", TB, NAME, addr, got, want);
+				bad = bad + 1;
+				cbad = cbad + 1;
+				if (addr < 32'h00030000)
+					bad_rt = bad_rt + 1;
+				else
+					bad_ds = bad_ds + 1;
+			end
+		end
+	endtask
+
+	/* The FMT capability (checked via CMD_QUERY_CAPS block against the F lines) */
+	task check_fmt;
+		integer n;
+		reg [31:0] q_ring;
+		reg [31:0] q_dst;
+		reg [31:0] q_fence;
+		reg [31:0] f_got;
+		reg [31:0] f_want;
+		reg [31:0] fmt_count;
+		reg [7:0] v;
+		integer qwp;
+		begin
+			q_ring = 32'h0005E000;
+			q_dst = 32'h0005E400;
+			q_fence = 32'h0005E800;
+			qwp = 0;
+
+			/* Clear destination buffer and fence */
+			for (n = 0; n < 192; n = n + 1)
+				mem.poke32(q_dst + n * 4, 32'd0);
+			mem.poke32(q_fence, 32'd0);
+
+			/* CMD_QUERY_CAPS (opcode 0x15, dwords 5) */
+			mem.poke32(q_ring + qwp * 4, 32'h00000515); qwp = qwp + 1;
+			mem.poke32(q_ring + qwp * 4, q_dst);        qwp = qwp + 1; /* dst_addr lo */
+			mem.poke32(q_ring + qwp * 4, 32'd0);        qwp = qwp + 1; /* dst_addr hi */
+			mem.poke32(q_ring + qwp * 4, 32'd768);      qwp = qwp + 1; /* dst_bytes = 768 */
+			mem.poke32(q_ring + qwp * 4, 32'd0);        qwp = qwp + 1; /* unused */
+
+			/* Trailing CMD_FENCE (opcode 0x33, dwords 6) */
+			mem.poke32(q_ring + qwp * 4, 32'h00000633); qwp = qwp + 1;
+			mem.poke32(q_ring + qwp * 4, q_fence);      qwp = qwp + 1; /* fence_addr lo */
+			mem.poke32(q_ring + qwp * 4, 32'd0);        qwp = qwp + 1; /* fence_addr hi */
+			mem.poke32(q_ring + qwp * 4, 32'hCAFE0001); qwp = qwp + 1; /* fence val */
+			mem.poke32(q_ring + qwp * 4, 32'd0);        qwp = qwp + 1; /* aux */
+			mem.poke32(q_ring + qwp * 4, 32'd2);        qwp = qwp + 1; /* mem write */
+
+			/* Run ring */
+			host_write(GHCI_RING_BASE, q_ring);
+			host_write(GHCI_RING_SIZE, 32'h00010000);
+			host_write(GHCI_LEGACY_FENCE_LAST, 32'd0);
+			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RUN);
+			host_write(GHCI_RING_WPTR, qwp);
+
+			/* Wait for CMD_FENCE completion */
+			wait_reg(GHCI_LEGACY_FENCE_LAST, 32'hCAFE0001, 32'hFFFFFFFF);
+
+			/* Reset CP engine so subsequent ring commands start cleanly */
+			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
+			repeat (4) @(posedge clk);
+			host_write(GHCI_CTRL, 32'd0);
+			repeat (4) @(posedge clk);
+			wait_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_RUNNING);
+			host_write(GHCI_LEGACY_APERTURE_BASE, 32'h00020000);
+			host_write(GHCI_LEGACY_APERTURE_LIMIT, APER_LIMIT);
+
+			/* Verify capability block header */
+			f_got = mem.peek32(q_dst);
+			if (f_got !== 32'h50414347) begin
+				errors = errors + 1;
+				$display("FAIL %0s(%0s): capability block BLOCK_ID %h != 'GCAP'", TB, NAME, f_got);
+			end
+
+			fmt_count = mem.peek32(q_dst + 17 * 4);
+
+			/* Compare block FMT[v] (word 32 + v) against F lines */
+			for (n = 0; n < nfmt; n = n + 1) begin
+				v = fmt_w[5 * n][7:0];
+				if (v >= fmt_count)
+					f_got = 32'd0;
+				else
+					f_got = mem.peek32(q_dst + (32 + v) * 4);
+				f_want = {10'd0, fmt_w[5 * n + 3][6:3], fmt_w[5 * n + 2][8:0], fmt_w[5 * n + 1][8:0]};
+				if (f_got !== f_want) begin
+					if (fmt_bad < 8)
+						$display("FAIL %0s(%0s): FMT %0d block = %h, model = %h", TB, NAME, v, f_got, f_want);
+					fmt_bad = fmt_bad + 1;
+				end
+			end
+
+			if (fmt_bad != 0)
+				errors = errors + 1;
+			else
+				$display("PASS %0s(%0s).fmt: %0d formats", TB, NAME, nfmt);
+		end
+	endtask
+
+	task expect_status;
+		reg [31:0] st;
+		begin
+			host_read(GHCI_STATUS, st);
+			if (!st[GHCI_STATUS_RUNNING] || st[GHCI_STATUS_FAULTED]) begin
+				errors = errors + 1;
+				$display("FAIL %0s(%0s): STATUS %h, not RUNNING (a fault?)", TB, NAME, st);
+			end
+		end
+	endtask
+endmodule
+

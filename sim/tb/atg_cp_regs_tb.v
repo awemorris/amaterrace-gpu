@@ -1,0 +1,514 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * atg_cp_regs_tb: the register decoder with its parameters set to
+ * recognisable values: the identification and capability words, the
+ * extended capability list walked from EXTCAP for three XCAP_MASK values,
+ * the snoop and alias outputs of a write, the OR of the modules' read
+ * data, COUNTER and the PERF counters; with atg_cp_fmt beside it (a fourth
+ * bench, FMT in the list), the FMT capability's words for every VkFormat
+ * value against sim/vec/fmt_info.txt (and DISP2, id 11, pointing to 0x200).
+ */
+
+`timescale 1ns / 1ps
+`default_nettype none
+
+module regs_bench #(
+	parameter [10:0] XCAP = 11'h004,
+	parameter [31:0] TAG = 32'd0,
+	parameter VA_BITS = 32,
+	parameter PA_BITS = 40
+) (
+	input wire clk,
+	input wire rst_n,
+	input wire reg_wr,
+	input wire [16:0] reg_waddr,
+	input wire [31:0] reg_wdata,
+	input wire [3:0] reg_wstrb,
+	input wire reg_rd,
+	input wire [16:0] reg_raddr,
+	output wire [31:0] reg_rdata,
+	output wire hcr_we,
+	output wire [9:0] hcr_widx,
+	output wire [31:0] hcr_wdata,
+	output wire [31:0] hcr_wmask,
+	output wire [9:0] hcr_ridx,
+	output wire alias_we,
+	output wire [9:0] alias_idx,
+	output wire [9:0] alias_ridx,
+	input wire [31:0] ctl_rdata,
+	input wire [31:0] state_rdata,
+	input wire [3:0] perf_busy,
+	input wire perf_reset,
+	output wire win_en,
+	input wire [7:0] tb_fmt_idx,
+	output wire [31:0] tb_fmt_val
+);
+	wire [31:0] boot_caps;
+	wire [31:0] cap_dev_caps, cap_feat, cap_fmt0, cap_res_warps, cap_isa_id;
+	wire [31:0] cap_gclk, cap_vendor_id, cap_device_id, cap_subsystem;
+	wire [31:0] cap_mem_cache_cfg, cap_perf_src;
+
+	atg_cp_caps #(
+		.GCLK_HZ(32'd12345678), .VENDOR_ID(32'h56454E44), .DEVICE_ID(32'h44455631),
+		.DEVICE_VERSION(32'h00070009), .NATIVE_ISA_ID(32'h4E415431),
+		.XCAP_MASK(XCAP), .PERF_SRC(32'hFFFF0801),
+		.RESIDENT_WARPS(16'd24), .NREGS(8'd64), .LOCAL_BASE(32'h80000000),
+		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000), .HOST_LIMIT(32'h80000000),
+		.SUBSYSTEM_VENDOR(16'h10EE), .SUBSYSTEM_DEVICE(16'h0007),
+		.MRT_COUNT(4'd4),
+		.VA_BITS(VA_BITS),
+		.PA_BITS(PA_BITS),
+		.HAS_TU(1),
+		.HAS_ROP(1),
+		.HAS_VF(1),
+		.HAS_D16(1),
+		.HAS_D24S8(1),
+		.HAS_D32F(1),
+		.HAS_STENCIL(1),
+		.HAS_FBLEND(1),
+		.TU_BILINEAR(1),
+		.HAS_FFILT(1),
+		.HAS_ROP_PACK(1)
+	) u_caps (
+		.clk(clk), .rst_n(rst_n),
+		.r_idx(9'd0), .r_data(),
+		.boot_caps(boot_caps),
+		.device_caps(cap_dev_caps),
+		.ext_cap_feature(cap_feat),
+		.ext_cap_fmt0(cap_fmt0),
+		.resident_warps(cap_res_warps),
+		.native_isa_id(cap_isa_id),
+		.gclk_hz(cap_gclk),
+		.vendor_id(cap_vendor_id),
+		.device_id(cap_device_id),
+		.subsystem(cap_subsystem),
+		.device_version(),
+		.mem_cache_cfg(cap_mem_cache_cfg),
+		.prot_caps(),
+		.perf_src(cap_perf_src),
+		.fmt_limits(),
+		.extcap_present(),
+		.fmt_idx(tb_fmt_idx),
+		.fmt_val(tb_fmt_val)
+	);
+
+	atg_cp_regs #(
+		.GCLK_HZ(32'd12345678), .VENDOR_ID(32'h56454E44), .DEVICE_ID(32'h44455631),
+		.DEVICE_VERSION(32'h00070009), .ISA_ID(32'h49534131), .NATIVE_ISA_ID(32'h4E415431),
+		.VEND({32'h77, 32'h66, 32'h55, 32'h44, 32'h33, 32'h22, 32'h11, 32'h00}),
+		.XCAP_MASK(XCAP), .DISP_OFFSET(32'h00010000), .PERF_SRC(32'hFFFF0801),
+		.RESIDENT_WARPS(16'd24), .NREGS(8'd64), .LOCAL_BASE(32'h80000000),
+		.LOCAL_BYTES(32'h40000000), .WINDOW_BYTES(32'h04000000), .HOST_LIMIT(32'h80000000),
+		.SUBSYSTEM_VENDOR(16'h10EE), .SUBSYSTEM_DEVICE(16'h0007)
+	) dut (
+		.clk(clk), .rst_n(rst_n),
+		.reg_wr(reg_wr), .reg_waddr(reg_waddr), .reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb),
+		.reg_rd(reg_rd), .reg_raddr(reg_raddr), .reg_rdata(reg_rdata),
+		.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
+		.hcr_ridx(hcr_ridx), .alias_we(alias_we), .alias_idx(alias_idx),
+		.alias_ridx(alias_ridx),
+		.ctl_rdata(ctl_rdata), .irq_rdata(32'd0), .ring_rdata(32'd0), .fence_rdata(32'd0),
+		.dbg_rdata(32'd0), .state_rdata(state_rdata), .x_rdata(32'd0),
+		.perf_busy(perf_busy), .perf_reset(perf_reset), .win_en(win_en),
+		.diag_cp_pc(32'd0), .diag_cp_status(32'd0), .diag_pipe_fsm(32'd0),
+		.cap_boot_caps(boot_caps)
+	);
+endmodule
+
+module atg_cp_regs_tb;
+	`include "ghci_regs.vh"
+
+	parameter VA_BITS = 32;
+	parameter PA_BITS = 40;
+	localparam [3:0] VA_BITS_ENC = (VA_BITS >= 30) ? (VA_BITS - 30) : 4'd0;
+	localparam [3:0] PA_BITS_ENC = (PA_BITS >= 40) ? (PA_BITS - 40) : 4'd0;
+
+	reg clk = 1'b0;
+	reg rst_n = 1'b0;
+	always #5 clk = !clk;
+
+	reg reg_wr = 0, reg_rd = 0, perf_reset = 0;
+	reg [16:0] reg_waddr = 0, reg_raddr = 0;
+	reg [31:0] reg_wdata = 0;
+	reg [3:0] reg_wstrb = 0;
+	reg [3:0] perf_busy = 0;
+	reg [31:0] ctl_rdata = 0, state_rdata = 0;
+	wire [31:0] rd0, rd1, rd2, rd3, hcr_wdata, hcr_wmask;
+	wire hcr_we, alias_we;
+	wire [9:0] hcr_widx, hcr_ridx;
+	wire [9:0] alias_idx, alias_ridx;
+	wire win0, win2;
+
+	/* PERF only; PERF, VEND, CPFW; every capability (more than two entries, MEM among them). */
+	regs_bench #(.XCAP(8'h04), .VA_BITS(VA_BITS), .PA_BITS(PA_BITS)) b0 (
+		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
+		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
+		.reg_rdata(rd0), .hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata),
+		.hcr_wmask(hcr_wmask), .hcr_ridx(hcr_ridx), .alias_we(alias_we),
+		.alias_idx(alias_idx), .alias_ridx(alias_ridx), .ctl_rdata(ctl_rdata),
+		.state_rdata(state_rdata), .perf_busy(perf_busy), .perf_reset(perf_reset),
+		.win_en(win0), .tb_fmt_idx(8'd0), .tb_fmt_val()
+	);
+	regs_bench #(.XCAP(8'h2C), .VA_BITS(VA_BITS), .PA_BITS(PA_BITS)) b1 (
+		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
+		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
+		.reg_rdata(rd1), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
+		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
+		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(), .tb_fmt_idx(8'd0), .tb_fmt_val()
+	);
+	regs_bench #(.XCAP(10'h0EF), .VA_BITS(VA_BITS), .PA_BITS(PA_BITS)) b2 (
+		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
+		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
+		.reg_rdata(rd2), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
+		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
+		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(win2), .tb_fmt_idx(8'd0), .tb_fmt_val()
+	);
+	regs_bench #(.XCAP(11'h604), .VA_BITS(VA_BITS), .PA_BITS(PA_BITS)) b3 (
+		.clk(clk), .rst_n(rst_n), .reg_wr(reg_wr), .reg_waddr(reg_waddr),
+		.reg_wdata(reg_wdata), .reg_wstrb(reg_wstrb), .reg_rd(reg_rd), .reg_raddr(reg_raddr),
+		.reg_rdata(rd3), .hcr_we(), .hcr_widx(), .hcr_wdata(), .hcr_wmask(), .hcr_ridx(),
+		.alias_we(), .alias_idx(), .alias_ridx(), .ctl_rdata(32'd0), .state_rdata(32'd0),
+		.perf_busy(4'd0), .perf_reset(1'b0), .win_en(), .tb_fmt_idx(tb_fmt_idx), .tb_fmt_val(tb_fmt_val)
+	);
+
+	integer errors = 0;
+	integer e0;
+	reg [31:0] v0, v1, v2, v3, c0;
+	integer fd, code, fi;
+	reg [67:0] finfo;
+	reg [15:0] xo, xb, xo0, xb0;
+	reg [7:0] fv;
+	reg [7:0] tb_fmt_idx = 8'd0;
+	wire [31:0] tb_fmt_val;
+
+	task rd;
+		input [16:0] a;
+		begin
+			@(negedge clk);
+			reg_rd = 1;
+			reg_raddr = a;
+			@(negedge clk);
+			reg_rd = 0;
+			reg_raddr = 17'h1FFFC;	/* the answer must not follow the address */
+			#1;
+			v0 = rd0;
+			v1 = rd1;
+			v2 = rd2;
+			v3 = rd3;
+		end
+	endtask
+
+	task expect0;
+		input [8*30-1:0] what;
+		input [16:0] a;
+		input [31:0] want;
+		begin
+			rd(a);
+			if (v0 !== want) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.%0s: [%h] = %h, expected %h", what, a, v0, want);
+			end
+		end
+	endtask
+
+	/* Walk the capability list of bench k: ids and pointers, in order. */
+	task walk;
+		input integer k;
+		input [63:0] ids;	/* expected ids, low byte first, 0 ends */
+		input [255:0] ptrs;
+		reg [31:0] off, w0, w1;
+		integer n;
+		begin
+			rd(GHCI_REG_EXTCAP_PTR);
+			off = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
+			n = 0;
+			while (off != 0 && n < 8) begin
+				rd(off[16:0]);
+				w0 = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
+				rd(off[16:0] + 17'd4);
+				w1 = k == 0 ? v0 : k == 1 ? v1 : k == 2 ? v2 : v3;
+				if (w0[7:0] !== ids[n * 8 +: 8] || w0[15:8] !== 8'd1 ||
+				    w1 !== ptrs[n * 32 +: 32]) begin
+					errors = errors + 1;
+					$display("FAIL atg_cp_regs.extcap: bench %0d entry %0d at %h: %h %h", k, n,
+						off, w0, w1);
+				end
+				off = w0[31:16] == 0 ? 0 : off + {w0[31:16], 2'b00};
+				n = n + 1;
+			end
+			if (ids[n * 8 +: 8] !== 8'd0) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.extcap: bench %0d list ends after %0d", k, n);
+			end
+		end
+	endtask
+
+	task wr;
+		input [16:0] a;
+		input [31:0] d;
+		input [3:0] s;
+		begin
+			@(negedge clk);
+			reg_wr = 1;
+			reg_waddr = a;
+			reg_wdata = d;
+			reg_wstrb = s;
+			#1;
+		end
+	endtask
+
+	integer i;
+	initial begin
+		repeat (3) @(posedge clk);
+		@(negedge clk);
+		rst_n = 1;
+		/* id */
+		expect0("id", GHCI_REG_MAGIC, GHCI_MAGIC_VALUE);
+		expect0("id", GHCI_REG_VERSION, 32'h00010000);
+		expect0("id", GHCI_REG_BOOT_CAPS, {16'd0, PA_BITS_ENC, VA_BITS_ENC, 8'h01});
+		expect0("id", GHCI_REG_EXTCAP_PTR, 32'h00000100);
+		expect0("id", GHCI_REG_GCLK_HZ, 32'd0);
+		expect0("id", GHCI_REG_NATIVE_ISA_ID, 32'd0);
+		expect0("id", GHCI_REG_RESIDENT_WARPS, 32'd0);
+		expect0("id", GHCI_REG_SESSION_ACTIVE, 32'h00000001);
+		/* VEND at 0x180 */
+		expect0("id", 17'h180, 32'd0);
+		expect0("id", 17'h184, 32'd0);
+		expect0("id", 17'h188, 32'd0);
+		expect0("id", 17'h18C, 32'd0);
+		expect0("id", 17'h190, 32'd0);
+		/* Values checked on u_caps */
+		if (b0.cap_gclk !== 32'd12345678) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs: b0.cap_gclk %h, expected 12345678", b0.cap_gclk);
+		end
+		if (b0.cap_isa_id !== 32'h4E415431) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs: b0.cap_isa_id %h, expected 4E415431", b0.cap_isa_id);
+		end
+		if (b0.cap_res_warps !== {8'd0, 8'd64, 16'd24}) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs: b0.cap_res_warps %h, expected 00400018", b0.cap_res_warps);
+		end
+		if (b0.cap_vendor_id !== 32'h56454E44 || b0.cap_device_id !== 32'h44455631 ||
+		    b0.cap_subsystem !== {16'h0007, 16'h10EE}) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs: b0 vendor/device/subsystem mismatch");
+		end
+		expect0("id", GHCI_REG_EXT_CAP_FMT0, 32'd0);
+		expect0("id", GHCI_REG_EXT_CAP_FEATURE, 32'd0);
+		expect0("id", 17'h0E0, 32'd0);
+		expect0("id", 17'h01C00, 32'd0);
+		expect0("id", 17'h10000, 32'd0);
+		if (errors == 0)
+			$display("PASS atg_cp_regs.id");
+		e0 = errors;
+		/* extcap */
+		walk(0, 64'h03, 256'h160);
+		walk(1, 64'h060403, {32'h170, 32'h180, 32'h160});
+		walk(2, 64'h08_07_06_04_03_02_01, {32'h1E0, 32'h140, 32'h170, 32'h180, 32'h160, 32'h0,
+			32'h10000});
+		/* MEM's words where it is listed; 0 where it is not. */
+		rd(17'h001E0);
+		if (v2 !== 32'h80000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: LOCAL_BASE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001E4);
+		if (v2 !== 32'h40000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: LOCAL_SIZE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001E8);
+		if (v2 !== 32'h04000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: WINDOW_SIZE %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001EC);
+		if (v2 !== 32'h80000000 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: HOST_LIMIT %h, without MEM %h", v2, v0);
+		end
+		rd(17'h001C0);
+		if (v2 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: %h at MEM's old offset 0x1C0", v2);
+		end
+		rd(17'h001F4);
+		if (v2 !== 32'd0 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: MEM_CACHE_CFG at 0x1F4 is %h, expected 0", v2);
+		end
+		rd(GHCI_PERF_SRC0);
+		if (v0 !== 32'd0 || v2 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: PERF_SRC0 %h, expected 0", v0);
+		end
+		expect0("extcap", GHCI_PERF_SRC0 + 17'd4, 32'd0);
+		expect0("extcap", GHCI_PERF_SRC0 + 17'd8, 32'd0);
+		expect0("extcap", GHCI_PERF_SRC0 + 17'd12, 32'd0);
+		if (b0.cap_perf_src !== 32'hFFFF0801) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.extcap: PERF_SRC %h from caps", b0.cap_perf_src);
+		end
+		if (errors == e0)
+			$display("PASS atg_cp_regs.extcap");
+		e0 = errors;
+		/* snoop */
+		wr(GHCI_REG_SCRATCH, 32'h12345678, 4'b1111);
+		wr(GHCI_REG_SCRATCH, 32'hAABBCCDD, 4'b0010);
+		@(negedge clk);
+		reg_wr = 0;
+		expect0("snoop", GHCI_REG_SCRATCH, 32'h1234CC78);
+		if (errors == e0)
+			$display("PASS atg_cp_regs.snoop");
+		e0 = errors;
+		/* window: WINDOW_CTRL.ENABLE (MEM +0x10), 1 after the reset; 0 without MEM. */
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: after reset %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h0, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd0 || win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: closed %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h1, 4'b1110);	/* bit 0's byte not written */
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd0 || win2) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: a write without byte 0 opened it");
+		end
+		wr(17'h001F0, 32'hFFFFFFFF, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2 || v0 !== 32'd0 || win0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: reopened %h/%b, without MEM %h/%b", v2, win2, v0, win0);
+		end
+		wr(17'h001F0, 32'h0, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rst_n = 0;
+		@(negedge clk);
+		rst_n = 1;
+		rd(17'h001F0);
+		if (v2 !== 32'd1 || !win2) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.window: not open again after the reset");
+		end
+		wr(GHCI_REG_SCRATCH, 32'h1234CC78, 4'b1111);	/* the reset cleared it; ormux reads it */
+		@(negedge clk);
+		reg_wr = 0;
+		if (errors == e0)
+			$display("PASS atg_cp_regs.window");
+		e0 = errors;
+		/* ormux: a module's data at its registered index, the alias. */
+		ctl_rdata = 32'h00F00000;
+		expect0("ormux", GHCI_REG_SCRATCH, 32'h12F4CC78);
+		ctl_rdata = 0;
+		@(negedge clk);
+		reg_rd = 1;
+		reg_raddr = 17'h00034;
+		@(negedge clk);
+		reg_rd = 0;
+		if (hcr_ridx !== 10'h00D) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.ormux: hcr_ridx %h", hcr_ridx);
+		end
+		rd(GHCI_REG_TIMESTAMP_LO);
+		c0 = v0;
+		repeat (10) @(negedge clk);
+		rd(GHCI_REG_TIMESTAMP_LO);
+		if (v0 - c0 != 12) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.ormux: COUNTER advanced %0d", v0 - c0);
+		end
+		if (errors == e0)
+			$display("PASS atg_cp_regs.ormux");
+		e0 = errors;
+		/* fmt: the list entry, FMT_INDEX window reads 0, format features via u_caps, LIMITS */
+		walk(3, 64'h0B0A03, {32'h200, 32'h140, 32'h160});
+		fd = $fopen("sim/vec/fmt_info.txt", "r");
+		if (fd == 0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: no sim/vec/fmt_info.txt");
+		end
+		for (fi = 0; fi < 256; fi = fi + 1) begin
+			code = $fscanf(fd, "%h %h %h %h %h %h\n", fv, finfo, xo, xb, xo0, xb0);
+			tb_fmt_idx = fv;
+			#1;
+			if (tb_fmt_val[8:0] !== {1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]}) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d OPTIMAL %h, want %h", fv, tb_fmt_val[8:0],
+					{1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]});
+			end
+			if (tb_fmt_val[17:9] !== {1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]}) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d LINEAR %h, want %h", fv, tb_fmt_val[17:9],
+					{1'b0, xo0[11], xo0[10], xb0[6], xo0[9], xo0[8], xo0[7], xo0[12], xo0[0]});
+			end
+			if (tb_fmt_val[21:18] !== xb0[6:3]) begin
+				errors = errors + 1;
+				$display("FAIL atg_cp_regs.fmt: format %0d BUFFER %h, want %h", fv, tb_fmt_val[21:18], xb0[6:3]);
+			end
+		end
+		$fclose(fd);
+		/* Host FMT window (0x140..0x154) reads 0, writes ignored */
+		wr(17'h00140, 32'h00000025, 4'b1111);
+		@(negedge clk);
+		reg_wr = 0;
+		rd(17'h00140);
+		if (v3 !== 32'd0 || v0 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x140 reads %h, expected 0", v3);
+		end
+		rd(17'h00144);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x144 reads %h, expected 0", v3);
+		end
+		rd(17'h00148);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x148 reads %h, expected 0", v3);
+		end
+		rd(17'h0014C);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x14C reads %h, expected 0", v3);
+		end
+		rd(17'h00150);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x150 reads %h, expected 0", v3);
+		end
+		rd(17'h00154);
+		if (v3 !== 32'd0) begin
+			errors = errors + 1;
+			$display("FAIL atg_cp_regs.fmt: 0x154 reads %h, expected 0", v3);
+		end
+		if (errors == e0)
+			$display("PASS atg_cp_regs.fmt");
+		if (errors == 0)
+			$display("PASS atg_cp_regs");
+		else
+			$display("FAIL atg_cp_regs: %0d errors", errors);
+		$finish;
+	end
+endmodule
+
+`default_nettype wire

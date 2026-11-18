@@ -1,0 +1,73 @@
+# ==============================================================================
+# Amaterrace GPU (ATG1) - Balanced Configuration Preset (Default KC705)
+# Target: Kintex-7 325T Standard Footprint
+# ==============================================================================
+
+TARGET_PRESET            = kc705
+
+# 1. Shader Unit (SU)
+CONFIG_SU_NPHYS          = 8
+CONFIG_SU_NWARPS         = 4
+CONFIG_SU_NREGS          = 32
+CONFIG_SU_ENABLE_FP16    = 1
+CONFIG_SU_ENABLE_SUBGROUP = 1
+CONFIG_SU_ENABLE_SFU     = 1
+CONFIG_SU_LDS_KB         = 4
+CONFIG_SU_ENABLE_SA      = 0
+CONFIG_SU_ENABLE_MESH    = 0
+
+# 2. Rasterizer (RX)
+CONFIG_RX_ENABLE_MSAA    = 1
+CONFIG_RX_MSAA_SAMPLES   = 4
+CONFIG_RX_ENABLE_EARLY_Z = 1
+CONFIG_RX_COARSE_SCAN    = 1
+CONFIG_RX_ENABLE_CPOLY   = 1
+
+# 3. Texture Unit (TU)
+CONFIG_TU_ENABLE_BC      = 1
+CONFIG_TU_ENABLE_ETC2    = 0
+CONFIG_TU_ENABLE_ANISO   = 1
+CONFIG_TU_ENABLE_SEAMLESS_CUBE = 1
+CONFIG_TU_ENABLE_FP_FILTER = 1
+CONFIG_TU_ENABLE_ARRAY   = 1
+CONFIG_TU_ENABLE_TRILINEAR = 1
+CONFIG_TU_ENABLE_BILINEAR = 1
+CONFIG_TU_ENABLE_3D_CUBE = 1
+CONFIG_TU_L1_BANKS       = 4
+CONFIG_TU_ENABLE_MSHR    = 1
+CONFIG_TU_ENABLE_FFILT   = 1
+CONFIG_TU_L1_CACHE_KB    = 8
+
+# 4. Render Output Backend (ROP) & Formats
+CONFIG_FMT_ENABLE_FP16   = 1
+CONFIG_FMT_ENABLE_FP32   = 0
+CONFIG_FMT_ENABLE_SRGB   = 1
+CONFIG_FMT_ENABLE_RGB565 = 1
+CONFIG_FMT_ENABLE_DEPTH24_S8 = 1
+CONFIG_FMT_ENABLE_DEPTH32F = 0
+CONFIG_FMT_ENABLE_DEPTH16 = 1
+CONFIG_ROP_ENABLE_FBLEND = 1
+CONFIG_ROP_ENABLE_PACK   = 1
+CONFIG_ROP_DUAL_SOURCE   = 1
+CONFIG_ROP_ENABLE_LOGICOP = 1
+CONFIG_HAS_BLT           = 1
+CONFIG_BLT_ENABLE_SCALE  = 1
+CONFIG_BLT_ENABLE_BLEND  = 1
+CONFIG_BLT_ENABLE_TILE   = 1
+CONFIG_ROP_MRT_COUNT     = 4
+CONFIG_ROP_FAST_CLEAR    = 1
+
+# 5. Command Processor (CP) & Memory Hierarchy
+# Balanced Profile Address Configuration (KC705 default):
+#   GPU_VA_BITS  = 32 (4 GiB internal VA, standard 32-bit GPU virtual address space)
+#   HOST_PA_BITS = 40 (1 TiB PCIe PA, standard PCIe root complex host memory)
+CONFIG_GPU_VA_BITS       = 32
+CONFIG_HOST_PA_BITS      = 40
+# ATG1 では hardware walker は未統合で、DEVICE_CAPS の HW_WALKER は 0
+CONFIG_CP_AUTONOMOUS_MMU = 1
+CONFIG_CP_USE_RV32_CORE  = 0
+CONFIG_MC_ENABLE_PROT    = 1
+CONFIG_MC_L2_CACHE_KB    = 64
+CONFIG_MC_L2_WAYS        = 8
+CONFIG_VF_CACHE_LINES    = 8
+CONFIG_DC_ENABLE_CURSOR  = 1
