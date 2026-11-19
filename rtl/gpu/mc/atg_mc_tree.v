@@ -218,6 +218,8 @@ module atg_mc_tree #(
 			assign c_rsp_tag[c*8 +: 8] = leaf_rsp_data[J*RFW + 2 +: 8];
 			assign c_rsp_rdata[c*LB +: LB] = leaf_rsp_data[J*RFW + 10 + RW +: LB];
 `else
+			wire pre_req_valid, pre_req_ready, pre_req_last;
+			wire [FW-1:0] pre_req_data;
 			am_amb_to_rt #(
 				.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 				.VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE), .RW(RW), .ROUTE(client_route(c)),
@@ -233,10 +235,17 @@ module atg_mc_tree #(
 				.rsp_valid(c_rsp_valid[c]), .rsp_write(c_rsp_write[c]),
 				.rsp_tag(c_rsp_tag[c*8 +: 8]), .rsp_rdata(c_rsp_rdata[c*LB +: LB]),
 				.rsp_error(c_rsp_error[c]),
-				.t_req_valid(leaf_req_valid[J]), .t_req_ready(leaf_req_ready[J]),
-				.t_req_data(leaf_req_data[J*FW +: FW]), .t_req_last(leaf_req_last[J]),
+				.t_req_valid(pre_req_valid), .t_req_ready(pre_req_ready),
+				.t_req_data(pre_req_data), .t_req_last(pre_req_last),
 				.t_rsp_valid(leaf_rsp_valid[J]), .t_rsp_ready(leaf_rsp_ready[J]),
 				.t_rsp_data(leaf_rsp_data[J*RFW +: RFW])
+			);
+			am_skid #(.WIDTH(FW + 1)) u_leaf_skid (
+				.clk(clk), .rst_n(rst_n && !flush),
+				.in_valid(pre_req_valid), .in_ready(pre_req_ready),
+				.in_data({pre_req_last, pre_req_data}),
+				.out_valid(leaf_req_valid[J]), .out_ready(leaf_req_ready[J]),
+				.out_data({leaf_req_last[J], leaf_req_data[J*FW +: FW]})
 			);
 `endif
 		end

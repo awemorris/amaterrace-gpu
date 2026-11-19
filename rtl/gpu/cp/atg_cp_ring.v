@@ -1209,13 +1209,21 @@ module atg_cp_ring #(
 	assign req_be    = r_req_be;
 	assign req_wdata = ctx_save_wdata;
 	assign req_tag   = r_req_tag;
+	wire ring_req_ready = req_ready;
 `else
-	assign req_valid = ctx_req || demand_req || (pf_st == PF_REQ);
-	assign req_write = ctx_save_req;
-	assign req_line = ctx_req ? ctx_line : (demand_req ? want_line : pf_line);
-	assign req_be = ctx_save_req ? {LINE_BYTES{1'b1}} : {LINE_BYTES{1'b0}};
-	assign req_wdata = ctx_save_req ? ctx_save_wdata : {(LINE_BYTES * 8){1'b0}};
-	assign req_tag = ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+	wire ring_req_valid_c = ctx_req || demand_req || (pf_st == PF_REQ);
+	wire ring_req_ready;
+	wire [LA_W-1:0] ring_req_line_c = ctx_req ? ctx_line : (demand_req ? want_line : pf_line);
+	wire [LINE_BYTES-1:0] ring_req_be_c = ctx_save_req ? {LINE_BYTES{1'b1}} : {LINE_BYTES{1'b0}};
+	wire [LINE_BYTES*8-1:0] ring_req_wdata_c = ctx_save_req ? ctx_save_wdata : {(LINE_BYTES * 8){1'b0}};
+	wire [7:0] ring_req_tag_c = ctx_save_req ? 8'd2 : (ctx_rest_req ? 8'd3 : (demand_req ? 8'd0 : 8'd1));
+	am_skid #(.WIDTH(1 + LA_W + LINE_BYTES + LINE_BYTES*8 + 8)) u_req_skid (
+		.clk(clk), .rst_n(core_rst_n),
+		.in_valid(ring_req_valid_c), .in_ready(ring_req_ready),
+		.in_data({ctx_save_req, ring_req_line_c, ring_req_be_c, ring_req_wdata_c, ring_req_tag_c}),
+		.out_valid(req_valid), .out_ready(req_ready),
+		.out_data({req_write, req_line, req_be, req_wdata, req_tag})
+	);
 `endif
 
 	/* Registers surviving CTRL.RESET */
@@ -1589,7 +1597,7 @@ module atg_cp_ring #(
 				end
 			end
 			PF_REQ: begin
-				if (req_ready && !demand_req && !ctx_req)
+				if (ring_req_ready && !demand_req && !ctx_req)
 					pf_st <= PF_RSP;
 			end
 			PF_RSP: begin
@@ -1792,7 +1800,7 @@ module atg_cp_ring #(
 			end
 
 			R_REQ: begin
-				if (req_ready && demand_req)
+				if (ring_req_ready && demand_req)
 					st <= R_RSP;
 			end
 
@@ -1826,7 +1834,7 @@ module atg_cp_ring #(
 			end
 
 			R_CTX_SAVE_REQ: begin
-				if (req_ready && ctx_save_req)
+				if (ring_req_ready && ctx_save_req)
 					st <= R_CTX_SAVE_RSP;
 			end
 
@@ -1849,7 +1857,7 @@ module atg_cp_ring #(
 			end
 
 			R_CTX_REST_REQ: begin
-				if (req_ready && ctx_rest_req)
+				if (ring_req_ready && ctx_rest_req)
 					st <= R_CTX_REST_RSP;
 			end
 

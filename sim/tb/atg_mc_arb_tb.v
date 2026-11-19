@@ -10,9 +10,9 @@
  *
  * Tests:
  *   1. Latency verification:
- *      - Request path latency: 1 cycle (from leaf to r_req_*).
+ *      - Request path latency: 2 cycles (leaf skid + root skid; 1 under SYNTH_KINTEX7).
  *      - Response path latency: 1 cycle (from r_rsp_* to c_rsp_*).
- *      - Total roundtrip arbitration latency: exactly 2 cycles.
+ *      - Total roundtrip arbitration latency: exactly 3 cycles (2 under SYNTH_KINTEX7).
  *   2. Strict Priority (QoS Priority Level 1):
  *      - Under continuous competing traffic from normal 3D clients (0..3),
  *        high-priority DC client (Client 4) is granted immediately.
@@ -121,6 +121,11 @@ module atg_mc_arb_tb;
 	integer errors = 0;
 	integer start_cycle, latency_req, latency_rsp;
 	integer cycle_cnt = 0;
+`ifdef SYNTH_KINTEX7
+	localparam integer EXP_REQ_LAT = 1;
+`else
+	localparam integer EXP_REQ_LAT = 2;
+`endif
 
 	always @(posedge clk) cycle_cnt <= cycle_cnt + 1;
 
@@ -151,8 +156,8 @@ module atg_mc_arb_tb;
 		while (!r_req_valid) @(negedge clk);
 		latency_req = cycle_cnt - start_cycle;
 		$display("Request path latency: %0d cycle(s)", latency_req);
-		if (latency_req !== 1) begin
-			$display("FAIL: Expected request latency 1 cycle, got %0d", latency_req);
+		if (latency_req !== EXP_REQ_LAT) begin
+			$display("FAIL: Expected request latency %0d cycle(s), got %0d", EXP_REQ_LAT, latency_req);
 			errors = errors + 1;
 		end
 
@@ -174,8 +179,8 @@ module atg_mc_arb_tb;
 			errors = errors + 1;
 		end
 
-		if (latency_req + latency_rsp == 2) begin
-			$display("PASS: Total roundtrip latency is exactly 2 cycles (8clk -> 2clk verified).");
+		if (latency_req + latency_rsp == (EXP_REQ_LAT + 1)) begin
+			$display("PASS: Total roundtrip latency is exactly %0d cycles.", EXP_REQ_LAT + 1);
 		end else begin
 			$display("FAIL: Roundtrip latency mismatch: %0d cycles", latency_req + latency_rsp);
 			errors = errors + 1;
@@ -203,7 +208,10 @@ module atg_mc_arb_tb;
 		while (!c_req_ready[4]) @(negedge clk);
 		c_req_valid[4] = 1'b0;
 
-		/* Verify that DC request is granted immediately */
+		/* Drain the pre-leaf stage(s) already in-flight when EXP_REQ_LAT > 1 */
+		repeat (EXP_REQ_LAT - 1) @(negedge clk);
+
+		/* Verify that DC request is granted immediately ahead of clients 0..3 */
 		while (!r_req_valid) @(negedge clk);
 		/* In flit header, tag is bits [11:4] */
 		if (r_req_data[11:4] !== 8'hDC) begin

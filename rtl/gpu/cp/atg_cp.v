@@ -1024,6 +1024,12 @@ module atg_cp #(
 	assign s_i_rsp_rdata = rsp_rdata;
 	assign s_i_rsp_error = rsp_error;
 `else
+	wire amb_req_valid, amb_req_ready, amb_req_write;
+	wire [SLA_W-1:0] amb_req_line;
+	wire [LINE_BYTES-1:0] amb_req_be;
+	wire [SLB-1:0] amb_req_wdata;
+	wire [7:0] amb_req_tag;
+
 	am_amb_mux #(
 		.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(4), .ID_W(2)
 	) u_amb (
@@ -1033,11 +1039,19 @@ module atg_cp #(
 		.i_req_wdata(s_i_req_wdata), .i_req_tag(s_i_req_tag),
 		.i_rsp_valid(s_i_rsp_valid), .i_rsp_write(s_i_rsp_write), .i_rsp_tag(s_i_rsp_tag),
 		.i_rsp_rdata(s_i_rsp_rdata), .i_rsp_error(s_i_rsp_error),
-		.o_req_valid(req_valid), .o_req_ready(req_ready), .o_req_write(req_write),
-		.o_req_line(req_line), .o_req_be(req_be), .o_req_wdata(req_wdata),
-		.o_req_tag(req_tag),
+		.o_req_valid(amb_req_valid), .o_req_ready(amb_req_ready), .o_req_write(amb_req_write),
+		.o_req_line(amb_req_line), .o_req_be(amb_req_be), .o_req_wdata(amb_req_wdata),
+		.o_req_tag(amb_req_tag),
 		.o_rsp_valid(rsp_valid), .o_rsp_write(rsp_write), .o_rsp_tag(rsp_tag),
 		.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
+	);
+
+	am_skid #(.WIDTH(1 + SLA_W + LINE_BYTES + SLB + 8)) u_amb_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(amb_req_valid), .in_ready(amb_req_ready),
+		.in_data({amb_req_write, amb_req_line, amb_req_be, amb_req_wdata, amb_req_tag}),
+		.out_valid(req_valid), .out_ready(req_ready),
+		.out_data({req_write, req_line, req_be, req_wdata, req_tag})
 	);
 `endif
 
