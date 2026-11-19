@@ -92,7 +92,7 @@ module atg_dc_dma #(
 	localparam [5:0] PPL32_LAST = PPL32 - 6'd1;
 	localparam [5:0] PPL16_LAST = PPL16 - 6'd1;
 	localparam integer LB_I = LINE_BYTES - 1;
-	localparam [17:0] LINE_MASK = LB_I[17:0];
+	localparam RB_HI_W = 18 - LINE_SHIFT;
 
 	assign req_write = 1'b0;
 	assign req_be = {LINE_BYTES{1'b0}};
@@ -114,11 +114,22 @@ module atg_dc_dma #(
 	(* keep = "true" *) reg f_16, f_16_lo0, f_16_lo1, f_16_hi0, f_16_hi1;
 	wire [17:0] row_bytes = format == 2'd2 ? {1'b0, fb_size[15:0], 1'b0} :
 		{fb_size[15:0], 2'b00};
-	wire [17:0] row_end_bytes;
-	wire [17:0] row_lines = row_end_bytes >> LINE_SHIFT;
-	wire row_co_unused;
+	wire [15:0] rb_hi = {{(16 - RB_HI_W){1'b0}}, row_bytes[17:LINE_SHIFT]};
+	wire rb_lo_nz = |row_bytes[LINE_SHIFT-1:0];
+	wire [15:0] row_lines;
+	wire [3:0] row_co_unused_v;
+	wire rl_p0 = &rb_hi[3:0];
+	wire rl_p1 = &rb_hi[7:4];
+	wire rl_p2 = &rb_hi[11:8];
+	wire rl_ci0 = rb_lo_nz;
+	wire rl_ci1 = rl_ci0 && rl_p0;
+	wire rl_ci2 = rl_ci1 && rl_p1;
+	wire rl_ci3 = rl_ci2 && rl_p2;
 
-	am_add #(.W(18)) a_rowl (.a(row_bytes), .b(LINE_MASK), .ci(1'b0), .s(row_end_bytes), .co(row_co_unused));
+	am_add #(.W(4)) a_rowl_0 (.a(rb_hi[3:0]),   .b(4'd0), .ci(rl_ci0), .s(row_lines[3:0]),   .co(row_co_unused_v[0]));
+	am_add #(.W(4)) a_rowl_1 (.a(rb_hi[7:4]),   .b(4'd0), .ci(rl_ci1), .s(row_lines[7:4]),   .co(row_co_unused_v[1]));
+	am_add #(.W(4)) a_rowl_2 (.a(rb_hi[11:8]),  .b(4'd0), .ci(rl_ci2), .s(row_lines[11:8]),  .co(row_co_unused_v[2]));
+	am_add #(.W(4)) a_rowl_3 (.a(rb_hi[15:12]), .b(4'd0), .ci(rl_ci3), .s(row_lines[15:12]), .co(row_co_unused_v[3]));
 
 	/* Requests. */
 	reg rq_active;
@@ -169,6 +180,14 @@ module atg_dc_dma #(
 	(* max_fanout = 16 *) reg [15:0] f_nl_last, f_h_last;
 	wire [AW-1:0] rq_next_row, rq_cur_inc;
 	wire [9:0] rq_co_unused;
+	wire [3:0] nl_bo_unused_v;
+	wire nl_z0 = ~(|rb_hi[3:0]);
+	wire nl_z1 = ~(|rb_hi[7:4]);
+	wire nl_z2 = ~(|rb_hi[11:8]);
+	wire nl_bi0 = !rb_lo_nz;
+	wire nl_bi1 = nl_bi0 && nl_z0;
+	wire nl_bi2 = nl_bi1 && nl_z1;
+	wire nl_bi3 = nl_bi2 && nl_z2;
 
 	assign rq_co_unused[0] = 1'b0;
 	am_add #(.W(LFIFO_LOG2 + 1)) a_infl (.a(inflight), .b({(LFIFO_LOG2 + 1){1'b0}}), .ci(take), .s(infl_up),
@@ -176,7 +195,11 @@ module atg_dc_dma #(
 	am_sub #(.W(LFIFO_LOG2 + 1)) s_infl (.a(infl_up), .b({(LFIFO_LOG2 + 1){1'b0}}), .bi(rsp_read), .d(infl_next),
 		.bo(rq_co_unused[2]));
 	am_add #(.W(4)) a_epoch (.a(epoch), .b(4'd0), .ci(1'b1), .s(epoch_inc), .co(rq_co_unused[3]));
-	am_sub #(.W(16)) s_nl (.a(row_lines[15:0]), .b(16'd1), .bi(1'b0), .d(calc_nl_last), .bo(rq_co_unused[4]));
+	am_sub #(.W(4)) s_nl_0 (.a(rb_hi[3:0]),   .b(4'd0), .bi(nl_bi0), .d(calc_nl_last[3:0]),   .bo(nl_bo_unused_v[0]));
+	am_sub #(.W(4)) s_nl_1 (.a(rb_hi[7:4]),   .b(4'd0), .bi(nl_bi1), .d(calc_nl_last[7:4]),   .bo(nl_bo_unused_v[1]));
+	am_sub #(.W(4)) s_nl_2 (.a(rb_hi[11:8]),  .b(4'd0), .bi(nl_bi2), .d(calc_nl_last[11:8]),  .bo(nl_bo_unused_v[2]));
+	am_sub #(.W(4)) s_nl_3 (.a(rb_hi[15:12]), .b(4'd0), .bi(nl_bi3), .d(calc_nl_last[15:12]), .bo(nl_bo_unused_v[3]));
+	assign rq_co_unused[4] = 1'b0;
 	am_add #(.W(16)) a_row (.a(rq_row), .b(16'd0), .ci(1'b1), .s(rq_row_inc), .co(rq_co_unused[5]));
 	am_add #(.W(AW)) a_nrow (.a(rq_row_line), .b(f_stride), .ci(1'b0), .s(rq_next_row), .co(rq_co_unused[6]));
 	am_sub #(.W(16)) s_h (.a(fb_size[31:16]), .b(16'd1), .bi(1'b0), .d(calc_h_last), .bo(rq_co_unused[7]));
@@ -267,11 +290,13 @@ module atg_dc_dma #(
 			f_16_hi1 <= 1'b0;
 		end else if (clear) begin
 			enable_q <= 1'b0;
-			epoch <= 4'd0;
-			tag_q <= 4'd0;
+			epoch <= epoch_inc;
+			if (!req_valid || take) begin
+				tag_q <= 4'd0;
+				req_valid <= 1'b0;
+			end
 			rq_active <= 1'b0;
-			req_valid <= 1'b0;
-			inflight <= {(LFIFO_LOG2 + 1){1'b0}};
+			inflight <= infl_next;
 			used <= {(LFIFO_LOG2 + 1){1'b0}};
 			f_w <= 16'd0;
 			f_h <= 16'd0;
@@ -291,7 +316,7 @@ module atg_dc_dma #(
 				rq_active <= 1'b0;
 				used <= {(LFIFO_LOG2 + 1){1'b0}};
 			end else begin
-				case ({take, l_pop})
+				case ({take && (tag_q == epoch), l_pop})
 				2'b10: used <= used_inc;
 				2'b01: used <= used_dec;
 				default: ;
@@ -328,7 +353,7 @@ module atg_dc_dma #(
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 			req_line_lo <= 14'd0;
-		else if (clear)
+		else if (clear && (!req_valid || take))
 			req_line_lo <= 14'd0;
 		else if (issue_step_rql)
 			req_line_lo <= rq_cur_lo;
@@ -337,7 +362,7 @@ module atg_dc_dma #(
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 			req_line_hi <= {(AW-14){1'b0}};
-		else if (clear)
+		else if (clear && (!req_valid || take))
 			req_line_hi <= {(AW-14){1'b0}};
 		else if (issue_step_rqh)
 			req_line_hi <= rq_cur_hi;
@@ -405,12 +430,44 @@ module atg_dc_dma #(
 			f_stride_hi <= fb_stride[LINE_SHIFT + 14 +: AW - 14];
 	end
 
+	localparam NUM_L_SLICES = LW / 16;
+	localparam NUM_L_GROUPS = 4;
+	localparam SLICES_PER_GROUP = NUM_L_SLICES / NUM_L_GROUPS;
+
 	/* Sliced line FIFO (Rule 2 fanout isolation for 512-bit width) */
 	wire l_valid;
 	wire [LW-1:0] l_data;
 	wire l_pop;
 	wire l_in_ready = 1'b1;	/* always 1 when a response comes: the requests wait for room */
-	wire keep = rsp_read && rsp_tag[3:0] == epoch && !abort;
+	wire keep_in = rsp_read && rsp_tag[3:0] == epoch && !abort;
+	(* keep = "true", equivalent_register_removal = "no" *) reg rsp_keep_ctl;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [NUM_L_SLICES-1:0] rsp_keep_grp;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [NUM_L_SLICES-1:0] rsp_err_grp;
+	reg rsp_err_ctl;
+	reg [LW-1:0] rsp_rdata_q;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			rsp_keep_ctl <= 1'b0;
+			rsp_keep_grp <= {NUM_L_SLICES{1'b0}};
+			rsp_err_ctl  <= 1'b0;
+			rsp_err_grp  <= {NUM_L_SLICES{1'b0}};
+		end else if (abort) begin
+			rsp_keep_ctl <= 1'b0;
+			rsp_keep_grp <= {NUM_L_SLICES{1'b0}};
+			rsp_err_ctl  <= 1'b0;
+			rsp_err_grp  <= {NUM_L_SLICES{1'b0}};
+		end else begin
+			rsp_keep_ctl <= keep_in;
+			rsp_keep_grp <= {NUM_L_SLICES{keep_in}};
+			rsp_err_ctl  <= keep_in && rsp_error;
+			rsp_err_grp  <= {NUM_L_SLICES{keep_in && rsp_error}};
+		end
+	end
+	always @(posedge clk) begin
+		if (keep_in)
+			rsp_rdata_q <= rsp_rdata;
+	end
+	wire keep = rsp_keep_ctl;
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
@@ -418,12 +475,8 @@ module atg_dc_dma #(
 		else if (clear)
 			err <= 1'b0;
 		else
-			err <= keep && rsp_error;
+			err <= keep_in && rsp_error;
 	end
-
-	localparam NUM_L_SLICES = LW / 16;
-	localparam NUM_L_GROUPS = 4;
-	localparam SLICES_PER_GROUP = NUM_L_SLICES / NUM_L_GROUPS;
 
 	reg [LFIFO_LOG2:0] l_wp, l_rp;
 	wire [LFIFO_LOG2:0] l_wp_next, l_rp_next;
@@ -471,7 +524,7 @@ module atg_dc_dma #(
 		for (gti = 0; gti < 4; gti = gti + 1) begin : g_slice_tree
 			LUT1 #(.INIT(2'b10)) u_t_k (.I0(keep), .O(keep_tree[gti]));
 			LUT1 #(.INIT(2'b10)) u_t_p (.I0(l_pop), .O(l_pop_tree[gti]));
-			LUT1 #(.INIT(2'b10)) u_t_e (.I0(rsp_error), .O(rsp_error_tree[gti]));
+			LUT1 #(.INIT(2'b10)) u_t_e (.I0(rsp_err_ctl), .O(rsp_error_tree[gti]));
 		end
 	endgenerate
 
@@ -544,28 +597,28 @@ module atg_dc_dma #(
 
 		RAM32X1D u_ram0 (
 			.WCLK(clk), .WE(keep_b[igrp]),
-			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata[igrp*4 + 0]),
+			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata_q[igrp*4 + 0]),
 			.A0(s_wp_r[0]), .A1(s_wp_r[1]), .A2(s_wp_r[2]), .A3(s_wp_r[3]), .A4(s_wp_r[4]),
 			.DPRA0(s_rp_r[0]), .DPRA1(s_rp_r[1]), .DPRA2(s_rp_r[2]), .DPRA3(s_rp_r[3]), .DPRA4(s_rp_r[4]),
 			.SPO(), .DPO(l_data[igrp*4 + 0])
 		);
 		RAM32X1D u_ram1 (
 			.WCLK(clk), .WE(keep_b[igrp]),
-			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata[igrp*4 + 1]),
+			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata_q[igrp*4 + 1]),
 			.A0(s_wp_r[0]), .A1(s_wp_r[1]), .A2(s_wp_r[2]), .A3(s_wp_r[3]), .A4(s_wp_r[4]),
 			.DPRA0(s_rp_r[0]), .DPRA1(s_rp_r[1]), .DPRA2(s_rp_r[2]), .DPRA3(s_rp_r[3]), .DPRA4(s_rp_r[4]),
 			.SPO(), .DPO(l_data[igrp*4 + 1])
 		);
 		RAM32X1D u_ram2 (
 			.WCLK(clk), .WE(keep_b[igrp]),
-			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata[igrp*4 + 2]),
+			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata_q[igrp*4 + 2]),
 			.A0(s_wp_r[0]), .A1(s_wp_r[1]), .A2(s_wp_r[2]), .A3(s_wp_r[3]), .A4(s_wp_r[4]),
 			.DPRA0(s_rp_r[0]), .DPRA1(s_rp_r[1]), .DPRA2(s_rp_r[2]), .DPRA3(s_rp_r[3]), .DPRA4(s_rp_r[4]),
 			.SPO(), .DPO(l_data[igrp*4 + 2])
 		);
 		RAM32X1D u_ram3 (
 			.WCLK(clk), .WE(keep_b[igrp]),
-			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata[igrp*4 + 3]),
+			.D(rsp_error_b[igrp] ? 1'b0 : rsp_rdata_q[igrp*4 + 3]),
 			.A0(s_wp_r[0]), .A1(s_wp_r[1]), .A2(s_wp_r[2]), .A3(s_wp_r[3]), .A4(s_wp_r[4]),
 			.DPRA0(s_rp_r[0]), .DPRA1(s_rp_r[1]), .DPRA2(s_rp_r[2]), .DPRA3(s_rp_r[3]), .DPRA4(s_rp_r[4]),
 			.SPO(), .DPO(l_data[igrp*4 + 3])
@@ -573,8 +626,8 @@ module atg_dc_dma #(
 `else
 		reg [3:0] grp_mem [0:LFIFO-1];
 		always @(posedge clk) begin
-			if (keep)
-				grp_mem[s_wp] <= rsp_error ? 4'd0 : rsp_rdata[igrp*4 +: 4];
+			if (rsp_keep_grp[igrp / 4])
+				grp_mem[s_wp] <= rsp_err_grp[igrp / 4] ? 4'd0 : rsp_rdata_q[igrp*4 +: 4];
 		end
 		assign l_data[igrp*4 +: 4] = grp_mem[s_rp];
 `endif
@@ -806,8 +859,8 @@ module atg_dc_dma #(
 	end
 
 	wire unused_ok = &{1'b0, fb_base[LINE_SHIFT-1:0], fb_stride[LINE_SHIFT-1:0],
-		rsp_tag[7:4], l_in_ready, row_lines[17:16], up_idx[5:LINE_SHIFT-1], row_co_unused, rq_co_unused,
-		up_co_unused, acc_co_unused, u_co_unused};
+		rsp_tag[7:4], l_in_ready, up_idx[5:LINE_SHIFT-1], row_co_unused_v, nl_bo_unused_v, rq_co_unused,
+		up_co_unused, acc_co_unused, u_co_unused, rsp_err_ctl};
 endmodule
 
 `default_nettype wire

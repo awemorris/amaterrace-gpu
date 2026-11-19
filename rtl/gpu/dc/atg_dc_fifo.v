@@ -265,7 +265,6 @@ module atg_dc_fifo #(
 
 	wire [P-1:0] bram_count;
 	wire unused_bram_bo;
-`ifdef SYNTH_KINTEX7
 	reg [P-1:0] w_bin_in_rclk_q, r_bin_wm_q;
 	always @(posedge r_clk) begin
 		w_bin_in_rclk_q <= w_bin_in_rclk;
@@ -274,11 +273,6 @@ module atg_dc_fifo #(
 	am_sub #(.W(P)) u_bram_count (
 		.a(w_bin_in_rclk_q), .b(r_bin_wm_q), .bi(1'b0), .d(bram_count), .bo(unused_bram_bo)
 	);
-`else
-	am_sub #(.W(P)) u_bram_count (
-		.a(w_bin_in_rclk), .b(r_bin), .bi(1'b0), .d(bram_count), .bo(unused_bram_bo)
-	);
-`endif
 
 	wire [P-1:0] total_count;
 	wire unused_tot_co;

@@ -106,78 +106,51 @@ module atg_dc_tgen (
 	reg [11:0] ha, hss, hse, hlast, va, vss, vse, vlast, bar_w;
 	reg [1:0] pol;
 
-`ifdef SYNTH_KINTEX7
-	/* Pipelined timing computation (Rule 1: at most 1 adder per stage, CARRY4 <= 3) */
-	wire [11:0] p1_hss_w, p1_hbp_m1_w, p1_vss_w, p1_vbp_m1_w;
+	/* 2-stage pipelined timing computation (Rule 1: at most 1 adder per stage) */
+	wire [11:0] p1_hss_w, p1_hshbp_m1_w, p1_vss_w, p1_vsvbp_m1_w;
+	wire [11:0] h_csa_s = ~(t_hs ^ t_hbp);
+	wire [11:0] h_csa_c = {t_hs[10:0] | t_hbp[10:0], 1'b0};
+	wire [11:0] v_csa_s = ~(t_vs ^ t_vbp);
+	wire [11:0] v_csa_c = {t_vs[10:0] | t_vbp[10:0], 1'b0};
 	wire [3:0] p1_co_unused;
-	am_add #(.W(12)) u_p1_hss (.a(t_ha),  .b(t_hfp),      .ci(1'b0), .s(p1_hss_w),    .co(p1_co_unused[0]));
-	am_sub #(.W(12)) u_p1_hbp (.a(t_hbp), .b(12'd1),      .bi(1'b0), .d(p1_hbp_m1_w), .bo(p1_co_unused[1]));
-	am_add #(.W(12)) u_p1_vss (.a(t_va),  .b(t_vfp),      .ci(1'b0), .s(p1_vss_w),    .co(p1_co_unused[2]));
-	am_sub #(.W(12)) u_p1_vbp (.a(t_vbp), .b(12'd1),      .bi(1'b0), .d(p1_vbp_m1_w), .bo(p1_co_unused[3]));
+	am_add #(.W(12)) u_p1_hss   (.a(t_ha),    .b(t_hfp),   .ci(1'b0), .s(p1_hss_w),      .co(p1_co_unused[0]));
+	am_add #(.W(12)) u_p1_hshbp (.a(h_csa_s), .b(h_csa_c), .ci(1'b0), .s(p1_hshbp_m1_w), .co(p1_co_unused[1]));
+	am_add #(.W(12)) u_p1_vss   (.a(t_va),    .b(t_vfp),   .ci(1'b0), .s(p1_vss_w),      .co(p1_co_unused[2]));
+	am_add #(.W(12)) u_p1_vsvbp (.a(v_csa_s), .b(v_csa_c), .ci(1'b0), .s(p1_vsvbp_m1_w), .co(p1_co_unused[3]));
 
-	reg [11:0] p1_ha, p1_hss, p1_hs, p1_hbp_m1;
-	reg [11:0] p1_va, p1_vss, p1_vs, p1_vbp_m1;
+	reg [11:0] p1_ha, p1_hss, p1_hs, p1_hshbp_m1;
+	reg [11:0] p1_va, p1_vss, p1_vs, p1_vsvbp_m1;
 	reg [1:0]  p1_pol;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			p1_ha     <= 12'd0;
-			p1_hss    <= 12'd0;
-			p1_hs     <= 12'd0;
-			p1_hbp_m1 <= 12'd0;
-			p1_va     <= 12'd0;
-			p1_vss    <= 12'd0;
-			p1_vs     <= 12'd0;
-			p1_vbp_m1 <= 12'd0;
-			p1_pol    <= 2'd0;
+			p1_ha       <= 12'd0;
+			p1_hss      <= 12'd0;
+			p1_hs       <= 12'd0;
+			p1_hshbp_m1 <= 12'd0;
+			p1_va       <= 12'd0;
+			p1_vss      <= 12'd0;
+			p1_vs       <= 12'd0;
+			p1_vsvbp_m1 <= 12'd0;
+			p1_pol      <= 2'd0;
 		end else begin
-			p1_ha     <= t_ha;
-			p1_hss    <= p1_hss_w;
-			p1_hs     <= t_hs;
-			p1_hbp_m1 <= p1_hbp_m1_w;
-			p1_va     <= t_va;
-			p1_vss    <= p1_vss_w;
-			p1_vs     <= t_vs;
-			p1_vbp_m1 <= p1_vbp_m1_w;
-			p1_pol    <= t_pol;
+			p1_ha       <= t_ha;
+			p1_hss      <= p1_hss_w;
+			p1_hs       <= t_hs;
+			p1_hshbp_m1 <= p1_hshbp_m1_w;
+			p1_va       <= t_va;
+			p1_vss      <= p1_vss_w;
+			p1_vs       <= t_vs;
+			p1_vsvbp_m1 <= p1_vsvbp_m1_w;
+			p1_pol      <= t_pol;
 		end
 	end
 
-	wire [11:0] p2_hse_w, p2_vse_w;
-	wire [1:0] p2_co_unused;
-	am_add #(.W(12)) u_p2_hse (.a(p1_hss), .b(p1_hs), .ci(1'b0), .s(p2_hse_w), .co(p2_co_unused[0]));
-	am_add #(.W(12)) u_p2_vse (.a(p1_vss), .b(p1_vs), .ci(1'b0), .s(p2_vse_w), .co(p2_co_unused[1]));
-
-	reg [11:0] p2_ha, p2_hss, p2_hse, p2_hbp_m1;
-	reg [11:0] p2_va, p2_vss, p2_vse, p2_vbp_m1;
-	reg [1:0]  p2_pol;
-	always @(posedge clk or negedge rst_n) begin
-		if (!rst_n) begin
-			p2_ha     <= 12'd0;
-			p2_hss    <= 12'd0;
-			p2_hse    <= 12'd0;
-			p2_hbp_m1 <= 12'd0;
-			p2_va     <= 12'd0;
-			p2_vss    <= 12'd0;
-			p2_vse    <= 12'd0;
-			p2_vbp_m1 <= 12'd0;
-			p2_pol    <= 2'd0;
-		end else begin
-			p2_ha     <= p1_ha;
-			p2_hss    <= p1_hss;
-			p2_hse    <= p2_hse_w;
-			p2_hbp_m1 <= p1_hbp_m1;
-			p2_va     <= p1_va;
-			p2_vss    <= p1_vss;
-			p2_vse    <= p2_vse_w;
-			p2_vbp_m1 <= p1_vbp_m1;
-			p2_pol    <= p1_pol;
-		end
-	end
-
-	wire [11:0] p3_hlast_w, p3_vlast_w;
-	wire [1:0] p3_co_unused;
-	am_add #(.W(12)) u_p3_hlast (.a(p2_hse), .b(p2_hbp_m1), .ci(1'b0), .s(p3_hlast_w), .co(p3_co_unused[0]));
-	am_add #(.W(12)) u_p3_vlast (.a(p2_vse), .b(p2_vbp_m1), .ci(1'b0), .s(p3_vlast_w), .co(p3_co_unused[1]));
+	wire [11:0] p2_hse_w, p2_hlast_w, p2_vse_w, p2_vlast_w;
+	wire [3:0] p2_co_unused;
+	am_add #(.W(12)) u_p2_hse   (.a(p1_hss), .b(p1_hs),       .ci(1'b0), .s(p2_hse_w),   .co(p2_co_unused[0]));
+	am_add #(.W(12)) u_p2_hlast (.a(p1_hss), .b(p1_hshbp_m1), .ci(1'b0), .s(p2_hlast_w), .co(p2_co_unused[1]));
+	am_add #(.W(12)) u_p2_vse   (.a(p1_vss), .b(p1_vs),       .ci(1'b0), .s(p2_vse_w),   .co(p2_co_unused[2]));
+	am_add #(.W(12)) u_p2_vlast (.a(p1_vss), .b(p1_vsvbp_m1), .ci(1'b0), .s(p2_vlast_w), .co(p2_co_unused[3]));
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
@@ -192,59 +165,19 @@ module atg_dc_tgen (
 			bar_w <= 12'd0;
 			pol   <= 2'd0;
 		end else begin
-			ha    <= p2_ha;
-			hss   <= p2_hss;
-			hse   <= p2_hse;
-			hlast <= p3_hlast_w;
-			va    <= p2_va;
-			vss   <= p2_vss;
-			vse   <= p2_vse;
-			vlast <= p3_vlast_w;
-			bar_w <= {3'd0, p2_ha[11:3]};
-			pol   <= p2_pol;
+			ha    <= p1_ha;
+			hss   <= p1_hss;
+			hse   <= p2_hse_w;
+			hlast <= p2_hlast_w;
+			va    <= p1_va;
+			vss   <= p1_vss;
+			vse   <= p2_vse_w;
+			vlast <= p2_vlast_w;
+			bar_w <= {3'd0, p1_ha[11:3]};
+			pol   <= p1_pol;
 		end
 	end
-	wire [7:0] bnd_co_unused = {p1_co_unused, p2_co_unused, p3_co_unused};
-`else
-	/* The bounds: the sync's start and end and the last count of a line and of a frame. */
-	wire [11:0] hss_c, hse_c, htot_c, hlast_c, vss_c, vse_c, vtot_c, vlast_c;
-	wire [7:0] bnd_co_unused;
-
-	am_add #(.W(12)) a_hss (.a(t_ha), .b(t_hfp), .ci(1'b0), .s(hss_c), .co(bnd_co_unused[0]));
-	am_add #(.W(12)) a_hse (.a(hss_c), .b(t_hs), .ci(1'b0), .s(hse_c), .co(bnd_co_unused[1]));
-	am_add #(.W(12)) a_htot (.a(hse_c), .b(t_hbp), .ci(1'b0), .s(htot_c), .co(bnd_co_unused[2]));
-	am_sub #(.W(12)) s_hlast (.a(htot_c), .b(12'd1), .bi(1'b0), .d(hlast_c), .bo(bnd_co_unused[3]));
-	am_add #(.W(12)) a_vss (.a(t_va), .b(t_vfp), .ci(1'b0), .s(vss_c), .co(bnd_co_unused[4]));
-	am_add #(.W(12)) a_vse (.a(vss_c), .b(t_vs), .ci(1'b0), .s(vse_c), .co(bnd_co_unused[5]));
-	am_add #(.W(12)) a_vtot (.a(vse_c), .b(t_vbp), .ci(1'b0), .s(vtot_c), .co(bnd_co_unused[6]));
-	am_sub #(.W(12)) s_vlast (.a(vtot_c), .b(12'd1), .bi(1'b0), .d(vlast_c), .bo(bnd_co_unused[7]));
-
-	always @(posedge clk or negedge rst_n) begin
-		if (!rst_n) begin
-			ha    <= 12'd0;
-			hss   <= 12'd0;
-			hse   <= 12'd0;
-			hlast <= 12'd0;
-			va    <= 12'd0;
-			vss   <= 12'd0;
-			vse   <= 12'd0;
-			vlast <= 12'd0;
-			bar_w <= 12'd0;
-			pol   <= 2'd0;
-		end else begin
-			ha <= t_ha;
-			hss <= hss_c;
-			hse <= hse_c;
-			hlast <= hlast_c;
-			va <= t_va;
-			vss <= vss_c;
-			vse <= vse_c;
-			vlast <= vlast_c;
-			bar_w <= {3'd0, t_ha[11:3]};
-			pol <= t_pol;
-		end
-	end
-`endif
+	wire [7:0] bnd_co_unused = {p1_co_unused, p2_co_unused};
 
 	/* The counters, and the test pattern's bar and place in it.  running
 	 * rises one cycle after enable with the counters still at the start of
@@ -547,7 +480,7 @@ module atg_dc_tgen (
 		if (!rst_n)
 			v <= 12'd0;
 		else if (!enable)
-			v <= vss;
+			v <= p1_vss;
 		else if (v_step)
 			v <= v_step_val;
 	end

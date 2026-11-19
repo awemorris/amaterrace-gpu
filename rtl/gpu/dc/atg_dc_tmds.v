@@ -49,33 +49,6 @@ module atg_dc_tmds (
 		end
 	endfunction
 
-	/* q_m of a byte: the XOR chain, or the XNOR chain when xnor_ is set; bit 8 says XOR. */
-	function [8:0] qm;
-		input [7:0] d;
-		input xnor_;
-		reg [7:0] qm_xor;
-		begin
-			qm_xor[0] = d[0];
-			qm_xor[1] = d[0] ^ d[1];
-			qm_xor[2] = qm_xor[1] ^ d[2];
-			qm_xor[3] = qm_xor[2] ^ d[3];
-			qm_xor[4] = qm_xor[3] ^ d[4];
-			qm_xor[5] = qm_xor[4] ^ d[5];
-			qm_xor[6] = qm_xor[5] ^ d[6];
-			qm_xor[7] = qm_xor[6] ^ d[7];
-
-			qm[0] = qm_xor[0];
-			qm[1] = qm_xor[1] ^ xnor_;
-			qm[2] = qm_xor[2];
-			qm[3] = qm_xor[3] ^ xnor_;
-			qm[4] = qm_xor[4];
-			qm[5] = qm_xor[5] ^ xnor_;
-			qm[6] = qm_xor[6];
-			qm[7] = qm_xor[7] ^ xnor_;
-			qm[8] = !xnor_;
-		end
-	endfunction
-
 	reg [8:0] s1_qm [0:2];
 	reg [1:0] s1_ctrl [0:2];
 	(* max_fanout = 16 *) reg s1_de;
@@ -121,7 +94,6 @@ module atg_dc_tmds (
 			.s(d1), .co(d1_co_unused));
 		wire xnor_ = d1 > 4'd4 || (d1 == 4'd4 && !d_a[0]);
 
-`ifdef SYNTH_KINTEX7
 		wire [7:0] qm_xor;
 		assign qm_xor[0] = d_b[0];
 		assign qm_xor[1] = d_b[0] ^ d_b[1];
@@ -173,21 +145,6 @@ module atg_dc_tmds (
 		wire [8:0] q = s1_qm[c];
 		wire [3:0] n1 = s1_n1_r;
 		wire n1_co_unused = n1_xor_co_unused ^ n1_xnor_co_unused;
-`else
-		always @(posedge clk or posedge rst_high)
-			if (rst_high)
-				s1_qm[c] <= 9'd0;
-			else
-				s1_qm[c] <= qm(d_b, xnor_);
-
-		/* Stage 2: the DC balance. */
-		wire [8:0] q = s1_qm[c];
-		wire [3:0] n1;
-		wire n1_co_unused;
-
-		am_add #(.W(4)) a_n1 (.a({1'b0, ones4(q[3:0])}), .b({1'b0, ones4(q[7:4])}), .ci(1'b0),
-			.s(n1), .co(n1_co_unused));
-`endif
 		reg [4:0] cnt;	/* running disparity, signed, even */
 		reg [9:0] out;
 		/* n1 - n0 = 2 * n1 - 8, signed in 5 bits. */

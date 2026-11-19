@@ -54,38 +54,38 @@ module atg_dc_ycc (
 	 *   112 = 128 - 16, 38 = 32 + 4 + 2, 74 = 64 + 8 + 2;
 	 *   94 = 128 - 32 - 2, 18 = 16 + 2.
 	 */
-	wire [15:0] y1s, y2s, y3s, y4s, y5s, y6s, y_sum;
-	wire [15:0] cb1s, cb2s, cb3s, cb4s, cb5s, cb6s, cb7s, cb_sum;
-	wire [15:0] cr1s, cr2s, cr3s, cr4s, cr5s, cr6s, cr_sum;
+	wire [15:0] y_r, y_g, y_b, y_k, y_rg, y_bk, y_sum;
+	wire [15:0] cb_p, cb_br, cb_rr, cb_gg, cb_pg, cb_n0, cb_n, cb_sum;
+	wire [15:0] cr_p0, cr_p1, cr_n0, cr_n1, cr_pos, cr_neg, cr_sum;
 	wire [21:0] sum_co_unused;
 
-	/* Y = 64 R + 2 R + 128 G + G + 16 B + 8 B + B + 4224. */
-	am_add #(.W(16)) y_1 (.a(r << 6), .b(r << 1), .ci(1'b0), .s(y1s), .co(sum_co_unused[0]));
-	am_add #(.W(16)) y_2 (.a(y1s), .b(g << 7), .ci(1'b0), .s(y2s), .co(sum_co_unused[1]));
-	am_add #(.W(16)) y_3 (.a(y2s), .b(g), .ci(1'b0), .s(y3s), .co(sum_co_unused[2]));
-	am_add #(.W(16)) y_4 (.a(y3s), .b(b << 4), .ci(1'b0), .s(y4s), .co(sum_co_unused[3]));
-	am_add #(.W(16)) y_5 (.a(y4s), .b(b << 3), .ci(1'b0), .s(y5s), .co(sum_co_unused[4]));
-	am_add #(.W(16)) y_6 (.a(y5s), .b(b), .ci(1'b0), .s(y6s), .co(sum_co_unused[5]));
-	am_add #(.W(16)) y_7 (.a(y6s), .b(16'd4224), .ci(1'b0), .s(y_sum), .co(sum_co_unused[6]));
+	/* Y = (64 R + 2 R) + (128 G + G) + (16 B + 8 B) + (B + 4224), 3-level tree. */
+	am_add #(.W(16)) y_1 (.a(r << 6), .b(r << 1), .ci(1'b0), .s(y_r), .co(sum_co_unused[0]));
+	am_add #(.W(16)) y_2 (.a(g << 7), .b(g), .ci(1'b0), .s(y_g), .co(sum_co_unused[1]));
+	am_add #(.W(16)) y_3 (.a(b << 4), .b(b << 3), .ci(1'b0), .s(y_b), .co(sum_co_unused[2]));
+	am_add #(.W(16)) y_4 (.a(b), .b(16'd4224), .ci(1'b0), .s(y_k), .co(sum_co_unused[3]));
+	am_add #(.W(16)) y_5 (.a(y_r), .b(y_g), .ci(1'b0), .s(y_rg), .co(sum_co_unused[4]));
+	am_add #(.W(16)) y_6 (.a(y_b), .b(y_k), .ci(1'b0), .s(y_bk), .co(sum_co_unused[5]));
+	am_add #(.W(16)) y_7 (.a(y_rg), .b(y_bk), .ci(1'b0), .s(y_sum), .co(sum_co_unused[6]));
 
-	/* Cb = 128 B - 16 B - 32 R - 4 R - 2 R - 64 G - 8 G - 2 G + 32896. */
-	am_sub #(.W(16)) cb_1 (.a(b << 7), .b(b << 4), .bi(1'b0), .d(cb1s), .bo(sum_co_unused[7]));
-	am_sub #(.W(16)) cb_2 (.a(cb1s), .b(r << 5), .bi(1'b0), .d(cb2s), .bo(sum_co_unused[8]));
-	am_sub #(.W(16)) cb_3 (.a(cb2s), .b(r << 2), .bi(1'b0), .d(cb3s), .bo(sum_co_unused[9]));
-	am_sub #(.W(16)) cb_4 (.a(cb3s), .b(r << 1), .bi(1'b0), .d(cb4s), .bo(sum_co_unused[10]));
-	am_sub #(.W(16)) cb_5 (.a(cb4s), .b(g << 6), .bi(1'b0), .d(cb5s), .bo(sum_co_unused[11]));
-	am_sub #(.W(16)) cb_6 (.a(cb5s), .b(g << 3), .bi(1'b0), .d(cb6s), .bo(sum_co_unused[12]));
-	am_sub #(.W(16)) cb_7 (.a(cb6s), .b(g << 1), .bi(1'b0), .d(cb7s), .bo(sum_co_unused[13]));
-	am_add #(.W(16)) cb_8 (.a(cb7s), .b(16'd32896), .ci(1'b0), .s(cb_sum), .co(sum_co_unused[14]));
+	/* Cb = (128 B + 32896 - 2 G) - ((16 B + 32 R) + (4 R + 2 R) + (64 G + 8 G)), 4-level tree. */
+	am_add #(.W(16)) cb_1 (.a(b << 7), .b(16'd32896), .ci(1'b0), .s(cb_p), .co(sum_co_unused[7]));
+	am_add #(.W(16)) cb_2 (.a(b << 4), .b(r << 5), .ci(1'b0), .s(cb_br), .co(sum_co_unused[8]));
+	am_add #(.W(16)) cb_3 (.a(r << 2), .b(r << 1), .ci(1'b0), .s(cb_rr), .co(sum_co_unused[9]));
+	am_add #(.W(16)) cb_4 (.a(g << 6), .b(g << 3), .ci(1'b0), .s(cb_gg), .co(sum_co_unused[10]));
+	am_sub #(.W(16)) cb_5 (.a(cb_p), .b(g << 1), .bi(1'b0), .d(cb_pg), .bo(sum_co_unused[11]));
+	am_add #(.W(16)) cb_6 (.a(cb_br), .b(cb_rr), .ci(1'b0), .s(cb_n0), .co(sum_co_unused[12]));
+	am_add #(.W(16)) cb_7 (.a(cb_n0), .b(cb_gg), .ci(1'b0), .s(cb_n), .co(sum_co_unused[13]));
+	am_sub #(.W(16)) cb_8 (.a(cb_pg), .b(cb_n), .bi(1'b0), .d(cb_sum), .bo(sum_co_unused[14]));
 
-	/* Cr = 128 R - 16 R - 128 G + 32 G + 2 G - 16 B - 2 B + 32896. */
-	am_sub #(.W(16)) cr_1 (.a(r << 7), .b(r << 4), .bi(1'b0), .d(cr1s), .bo(sum_co_unused[15]));
-	am_sub #(.W(16)) cr_2 (.a(cr1s), .b(g << 7), .bi(1'b0), .d(cr2s), .bo(sum_co_unused[16]));
-	am_add #(.W(16)) cr_3 (.a(cr2s), .b(g << 5), .ci(1'b0), .s(cr3s), .co(sum_co_unused[17]));
-	am_add #(.W(16)) cr_4 (.a(cr3s), .b(g << 1), .ci(1'b0), .s(cr4s), .co(sum_co_unused[18]));
-	am_sub #(.W(16)) cr_5 (.a(cr4s), .b(b << 4), .bi(1'b0), .d(cr5s), .bo(sum_co_unused[19]));
-	am_sub #(.W(16)) cr_6 (.a(cr5s), .b(b << 1), .bi(1'b0), .d(cr6s), .bo(sum_co_unused[20]));
-	am_add #(.W(16)) cr_7 (.a(cr6s), .b(16'd32896), .ci(1'b0), .s(cr_sum), .co(sum_co_unused[21]));
+	/* Cr = ((128 R + 32896) + (32 G + 2 G)) - ((16 R + 128 G) + (16 B + 2 B)), 3-level tree. */
+	am_add #(.W(16)) cr_1 (.a(r << 7), .b(16'd32896), .ci(1'b0), .s(cr_p0), .co(sum_co_unused[15]));
+	am_add #(.W(16)) cr_2 (.a(g << 5), .b(g << 1), .ci(1'b0), .s(cr_p1), .co(sum_co_unused[16]));
+	am_add #(.W(16)) cr_3 (.a(r << 4), .b(g << 7), .ci(1'b0), .s(cr_n0), .co(sum_co_unused[17]));
+	am_add #(.W(16)) cr_4 (.a(b << 4), .b(b << 1), .ci(1'b0), .s(cr_n1), .co(sum_co_unused[18]));
+	am_add #(.W(16)) cr_5 (.a(cr_p0), .b(cr_p1), .ci(1'b0), .s(cr_pos), .co(sum_co_unused[19]));
+	am_add #(.W(16)) cr_6 (.a(cr_n0), .b(cr_n1), .ci(1'b0), .s(cr_neg), .co(sum_co_unused[20]));
+	am_sub #(.W(16)) cr_7 (.a(cr_pos), .b(cr_neg), .bi(1'b0), .d(cr_sum), .bo(sum_co_unused[21]));
 
 	/* Stage 1: the three components. */
 	reg [7:0] y1, cb1, cr1;
