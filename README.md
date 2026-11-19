@@ -18,12 +18,6 @@ feature sets of Vulkan, DirectX 12, and Metal.
 Lumiere proposes [GHCI 1.0](docs/ghci.md), a standardized set of `GPU
 Host Controller Interface` and `Shader ISA`.
 
-Note that most features of Lumiere are "opt-in" settings.  Developers
-must enable only those options for which they want to use and/or hold
-a patent license.
-
-![menuconfig](docs/imgs/menuconfig.png)
-
 The target performance varies from low-end SoC (19.2 GFLOPS) to
 high-end PCIe board (13.9 TFLOPS).
 
@@ -40,6 +34,12 @@ high-end PCIe board (13.9 TFLOPS).
 | gfx-vk10-su128        | 32           | 128          | 13.9 TFLOPS @1.7GHz    | Vulkan 1.0 Baseline           | ≈ RTX 5050 - RTX 5060           |
 | gfx-fpga-test         | 4            | 1            | 1.6 GFLOPS @200MHz     | Basic Rendering               | Xilinx KC705                     |
 | compute-fpga-test     | 32           | 1            | 12.8 GFLOPS @200MHz    | Basic Compute                 | Xilinx KC705                     |
+
+Please note that most features of Lumiere are "opt-in" settings.
+Developers must enable only those options for which they want to use
+and/or hold a patent license.
+
+![menuconfig](docs/imgs/menuconfig.png)
 
 ---
 
