@@ -324,6 +324,7 @@ module atg_cp_disp #(
 
 	/* The record's beat: {value, frame_count}, value first, at record. */
 	wire [31:0] r_addr = rp ? slot_rec1 : slot_rec0;
+	wire [63:0] r_addr64 = {32'd0, r_addr};
 	wire [63:0] r_word = rp ? {fc1, taken1} : {fc0, taken0};
 	genvar w;
 	generate
@@ -340,7 +341,7 @@ module atg_cp_disp #(
 
 	assign req_valid = rs == R_REQ;
 	assign req_write = 1'b1;
-	assign req_line = r_addr[ADDR_W-1:LINE_SHIFT];
+	assign req_line = r_addr64[ADDR_W-1:LINE_SHIFT];
 	assign req_tag = 8'd0;
 
 `ifdef MUT_DISP_EARLYIRQ

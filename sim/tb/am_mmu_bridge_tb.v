@@ -159,6 +159,7 @@ module am_mmu_bridge_tb;
 		.cp_pt_root_we(cp_pt_we), .cp_pt_root_session(cp_pt_sess), .cp_pt_root_base(cp_pt_base),
 		.cp_flush_trigger(cp_fl_trig), .cp_flush_all(cp_fl_all), .cp_flush_session(cp_fl_sess),
 		.bridge_inflight(brg_inflight),
+		.client_mc_map({NUM_CLIENTS{8'd0}}),
 		.mmu_fault_valid(mmu_f_valid), .mmu_fault_kind(mmu_f_kind),
 		.mmu_fault_session(mmu_f_sess), .mmu_fault_client(mmu_f_client), .mmu_fault_addr(mmu_f_addr),
 		.brg_fault_valid(perm_fv), .brg_fault_session(perm_fs), .brg_fault_addr(perm_fa),

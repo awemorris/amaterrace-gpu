@@ -744,6 +744,46 @@ module atg_top #(
 	wire [NCLIENT*LINE_BITS-1:0] rsp_rdata_v;
 	wire [NCLIENT-1:0] rsp_error_v;
 
+	/* Upstream GPU-unit AMB ports (before optional am_mmu_bridge) */
+	wire [NCLIENT-1:0] u_req_valid;
+	wire [NCLIENT-1:0] u_req_ready;
+	wire [NCLIENT-1:0] u_req_write;
+	wire [NCLIENT*UNIT_LA_W-1:0] u_req_line;
+	wire [NCLIENT*LINE_BYTES-1:0] u_req_be;
+	wire [NCLIENT*LINE_BITS-1:0] u_req_wdata;
+	wire [NCLIENT*8-1:0] u_req_tag;
+	wire [NCLIENT-1:0] u_req_chk, u_req_tbl;
+	wire [NCLIENT*6-1:0] u_req_slot;
+	wire [NCLIENT-1:0] u_rsp_valid;
+	wire [NCLIENT-1:0] u_rsp_write;
+	wire [NCLIENT*8-1:0] u_rsp_tag;
+	wire [NCLIENT*LINE_BITS-1:0] u_rsp_rdata;
+	wire [NCLIENT-1:0] u_rsp_error;
+
+	/* Hardware MMU & per-client VA->PA bridge signals (HAS_HW_WALKER=1) */
+	localparam MMU_BLT  = 0;
+	localparam MMU_VF   = (HAS_BLT != 0) ? 1 : 0;
+	localparam MMU_TU   = MMU_VF + ((HAS_VF != 0) ? 1 : 0);
+	localparam MMU_ROP  = MMU_TU + ((HAS_TU != 0) ? 1 : 0);
+	localparam MMU_ATOM = MMU_ROP + ((HAS_ROP != 0) ? 1 : 0);
+	localparam MMU_SA   = MMU_ATOM + ((HAS_ATOM != 0) ? 1 : 0);
+	localparam MMU_SU   = MMU_SA + ((HAS_SA != 0) ? 1 : 0);
+	localparam MMU_NCLIENTS_RAW = MMU_SU + 2 * NSU;
+	localparam MMU_NCLIENTS = (MMU_NCLIENTS_RAW > 0) ? MMU_NCLIENTS_RAW : 1;
+	localparam MMU_FC_W = (MMU_NCLIENTS > 8) ? 4 : 3;
+
+	wire [3:0] cp_active_session;
+	wire [31:0] mmu_sb_rdata;
+	wire ctl_mmu_fault;
+	wire [3:0] ctl_mmu_fault_kind, ctl_mmu_fault_session;
+	wire [7:0] ctl_mmu_fault_client;
+	wire [VA_BITS-1:0] ctl_mmu_fault_addr;
+	wire mmu_walk_req_valid, mmu_walk_req_ready, mmu_walk_rsp_valid, mmu_walk_rsp_error;
+	wire [PA_BITS-1:0] mmu_walk_req_addr;
+	wire [63:0] mmu_walk_rsp_data;
+	wire any_brg_inflight;
+	wire effective_mc_unit_idle = mc_unit_idle && !any_brg_inflight;
+
 	/* The CP's links to the blocks of design §7.6. */
 	wire draw_kick, cs_kick, cs_mesh, lc_kick, raw_kick;
 	wire [3:0] inv, cp_inv;
@@ -890,6 +930,11 @@ module atg_top #(
 		.mc_fault_mem(mc_fault_mem),
 		.mc_fault_tag(mc_fault_tag),
 		.mc_fault_req_tag(mc_fault_req_tag),
+		.mmu_fault(ctl_mmu_fault),
+		.mmu_fault_kind(ctl_mmu_fault_kind),
+		.mmu_fault_client(ctl_mmu_fault_client),
+		.mmu_fault_session(ctl_mmu_fault_session),
+		.mmu_fault_addr(ctl_mmu_fault_addr),
 		.st_we(st_we),
 		.st_idx(st_idx),
 		.st_wdata(st_wdata),
@@ -917,7 +962,7 @@ module atg_top #(
 		.lc_kick(lc_kick),
 		.raw_kick(raw_kick),
 		.inv(cp_inv),
-		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !mc_unit_idle}),
+		.busy_ext({sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, 1'b0, !effective_mc_unit_idle}),
 		.vsync(HAS_DISP != 0 ? dc_vsync : x_vsync),
 		.x_fault({1'b0, su_fault}),
 		.x_fault_kind(8'h01),
@@ -977,14 +1022,13 @@ module atg_top #(
 		.sb_re(sb_re),
 		.sb_idx(sb_idx),
 		.sb_wdata(sb_wdata),
-		.sb_rdata(cp_sb_rdata)
+		.sb_rdata(cp_sb_rdata),
+		.active_session(cp_active_session),
+		.boot_caps()
 	);
 
 	generate
 	if (HAS_BLT != 0) begin : gen_blt
-		wire [UNIT_LA_W-1:0] blt_req_line;
-		wire [63:0] blt_req_line64 = {{(64-UNIT_LA_W){1'b0}}, blt_req_line};
-		assign c_req_line[1*LA_W +: LA_W] = blt_req_line64[LA_W-1:0];
 		atg_blt #(
 			.ADDR_W(UNIT_ADDR_W),
 			.LINE_BYTES(LINE_BYTES),
@@ -1004,18 +1048,18 @@ module atg_top #(
 			.done(blt_done),
 			.error(blt_error),
 			.error_kind(blt_error_kind),
-			.req_valid(c_req_valid[1]),
-			.req_ready(c_req_ready[1]),
-			.req_write(c_req_write[1]),
-			.req_line(blt_req_line),
-			.req_be(c_req_be[1*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[1*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[1*8 +: 8]),
-			.rsp_valid(rsp_valid[1]),
-			.rsp_write(rsp_write_v[1]),
-			.rsp_tag(rsp_tag_v[1*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[1*LINE_BITS +: LINE_BITS]),
-			.rsp_error(rsp_error_v[1]),
+			.req_valid(u_req_valid[1]),
+			.req_ready(u_req_ready[1]),
+			.req_write(u_req_write[1]),
+			.req_line(u_req_line[1*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[1*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[1*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[1*8 +: 8]),
+			.rsp_valid(u_rsp_valid[1]),
+			.rsp_write(u_rsp_write[1]),
+			.rsp_tag(u_rsp_tag[1*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[1*LINE_BITS +: LINE_BITS]),
+			.rsp_error(u_rsp_error[1]),
 			.fsm(blt_fsm)
 		);
 	end else begin : gen_no_blt
@@ -1031,12 +1075,12 @@ module atg_top #(
 		assign blt_error = r_blt_err;
 		assign blt_error_kind = 4'd1;	/* OPCODE error */
 		assign blt_fsm = 4'd0;
-		assign c_req_valid[1] = 1'b0;
-		assign c_req_write[1] = 1'b0;
-		assign c_req_line[1*LA_W +: LA_W] = {LA_W{1'b0}};
-		assign c_req_be[1*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
-		assign c_req_wdata[1*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
-		assign c_req_tag[1*8 +: 8] = 8'd0;
+		assign u_req_valid[1] = 1'b0;
+		assign u_req_write[1] = 1'b0;
+		assign u_req_line[1*UNIT_LA_W +: UNIT_LA_W] = {UNIT_LA_W{1'b0}};
+		assign u_req_be[1*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
+		assign u_req_wdata[1*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
+		assign u_req_tag[1*8 +: 8] = 8'd0;
 	end
 	endgenerate
 
@@ -1071,7 +1115,8 @@ module atg_top #(
 		.HAS_L2(HAS_L2),
 		.L2_WAYS(L2_WAYS),
 		.L2_SET_W(L2_SET_W),
-		.USE_FLUSH_REP(1)
+		.USE_FLUSH_REP(1),
+		.HAS_MMU_WALK(HAS_HW_WALKER != 0 ? 1 : 0)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -1119,6 +1164,12 @@ module atg_top #(
 		.prot_gw_valid(prot_gw_valid),
 		.prot_gw_idx(prot_gw_idx),
 		.prot_gw_data(prot_gw_data),
+		.mmu_walk_req_valid(mmu_walk_req_valid),
+		.mmu_walk_req_ready(mmu_walk_req_ready),
+		.mmu_walk_req_addr(mmu_walk_req_addr),
+		.mmu_walk_rsp_valid(mmu_walk_rsp_valid),
+		.mmu_walk_rsp_data(mmu_walk_rsp_data),
+		.mmu_walk_rsp_error(mmu_walk_rsp_error),
 		.m_awid(m_awid),
 		.m_awaddr(mc_awaddr),
 		.m_awlen(m_awlen),
@@ -1171,7 +1222,7 @@ module atg_top #(
 			.fw_valid(fw_valid), .fw_ready(fw_ready), .fw_data(fw_data), .fw_last(fw_last),
 			.fw_active(fw_active), .fw_side(fw_side),
 			.sb_we(sb_we), .sb_re(sb_re), .sb_idx(sb_idx), .sb_wdata(sb_wdata),
-			.prot_rdata(prot_sb_rdata | cp_sb_rdata), .v_slot(v_slot),
+			.prot_rdata(prot_sb_rdata | cp_sb_rdata | mmu_sb_rdata), .v_slot(v_slot),
 			.st_ridx(cpu_st_ridx), .st_rdata(cpu_st_rdata), .fence_last(cp_fence_last),
 			.fence_ev(cp_fence_ev), .halt_req(cp_halt), .open(cp_open),
 			.diag_cp_pc(diag_cp_pc), .diag_cp_status(diag_cp_status),
@@ -1210,7 +1261,7 @@ module atg_top #(
 		assign diag_cp_status = 32'd0;
 		wire unused_cpu = &{1'b0, hcr_we, hcr_widx, hcr_wdata, hcr_wmask, hcr_ridx, v_valid,
 			v_addr, v_dwords, v_tag, fw_ready, cpu_st_rdata, cp_fence_last, cp_fence_ev,
-			cp_halt, cp_open, cp_sb_rdata};
+			cp_halt, cp_open, cp_sb_rdata, mmu_sb_rdata};
 	end
 	endgenerate
 
@@ -1225,7 +1276,7 @@ module atg_top #(
 	wire prot_scrub, su_scrub_any;
 	wire [7:0] prot_fault_tag, prot_unit_tag;
 	wire units_busy = blt_busy || vf_busy || rx_busy || rop_busy || tu_busy || su_busy || sa_busy;
-	wire drain_ok = !units_busy && !(|(c_req_valid & UNIT_LEAF)) && mc_chk_idle && mc_unit_idle;
+	wire drain_ok = !units_busy && !(|(c_req_valid & UNIT_LEAF)) && !any_brg_inflight && mc_chk_idle && mc_unit_idle;
 
 	genvar pc;
 	generate
@@ -1234,18 +1285,27 @@ module atg_top #(
 			assign c_req_chk[pc] = PROT && cp_req_chk;
 			assign c_req_tbl[pc] = 1'b0;
 			assign c_req_slot[pc*6 +: 6] = PROT ? cp_req_slot : 6'd0;
+			assign u_req_chk[pc] = 1'b0;
+			assign u_req_tbl[pc] = 1'b0;
+			assign u_req_slot[pc*6 +: 6] = 6'd0;
 		end else if (HAS_CPU != 0 && pc == C_CPU) begin : g_cpu
 			assign c_req_chk[pc] = PROT && cpu_req_chk;
 			assign c_req_tbl[pc] = PROT && cpu_req_tbl;
 			assign c_req_slot[pc*6 +: 6] = PROT ? cpu_req_slot : 6'd0;
+			assign u_req_chk[pc] = 1'b0;
+			assign u_req_tbl[pc] = 1'b0;
+			assign u_req_slot[pc*6 +: 6] = 6'd0;
 		end else if (HAS_EXT && pc == C_EXT) begin : g_ext	/* the DC or the outside client: root */
 			assign c_req_chk[pc] = 1'b0;
 			assign c_req_tbl[pc] = 1'b0;
 			assign c_req_slot[pc*6 +: 6] = 6'd0;
+			assign u_req_chk[pc] = 1'b0;
+			assign u_req_tbl[pc] = 1'b0;
+			assign u_req_slot[pc*6 +: 6] = 6'd0;
 		end else begin : g_unit
-			assign c_req_chk[pc] = PROT && prot_unit != 6'd0;
-			assign c_req_tbl[pc] = 1'b0;
-			assign c_req_slot[pc*6 +: 6] = PROT ? prot_unit : 6'd0;
+			assign u_req_chk[pc] = PROT && prot_unit != 6'd0;
+			assign u_req_tbl[pc] = 1'b0;
+			assign u_req_slot[pc*6 +: 6] = PROT ? prot_unit : 6'd0;
 		end
 	end
 
@@ -1406,9 +1466,6 @@ module atg_top #(
 
 	generate
 	if (HAS_VF != 0) begin : g_vf
-		wire [UNIT_LA_W-1:0] vf_req_line;
-		wire [63:0] vf_req_line64 = {{(64-UNIT_LA_W){1'b0}}, vf_req_line};
-		assign c_req_line[C_VF*LA_W +: LA_W] = vf_req_line64[LA_W-1:0];
 		atg_vf #(.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) vf (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.draw_kick(draw_kick), .busy(vf_busy), .fsm(vf_fsm),
@@ -1417,13 +1474,13 @@ module atg_top #(
 			.vl_data(vl_data),
 			.prim_valid(prim_valid), .prim_ready(prim_ready), .prim_vtx(prim_vtx),
 			.prim_free(prim_free), .prim_last(prim_last),
-			.req_valid(c_req_valid[C_VF]), .req_ready(c_req_ready[C_VF]),
-			.req_write(c_req_write[C_VF]), .req_line(vf_req_line),
-			.req_be(c_req_be[C_VF*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[C_VF*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[C_VF*8 +: 8]),
-			.rsp_valid(rsp_valid[C_VF]), .rsp_write(rsp_write_v[C_VF]), .rsp_tag(rsp_tag_v[C_VF*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[C_VF*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_VF])
+			.req_valid(u_req_valid[C_VF]), .req_ready(u_req_ready[C_VF]),
+			.req_write(u_req_write[C_VF]), .req_line(u_req_line[C_VF*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[C_VF*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[C_VF*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[C_VF*8 +: 8]),
+			.rsp_valid(u_rsp_valid[C_VF]), .rsp_write(u_rsp_write[C_VF]), .rsp_tag(u_rsp_tag[C_VF*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[C_VF*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_VF])
 		);
 	end else begin : g_no_vf
 		assign vf_busy = 1'b0;
@@ -1504,9 +1561,6 @@ module atg_top #(
 	end
 
 	if (HAS_TU != 0) begin : g_tu
-		wire [UNIT_LA_W-1:0] tu_req_line;
-		wire [63:0] tu_req_line64 = {{(64-UNIT_LA_W){1'b0}}, tu_req_line};
-		assign c_req_line[C_TU*LA_W +: LA_W] = tu_req_line64[LA_W-1:0];
 		atg_tu #(
 			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.ENABLE_BILINEAR(TU_BILINEAR != 0),
@@ -1528,13 +1582,13 @@ module atg_top #(
 			.tx_last(tx_last),
 			.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
 			.tr_last(tr_last),
-			.req_valid(c_req_valid[C_TU]), .req_ready(c_req_ready[C_TU]),
-			.req_write(c_req_write[C_TU]), .req_line(tu_req_line),
-			.req_be(c_req_be[C_TU*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[C_TU*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[C_TU*8 +: 8]),
-			.rsp_valid(rsp_valid[C_TU]), .rsp_write(rsp_write_v[C_TU]), .rsp_tag(rsp_tag_v[C_TU*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[C_TU*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_TU])
+			.req_valid(u_req_valid[C_TU]), .req_ready(u_req_ready[C_TU]),
+			.req_write(u_req_write[C_TU]), .req_line(u_req_line[C_TU*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[C_TU*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[C_TU*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[C_TU*8 +: 8]),
+			.rsp_valid(u_rsp_valid[C_TU]), .rsp_write(u_rsp_write[C_TU]), .rsp_tag(u_rsp_tag[C_TU*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[C_TU*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_TU])
 		);
 	end else begin : g_no_tu
 		assign tu_busy = 1'b0;
@@ -1548,9 +1602,6 @@ module atg_top #(
 	end
 
 	if (HAS_ROP != 0) begin : g_rop
-		wire [UNIT_LA_W-1:0] rop_req_line;
-		wire [63:0] rop_req_line64 = {{(64-UNIT_LA_W){1'b0}}, rop_req_line};
-		assign c_req_line[C_ROP*LA_W +: LA_W] = rop_req_line64[LA_W-1:0];
 		atg_rop #(
 			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.STENCIL(ROP_STENCIL),
@@ -1571,13 +1622,13 @@ module atg_top #(
 			.dx_mask(dx_mask), .dx_depth(dx_depth), .dx_last(dx_last),
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
 			.occ_count(occ_count), .occ_clear(occ_clear),
-			.req_valid(c_req_valid[C_ROP]), .req_ready(c_req_ready[C_ROP]),
-			.req_write(c_req_write[C_ROP]), .req_line(rop_req_line),
-			.req_be(c_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[C_ROP*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[C_ROP*8 +: 8]),
-			.rsp_valid(rsp_valid[C_ROP]), .rsp_write(rsp_write_v[C_ROP]), .rsp_tag(rsp_tag_v[C_ROP*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[C_ROP*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_ROP])
+			.req_valid(u_req_valid[C_ROP]), .req_ready(u_req_ready[C_ROP]),
+			.req_write(u_req_write[C_ROP]), .req_line(u_req_line[C_ROP*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[C_ROP*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[C_ROP*8 +: 8]),
+			.rsp_valid(u_rsp_valid[C_ROP]), .rsp_write(u_rsp_write[C_ROP]), .rsp_tag(u_rsp_tag[C_ROP*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[C_ROP*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_ROP])
 		);
 	end else begin : g_no_rop
 		assign rop_busy = 1'b0;
@@ -1591,9 +1642,6 @@ module atg_top #(
 	end
 
 	if (HAS_SA != 0) begin : g_sa
-		wire [UNIT_LA_W-1:0] sa_req_line;
-		wire [63:0] sa_req_line64 = {{(64-UNIT_LA_W){1'b0}}, sa_req_line};
-		assign c_req_line[C_SA*LA_W +: LA_W] = sa_req_line64[LA_W-1:0];
 		atg_sa #(.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NPHYS(SU_NPHYS)) sa (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
@@ -1602,13 +1650,13 @@ module atg_top #(
 			.pop_valid(sa_pop_valid), .pop_ready(sa_pop_ready), .pop_data(sa_pop_data),
 			.ctl_valid(sa_ctl_valid), .ctl_data(sa_ctl_data),
 			.qstat(sa_qstat), .sastat(sa_stat), .qtag(sa_qtag), .busy(sa_busy),
-			.req_valid(c_req_valid[C_SA]), .req_ready(c_req_ready[C_SA]),
-			.req_write(c_req_write[C_SA]), .req_line(sa_req_line),
-			.req_be(c_req_be[C_SA*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[C_SA*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[C_SA*8 +: 8]),
-			.rsp_valid(rsp_valid[C_SA]), .rsp_write(rsp_write_v[C_SA]), .rsp_tag(rsp_tag_v[C_SA*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[C_SA*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_SA])
+			.req_valid(u_req_valid[C_SA]), .req_ready(u_req_ready[C_SA]),
+			.req_write(u_req_write[C_SA]), .req_line(u_req_line[C_SA*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[C_SA*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[C_SA*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[C_SA*8 +: 8]),
+			.rsp_valid(u_rsp_valid[C_SA]), .rsp_write(u_rsp_write[C_SA]), .rsp_tag(u_rsp_tag[C_SA*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[C_SA*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_SA])
 		);
 	end else begin : g_no_sa
 		assign sa_busy = 1'b0;
@@ -1737,12 +1785,6 @@ module atg_top #(
 		wire [154:0] s_ex_aux;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
-		wire [UNIT_LA_W-1:0] su_d_req_line;
-		wire [UNIT_LA_W-1:0] su_i_req_line;
-		wire [63:0] su_d_req_line64 = {{(64-UNIT_LA_W){1'b0}}, su_d_req_line};
-		wire [63:0] su_i_req_line64 = {{(64-UNIT_LA_W){1'b0}}, su_i_req_line};
-		assign c_req_line[CD*LA_W +: LA_W] = su_d_req_line64[LA_W-1:0];
-		assign c_req_line[CI*LA_W +: LA_W] = su_i_req_line64[LA_W-1:0];
 
 		atg_su #(
 			.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
@@ -1777,20 +1819,20 @@ module atg_top #(
 			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
 			.mesh_valid(s_mesh_valid), .mesh_ready(g0 ? su_mesh_ready : 1'b1), .mesh_tri(s_mesh_tri),
 			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
-			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
-			.d_req_write(c_req_write[CD]), .d_req_line(su_d_req_line),
-			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
-			.d_req_wdata(c_req_wdata[CD*LINE_BITS +: LINE_BITS]),
-			.d_req_tag(c_req_tag[CD*8 +: 8]),
-			.d_rsp_valid(rsp_valid[CD]), .d_rsp_write(rsp_write_v[CD]), .d_rsp_tag(rsp_tag_v[CD*8 +: 8]),
-			.d_rsp_rdata(rsp_rdata_v[CD*LINE_BITS +: LINE_BITS]), .d_rsp_error(rsp_error_v[CD]),
-			.i_req_valid(c_req_valid[CI]), .i_req_ready(c_req_ready[CI]),
-			.i_req_write(c_req_write[CI]), .i_req_line(su_i_req_line),
-			.i_req_be(c_req_be[CI*LINE_BYTES +: LINE_BYTES]),
-			.i_req_wdata(c_req_wdata[CI*LINE_BITS +: LINE_BITS]),
-			.i_req_tag(c_req_tag[CI*8 +: 8]),
-			.i_rsp_valid(rsp_valid[CI]), .i_rsp_write(rsp_write_v[CI]), .i_rsp_tag(rsp_tag_v[CI*8 +: 8]),
-			.i_rsp_rdata(rsp_rdata_v[CI*LINE_BITS +: LINE_BITS]), .i_rsp_error(rsp_error_v[CI]),
+			.d_req_valid(u_req_valid[CD]), .d_req_ready(u_req_ready[CD]),
+			.d_req_write(u_req_write[CD]), .d_req_line(u_req_line[CD*UNIT_LA_W +: UNIT_LA_W]),
+			.d_req_be(u_req_be[CD*LINE_BYTES +: LINE_BYTES]),
+			.d_req_wdata(u_req_wdata[CD*LINE_BITS +: LINE_BITS]),
+			.d_req_tag(u_req_tag[CD*8 +: 8]),
+			.d_rsp_valid(u_rsp_valid[CD]), .d_rsp_write(u_rsp_write[CD]), .d_rsp_tag(u_rsp_tag[CD*8 +: 8]),
+			.d_rsp_rdata(u_rsp_rdata[CD*LINE_BITS +: LINE_BITS]), .d_rsp_error(u_rsp_error[CD]),
+			.i_req_valid(u_req_valid[CI]), .i_req_ready(u_req_ready[CI]),
+			.i_req_write(u_req_write[CI]), .i_req_line(u_req_line[CI*UNIT_LA_W +: UNIT_LA_W]),
+			.i_req_be(u_req_be[CI*LINE_BYTES +: LINE_BYTES]),
+			.i_req_wdata(u_req_wdata[CI*LINE_BITS +: LINE_BITS]),
+			.i_req_tag(u_req_tag[CI*8 +: 8]),
+			.i_rsp_valid(u_rsp_valid[CI]), .i_rsp_write(u_rsp_write[CI]), .i_rsp_tag(u_rsp_tag[CI*8 +: 8]),
+			.i_rsp_rdata(u_rsp_rdata[CI*LINE_BITS +: LINE_BITS]), .i_rsp_error(u_rsp_error[CI]),
 			.at_valid(at_valid[k]), .at_stage(su_at_stage[k*2 +: 2]), .at_ready(at_ready[k]), .at_op(at_op[k*4 +: 4]),
 			.at_addr(at_addr[k*30 +: 30]), .at_a(at_a[k*32 +: 32]), .at_b(at_b[k*32 +: 32]),
 			.at_rsp_valid(at_rsp_valid[k]), .at_old(at_old), .at_error(at_error),
@@ -1876,9 +1918,6 @@ module atg_top #(
 		assign su_fault_addr = fault_pc;
 		assign su_fault_stage = fault_stg;
 
-		wire [UNIT_LA_W-1:0] atom_req_line;
-		wire [63:0] atom_req_line64 = {{(64-UNIT_LA_W){1'b0}}, atom_req_line};
-		assign c_req_line[C_ATOM*LA_W +: LA_W] = atom_req_line64[LA_W-1:0];
 		atg_mc_atom #(
 			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
 			.AW(NSU > 1 ? $clog2(NSU) : 1)
@@ -1887,13 +1926,13 @@ module atg_top #(
 			.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
 			.at_a(at_a), .at_b(at_b), .at_stage(su_at_stage), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
 			.at_error(at_error), .busy(atom_busy),
-			.req_valid(c_req_valid[C_ATOM]), .req_ready(c_req_ready[C_ATOM]),
-			.req_write(c_req_write[C_ATOM]), .req_line(atom_req_line),
-			.req_be(c_req_be[C_ATOM*LINE_BYTES +: LINE_BYTES]),
-			.req_wdata(c_req_wdata[C_ATOM*LINE_BITS +: LINE_BITS]),
-			.req_tag(c_req_tag[C_ATOM*8 +: 8]),
-			.rsp_valid(rsp_valid[C_ATOM]), .rsp_write(rsp_write_v[C_ATOM]), .rsp_tag(rsp_tag_v[C_ATOM*8 +: 8]),
-			.rsp_rdata(rsp_rdata_v[C_ATOM*LINE_BITS +: LINE_BITS]), .rsp_error(rsp_error_v[C_ATOM])
+			.req_valid(u_req_valid[C_ATOM]), .req_ready(u_req_ready[C_ATOM]),
+			.req_write(u_req_write[C_ATOM]), .req_line(u_req_line[C_ATOM*UNIT_LA_W +: UNIT_LA_W]),
+			.req_be(u_req_be[C_ATOM*LINE_BYTES +: LINE_BYTES]),
+			.req_wdata(u_req_wdata[C_ATOM*LINE_BITS +: LINE_BITS]),
+			.req_tag(u_req_tag[C_ATOM*8 +: 8]),
+			.rsp_valid(u_rsp_valid[C_ATOM]), .rsp_write(u_rsp_write[C_ATOM]), .rsp_tag(u_rsp_tag[C_ATOM*8 +: 8]),
+			.rsp_rdata(u_rsp_rdata[C_ATOM*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_ATOM])
 		);
 	end else begin : g_no_su
 		assign su_at_stage = 2'd0;
@@ -1960,7 +1999,285 @@ module atg_top #(
 	end
 	endgenerate
 
-	wire unused_ok = &{1'b0, blt_done};
+	/* Hardware MMU + per-unit am_mmu_bridge (HAS_HW_WALKER=1) or flat bypass */
+	wire [3:0] active_mmu_session = (PROT && prot_unit != 6'd0) ? prot_unit_tag[3:0] : cp_active_session;
+	wire [MMU_NCLIENTS-1:0] mmu_req_valid;
+	wire [MMU_NCLIENTS*4-1:0] mmu_req_session;
+	wire [MMU_NCLIENTS*VA_BITS-1:0] mmu_req_va;
+	wire [MMU_NCLIENTS*2-1:0] mmu_req_type;
+	wire [MMU_NCLIENTS-1:0] mmu_ack;
+	wire [MMU_NCLIENTS*PA_BITS-1:0] mmu_pa;
+	wire [MMU_NCLIENTS*6-1:0] mmu_flags;
+	wire [MMU_NCLIENTS-1:0] mmu_fault;
+	wire [MMU_NCLIENTS*8-1:0] mmu_brg_inflight;
+	wire [MMU_NCLIENTS-1:0] mmu_brg_busy;
+	wire [MMU_NCLIENTS-1:0] mmu_perm_fv;
+	wire [MMU_NCLIENTS*4-1:0] mmu_perm_fs;
+	wire [MMU_NCLIENTS*VA_BITS-1:0] mmu_perm_fa;
+	wire [MMU_NCLIENTS*8-1:0] mmu_client_mc_map;
+
+	genvar gi;
+	generate
+	for (gi = 0; gi < NCLIENT; gi = gi + 1) begin : g_mmu_port
+		localparam IS_UNIT_CLIENT = (gi == 1 && HAS_BLT != 0) ||
+		                            (HAS_VF != 0 && gi == C_VF) ||
+		                            (HAS_TU != 0 && gi == C_TU) ||
+		                            (HAS_ROP != 0 && gi == C_ROP) ||
+		                            (HAS_ATOM != 0 && gi == C_ATOM) ||
+		                            (HAS_SA != 0 && gi == C_SA) ||
+		                            (gi >= C_SU);
+		localparam GI_MMU_IDX = (gi == 1 && HAS_BLT != 0) ? MMU_BLT :
+		                        (HAS_VF != 0 && gi == C_VF) ? MMU_VF :
+		                        (HAS_TU != 0 && gi == C_TU) ? MMU_TU :
+		                        (HAS_ROP != 0 && gi == C_ROP) ? MMU_ROP :
+		                        (HAS_ATOM != 0 && gi == C_ATOM) ? MMU_ATOM :
+		                        (HAS_SA != 0 && gi == C_SA) ? MMU_SA :
+		                        (gi >= C_SU) ? (MMU_SU + (gi - C_SU)) : 0;
+		localparam GI_EXEC = (gi >= C_SU) && (((gi - C_SU) & 1) != 0);
+
+		if (IS_UNIT_CLIENT) begin : g_u
+			if (HAS_HW_WALKER != 0) begin : g_brg
+				wire [7:0] brg_if_cnt;
+				assign mmu_brg_inflight[GI_MMU_IDX*8 +: 8] = brg_if_cnt;
+				assign mmu_brg_busy[GI_MMU_IDX] = (|brg_if_cnt) || u_req_valid[gi];
+				assign mmu_client_mc_map[GI_MMU_IDX*8 +: 8] = gi[7:0];
+				am_mmu_bridge #(
+					.UNIT_ADDR_W(UNIT_ADDR_W),
+					.MC_ADDR_W(MC_ADDR_W),
+					.VA_BITS(VA_BITS),
+					.PA_BITS(PA_BITS),
+					.LINE_BYTES(LINE_BYTES),
+					.LINE_SHIFT(LINE_SHIFT),
+					.CHECK_PERM(1)
+				) u_brg (
+					.clk(clk),
+					.rst_n(core_rst_n),
+					.u_req_valid(u_req_valid[gi]),
+					.u_req_ready(u_req_ready[gi]),
+					.u_req_write(u_req_write[gi]),
+					.u_req_exec(GI_EXEC ? 1'b1 : 1'b0),
+					.u_req_line(u_req_line[gi*UNIT_LA_W +: UNIT_LA_W]),
+					.u_req_be(u_req_be[gi*LINE_BYTES +: LINE_BYTES]),
+					.u_req_wdata(u_req_wdata[gi*LINE_BITS +: LINE_BITS]),
+					.u_req_tag(u_req_tag[gi*8 +: 8]),
+					.u_req_session(active_mmu_session),
+					.u_req_chk(u_req_chk[gi]),
+					.u_req_tbl(u_req_tbl[gi]),
+					.u_req_slot(u_req_slot[gi*6 +: 6]),
+					.u_rsp_valid(u_rsp_valid[gi]),
+					.u_rsp_write(u_rsp_write[gi]),
+					.u_rsp_tag(u_rsp_tag[gi*8 +: 8]),
+					.u_rsp_rdata(u_rsp_rdata[gi*LINE_BITS +: LINE_BITS]),
+					.u_rsp_error(u_rsp_error[gi]),
+					.mmu_req_valid(mmu_req_valid[GI_MMU_IDX]),
+					.mmu_req_session(mmu_req_session[GI_MMU_IDX*4 +: 4]),
+					.mmu_req_va(mmu_req_va[GI_MMU_IDX*VA_BITS +: VA_BITS]),
+					.mmu_req_type(mmu_req_type[GI_MMU_IDX*2 +: 2]),
+					.mmu_ack(mmu_ack[GI_MMU_IDX]),
+					.mmu_pa(mmu_pa[GI_MMU_IDX*PA_BITS +: PA_BITS]),
+					.mmu_flags(mmu_flags[GI_MMU_IDX*6 +: 6]),
+					.mmu_fault(mmu_fault[GI_MMU_IDX]),
+					.m_req_valid(c_req_valid[gi]),
+					.m_req_ready(c_req_ready[gi]),
+					.m_req_write(c_req_write[gi]),
+					.m_req_line(c_req_line[gi*LA_W +: LA_W]),
+					.m_req_be(c_req_be[gi*LINE_BYTES +: LINE_BYTES]),
+					.m_req_wdata(c_req_wdata[gi*LINE_BITS +: LINE_BITS]),
+					.m_req_tag(c_req_tag[gi*8 +: 8]),
+					.m_req_chk(c_req_chk[gi]),
+					.m_req_tbl(c_req_tbl[gi]),
+					.m_req_slot(c_req_slot[gi*6 +: 6]),
+					.m_req_session(),
+					.m_req_exec_type(),
+					.m_rsp_valid(rsp_valid[gi]),
+					.m_rsp_write(rsp_write_v[gi]),
+					.m_rsp_tag(rsp_tag_v[gi*8 +: 8]),
+					.m_rsp_rdata(rsp_rdata_v[gi*LINE_BITS +: LINE_BITS]),
+					.m_rsp_error(rsp_error_v[gi]),
+					.perm_fault_valid(mmu_perm_fv[GI_MMU_IDX]),
+					.perm_fault_session(mmu_perm_fs[GI_MMU_IDX*4 +: 4]),
+					.perm_fault_addr(mmu_perm_fa[GI_MMU_IDX*VA_BITS +: VA_BITS]),
+					.inflight_cnt(brg_if_cnt)
+				);
+			end else begin : g_bypass
+				wire [63:0] u_line64 = {{(64-UNIT_LA_W){1'b0}}, u_req_line[gi*UNIT_LA_W +: UNIT_LA_W]};
+				assign c_req_valid[gi] = u_req_valid[gi];
+				assign u_req_ready[gi] = c_req_ready[gi];
+				assign c_req_write[gi] = u_req_write[gi];
+				assign c_req_line[gi*LA_W +: LA_W] = u_line64[LA_W-1:0];
+				assign c_req_be[gi*LINE_BYTES +: LINE_BYTES] = u_req_be[gi*LINE_BYTES +: LINE_BYTES];
+				assign c_req_wdata[gi*LINE_BITS +: LINE_BITS] = u_req_wdata[gi*LINE_BITS +: LINE_BITS];
+				assign c_req_tag[gi*8 +: 8] = u_req_tag[gi*8 +: 8];
+				assign c_req_chk[gi] = u_req_chk[gi];
+				assign c_req_tbl[gi] = u_req_tbl[gi];
+				assign c_req_slot[gi*6 +: 6] = u_req_slot[gi*6 +: 6];
+				assign u_rsp_valid[gi] = rsp_valid[gi];
+				assign u_rsp_write[gi] = rsp_write_v[gi];
+				assign u_rsp_tag[gi*8 +: 8] = rsp_tag_v[gi*8 +: 8];
+				assign u_rsp_rdata[gi*LINE_BITS +: LINE_BITS] = rsp_rdata_v[gi*LINE_BITS +: LINE_BITS];
+				assign u_rsp_error[gi] = rsp_error_v[gi];
+			end
+		end else begin : g_phys_unused
+			assign u_req_ready[gi] = 1'b0;
+			assign u_rsp_valid[gi] = 1'b0;
+			assign u_rsp_write[gi] = 1'b0;
+			assign u_rsp_tag[gi*8 +: 8] = 8'd0;
+			assign u_rsp_rdata[gi*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
+			assign u_rsp_error[gi] = 1'b0;
+			if (gi != 1) begin : g_phys_zero
+				assign u_req_valid[gi] = 1'b0;
+				assign u_req_write[gi] = 1'b0;
+				assign u_req_line[gi*UNIT_LA_W +: UNIT_LA_W] = {UNIT_LA_W{1'b0}};
+				assign u_req_be[gi*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
+				assign u_req_wdata[gi*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
+				assign u_req_tag[gi*8 +: 8] = 8'd0;
+				wire unused_phys_u = &{1'b0, u_req_chk[gi], u_req_tbl[gi], u_req_slot[gi*6 +: 6]};
+			end else begin : g_no_blt_sink
+				assign c_req_chk[1] = 1'b0;
+				assign c_req_tbl[1] = 1'b0;
+				assign c_req_slot[1*6 +: 6] = 6'd0;
+				wire unused_no_blt = &{1'b0, u_req_valid[1], u_req_write[1],
+					u_req_line[1*UNIT_LA_W +: UNIT_LA_W],
+					u_req_be[1*LINE_BYTES +: LINE_BYTES],
+					u_req_wdata[1*LINE_BITS +: LINE_BITS],
+					u_req_tag[1*8 +: 8],
+					u_req_chk[1], u_req_tbl[1], u_req_slot[1*6 +: 6]};
+			end
+		end
+	end
+
+	if (HAS_HW_WALKER != 0) begin : g_mmu
+		wire mmu_cp_pt_we, mmu_cp_fl_trig, mmu_cp_fl_all;
+		wire [3:0] mmu_cp_pt_sess, mmu_cp_fl_sess;
+		wire [PA_BITS-13:0] mmu_cp_pt_base;
+		wire mmu_f_valid;
+		wire [3:0] mmu_f_kind, mmu_f_sess;
+		wire [MMU_FC_W-1:0] mmu_f_client;
+		wire [VA_BITS-1:0] mmu_f_addr;
+
+		if (MMU_NCLIENTS_RAW == 0) begin : g_mmu_empty_client
+			assign mmu_req_valid = 1'b0;
+			assign mmu_req_session = 4'd0;
+			assign mmu_req_va = {VA_BITS{1'b0}};
+			assign mmu_req_type = 2'd0;
+			assign mmu_brg_inflight = 8'd0;
+			assign mmu_brg_busy = 1'b0;
+			assign mmu_perm_fv = 1'b0;
+			assign mmu_perm_fs = 4'd0;
+			assign mmu_perm_fa = {VA_BITS{1'b0}};
+			assign mmu_client_mc_map = 8'd0;
+		end
+
+		assign any_brg_inflight = |mmu_brg_busy;
+
+		atg_cp_mmu #(
+			.VA_BITS(VA_BITS),
+			.PA_BITS(PA_BITS),
+			.NUM_CLIENTS(MMU_NCLIENTS),
+			.FC_W(MMU_FC_W),
+			.USE_MAP_PORT(1)
+		) u_cp_mmu (
+			.clk(clk),
+			.rst_n(core_rst_n),
+			.sb_we(sb_we),
+			.sb_re(sb_re),
+			.sb_idx(sb_idx),
+			.sb_wdata(sb_wdata),
+			.sb_rdata(mmu_sb_rdata),
+			.boot_caps(32'd0),
+			.device_caps(32'd0),
+			.cp_pt_root_we(mmu_cp_pt_we),
+			.cp_pt_root_session(mmu_cp_pt_sess),
+			.cp_pt_root_base(mmu_cp_pt_base),
+			.cp_flush_trigger(mmu_cp_fl_trig),
+			.cp_flush_all(mmu_cp_fl_all),
+			.cp_flush_session(mmu_cp_fl_sess),
+			.bridge_inflight(mmu_brg_inflight),
+			.client_mc_map(mmu_client_mc_map),
+			.mmu_fault_valid(mmu_f_valid),
+			.mmu_fault_kind(mmu_f_kind),
+			.mmu_fault_session(mmu_f_sess),
+			.mmu_fault_client(mmu_f_client),
+			.mmu_fault_addr(mmu_f_addr),
+			.brg_fault_valid(mmu_perm_fv),
+			.brg_fault_session(mmu_perm_fs),
+			.brg_fault_addr(mmu_perm_fa),
+			.ctl_fault_valid(ctl_mmu_fault),
+			.ctl_fault_kind(ctl_mmu_fault_kind),
+			.ctl_fault_session(ctl_mmu_fault_session),
+			.ctl_fault_mc_client(ctl_mmu_fault_client),
+			.ctl_fault_addr(ctl_mmu_fault_addr)
+		);
+
+		atg_mmu #(
+			.NUM_CLIENTS(MMU_NCLIENTS),
+			.MAX_SESSIONS(16),
+			.VA_BITS(VA_BITS),
+			.PA_BITS(PA_BITS),
+			.FC_W(MMU_FC_W)
+		) u_mmu (
+			.clk(clk),
+			.rst_n(core_rst_n),
+			.client_req_valid(mmu_req_valid),
+			.client_req_session(mmu_req_session),
+			.client_req_va(mmu_req_va),
+			.client_req_type(mmu_req_type),
+			.client_ack(mmu_ack),
+			.client_pa(mmu_pa),
+			.client_flags(mmu_flags),
+			.client_fault(mmu_fault),
+			.mem_req_fire(1'b0),
+			.mem_rsp_fire(1'b0),
+			.inflight_count(),
+			.cp_pt_root_we(mmu_cp_pt_we),
+			.cp_pt_root_session(mmu_cp_pt_sess),
+			.cp_pt_root_base(mmu_cp_pt_base),
+			.cp_flush_trigger(mmu_cp_fl_trig),
+			.cp_flush_all(mmu_cp_fl_all),
+			.cp_flush_session(mmu_cp_fl_sess),
+			.fault_valid(mmu_f_valid),
+			.fault_kind(mmu_f_kind),
+			.fault_session(mmu_f_sess),
+			.fault_client(mmu_f_client),
+			.fault_addr(mmu_f_addr),
+			.walker_mem_req_valid(mmu_walk_req_valid),
+			.walker_mem_req_addr(mmu_walk_req_addr),
+			.walker_mem_req_ready(mmu_walk_req_ready),
+			.walker_mem_rsp_valid(mmu_walk_rsp_valid),
+			.walker_mem_rsp_data(mmu_walk_rsp_data)
+		);
+	end else begin : g_no_mmu
+		assign any_brg_inflight = 1'b0;
+		assign mmu_sb_rdata = 32'd0;
+		assign ctl_mmu_fault = 1'b0;
+		assign ctl_mmu_fault_kind = 4'd0;
+		assign ctl_mmu_fault_session = 4'd0;
+		assign ctl_mmu_fault_client = 8'd0;
+		assign ctl_mmu_fault_addr = {VA_BITS{1'b0}};
+		assign mmu_walk_req_valid = 1'b0;
+		assign mmu_walk_req_addr = {PA_BITS{1'b0}};
+		assign mmu_req_valid = {MMU_NCLIENTS{1'b0}};
+		assign mmu_req_session = {MMU_NCLIENTS*4{1'b0}};
+		assign mmu_req_va = {MMU_NCLIENTS*VA_BITS{1'b0}};
+		assign mmu_req_type = {MMU_NCLIENTS*2{1'b0}};
+		assign mmu_ack = {MMU_NCLIENTS{1'b0}};
+		assign mmu_pa = {MMU_NCLIENTS*PA_BITS{1'b0}};
+		assign mmu_flags = {MMU_NCLIENTS*6{1'b0}};
+		assign mmu_fault = {MMU_NCLIENTS{1'b0}};
+		assign mmu_brg_inflight = {MMU_NCLIENTS*8{1'b0}};
+		assign mmu_brg_busy = {MMU_NCLIENTS{1'b0}};
+		assign mmu_perm_fv = {MMU_NCLIENTS{1'b0}};
+		assign mmu_perm_fs = {MMU_NCLIENTS*4{1'b0}};
+		assign mmu_perm_fa = {MMU_NCLIENTS*VA_BITS{1'b0}};
+		assign mmu_client_mc_map = {MMU_NCLIENTS*8{1'b0}};
+		wire unused_no_mmu = &{1'b0, active_mmu_session, mmu_walk_req_ready, mmu_walk_rsp_valid,
+			mmu_walk_rsp_data, mmu_req_valid, mmu_req_session, mmu_req_va, mmu_req_type,
+			mmu_ack, mmu_pa, mmu_flags, mmu_fault, mmu_brg_inflight, mmu_brg_busy,
+			mmu_perm_fv, mmu_perm_fs, mmu_perm_fa, mmu_client_mc_map};
+	end
+	endgenerate
+
+	wire unused_ok = &{1'b0, blt_done, mmu_walk_rsp_error};
 endmodule
 
 `default_nettype wire

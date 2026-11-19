@@ -285,7 +285,8 @@ module atg_cp #(
 	input wire [5:0] sb_idx,
 	input wire [31:0] sb_wdata,
 	output reg [31:0] sb_rdata,
-	output wire [3:0] active_session
+	output wire [3:0] active_session,
+	output wire [31:0] boot_caps
 );
 	`include "ghci_regs.vh"
 
@@ -688,6 +689,7 @@ module atg_cp #(
 		case (sb_idx)
 		6'h34: sb_rdata = {23'd0, caps_index};
 		6'h35: sb_rdata = caps_data;
+		6'h36: sb_rdata = s_boot_caps;
 		6'h3E: sb_rdata = s_cap_dev_caps;
 		default: sb_rdata = 32'd0;
 		endcase
@@ -782,6 +784,7 @@ module atg_cp #(
 		.fmt_idx(8'd0),
 		.fmt_val()
 	);
+	assign boot_caps = s_boot_caps;
 
 	wire [31:0] s_disp_rdata;
 	atg_cp_regs #(

@@ -382,7 +382,7 @@ module atg_cp_tb;
 		.dc_pending(2'd0), .dc_idle(1'b1), .frame_count(32'd0), .dc_err(),
 		.dc_ev(3'd0), .dc_irq_display(1'b0),
 		.sb_we(sb_we_t), .sb_re(sb_re_t), .sb_idx(sb_idx_t), .sb_wdata(sb_wdata_t),
-		.sb_rdata(sb_rdata_t)
+		.sb_rdata(sb_rdata_t), .active_session(), .boot_caps()
 	);
 
 	task cp_host_write;

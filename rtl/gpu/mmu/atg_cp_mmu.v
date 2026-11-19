@@ -35,6 +35,7 @@ module atg_cp_mmu #(
 	parameter PPN_BITS = PA_BITS - 12,
 	parameter NUM_CLIENTS = 5,
 	parameter FC_W = (NUM_CLIENTS > 8) ? 4 : 3,
+	parameter USE_MAP_PORT = 0,
 	parameter [NUM_CLIENTS*8-1:0] CLIENT_MC_MAP = {NUM_CLIENTS{8'd0}}
 ) (
 	input wire clk,
@@ -61,6 +62,7 @@ module atg_cp_mmu #(
 
 	/* Exact per-bridge in-flight counts [7:0] per client */
 	input wire [NUM_CLIENTS*8-1:0] bridge_inflight,
+	input wire [NUM_CLIENTS*8-1:0] client_mc_map,
 
 	/* Fault from atg_mmu (walker trap) */
 	input wire mmu_fault_valid,
@@ -188,7 +190,7 @@ module atg_cp_mmu #(
 		f_mc_client = 8'd0;
 		for (mc_i = 0; mc_i < NUM_CLIENTS; mc_i = mc_i + 1) begin
 			if (f_cl == mc_i[FC_W-1:0])
-				f_mc_client = CLIENT_MC_MAP[mc_i*8 +: 8];
+				f_mc_client = (USE_MAP_PORT != 0) ? client_mc_map[mc_i*8 +: 8] : CLIENT_MC_MAP[mc_i*8 +: 8];
 		end
 	end
 
