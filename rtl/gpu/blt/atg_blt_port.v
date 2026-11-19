@@ -146,6 +146,10 @@ module atg_blt_port #(
 	end
 `endif
 
+	(* keep = "true" *) reg [7:0] free_wd_rep;
+	(* keep = "true" *) reg [1:0] free_be_rep;
+	localparam WD_SLICE_BITS = (LINE_BYTES * 8) / 8;
+
 	always @(posedge clk) begin
 		if (can_issue_lo)
 			req_line[15:0] <= i_line[15:0];
@@ -153,12 +157,12 @@ module atg_blt_port #(
 			req_line[LA_W-1:16] <= i_line[LA_W-1:16];
 		if (can_issue_ctrl) begin
 			slot <= i_slot;
-`ifndef SYNTH_KINTEX7
-			req_be <= i_be;
-			req_wdata <= i_wdata;
-`endif
 		end
 `ifndef SYNTH_KINTEX7
+		if (issue && free_be_rep[0])
+			req_be[LINE_BYTES/2-1:0] <= i_be[LINE_BYTES/2-1:0];
+		if (issue && free_be_rep[1])
+			req_be[LINE_BYTES-1:LINE_BYTES/2] <= i_be[LINE_BYTES-1:LINE_BYTES/2];
 		if (rsp_rd) begin
 			case (rsp_tag[1:0])
 			2'd0: buf0 <= rsp_rdata;
@@ -168,6 +172,19 @@ module atg_blt_port #(
 		end
 `endif
 	end
+
+`ifndef SYNTH_KINTEX7
+	genvar gw_sl;
+	generate
+		for (gw_sl = 0; gw_sl < 8; gw_sl = gw_sl + 1) begin : g_wd_slice
+			wire we_wd = issue && free_wd_rep[gw_sl];
+			always @(posedge clk) begin
+				if (we_wd)
+					req_wdata[gw_sl*WD_SLICE_BITS +: WD_SLICE_BITS] <= i_wdata[gw_sl*WD_SLICE_BITS +: WD_SLICE_BITS];
+			end
+		end
+	endgenerate
+`endif
 
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire rst_port_high;
@@ -180,6 +197,8 @@ module atg_blt_port #(
 		if (rst_port_high) begin
 			req_valid <= 1'b0;
 			free <= 1'b1;
+			free_wd_rep <= 8'hFF;
+			free_be_rep <= 2'b11;
 			req_write <= 1'b0;
 			wr_out <= 4'd0;
 			rd_out <= 2'd0;
@@ -198,10 +217,14 @@ module atg_blt_port #(
 			if (q_fire) begin
 				req_valid <= 1'b0;
 				free <= 1'b1;
+				free_wd_rep <= 8'hFF;
+				free_be_rep <= 2'b11;
 			end
 			if (can_issue_ctrl) begin
 				req_valid <= 1'b1;
 				free <= 1'b0;
+				free_wd_rep <= 8'd0;
+				free_be_rep <= 2'b00;
 				req_write <= i_write;
 			end
 		end

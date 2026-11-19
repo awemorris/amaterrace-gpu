@@ -105,6 +105,7 @@ module atg_cp_ctl #(
 	output wire ctrl_irq_global,
 	output wire quiesce,
 	output wire mc_flush,
+	output wire [3:0] mc_flush_rep,
 	output wire core_rst_n,
 	output wire open,
 	output wire [3:0] cp_state,
@@ -181,28 +182,24 @@ module atg_cp_ctl #(
 	assign core_rst_n = core_rst_n_sig;
 `else
 	wire rst_ctl_int = ~rst_n;
-	assign core_rst_n = rst_n && st != S_RS_PULSE;
+	assign core_rst_n = rst_n && st_crst_n_r;
 `endif
 
 	(* max_fanout = 16 *) reg [3:0] open_r;
 	(* max_fanout = 16 *) reg [3:0] can_fault_r;
 	(* DONT_TOUCH = "TRUE" *) reg [2:0] halt_r;
 	(* DONT_TOUCH = "TRUE" *) reg st_is_run_r;
+	(* keep = "true" *) reg [3:0] st_mcf_rep;
+	(* keep = "true" *) reg st_crst_n_r;
 	assign open = open_r[0];
 	assign ctrl_irq_global = irq_global;
 	wire halt_raw = st == S_HALTING || st == S_HALTED || faulted || resetting;
-`ifdef SYNTH_KINTEX7
 	assign run = st_is_run_r && ctrl_run;
 	wire halt_int = halt_r[0];
 	assign halt = halt_r[1];
 	assign quiesce = halt_r[2];
-`else
-	assign run = st == S_RUN && ctrl_run;
-	wire halt_int = halt_raw;
-	assign halt = halt_raw;
-	assign quiesce = halt_raw;
-`endif
 	assign mc_flush = st == S_RS_PULSE;
+	assign mc_flush_rep = st_mcf_rep;
 	/* Micro-architectural CP_STATE (§3.3) */
 	wire cp_is_fault = faulted;
 	wire cp_is_wait_mem = resetting || (st == S_HALTING && !mc_idle) || (seq_st == 4'd10) || (seq_st == 4'd11); /* Q_BARRIER, Q_FLUSH */
@@ -273,27 +270,24 @@ module atg_cp_ctl #(
 
 	function [3:0] mc_client_to_unit;
 		input [7:0] client;
+		reg c0, c1, c_cpu, c_vf, c_tu, c_rop, c_pre_su, c_dc;
 		begin
-			if (client == 8'd0)
-				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-			else if (client == 8'd1)
-				mc_client_to_unit = GHCI_FAULT_UNIT_BLT;
-			else if (C_CPU != C_VF && client == C_CPU[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-			else if (C_VF != C_TU && client == C_VF[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_VF;
-			else if (C_TU != C_ROP && client == C_TU[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_TU;
-			else if (C_ROP != C_ATOM && client == C_ROP[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_ROP;
-			else if (C_ATOM != C_SA && client == C_ATOM[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
-			else if (C_SA != C_DC && client == C_SA[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
-			else if (DC_CLIENT != 8'hFF && client == DC_CLIENT[7:0])
-				mc_client_to_unit = GHCI_FAULT_UNIT_CP;
-			else
-				mc_client_to_unit = GHCI_FAULT_UNIT_SU;
+			c0       = (client == 8'd0);
+			c1       = (client == 8'd1);
+			c_cpu    = !c0 && !c1 && (C_CPU != C_VF) && (client == C_CPU[7:0]);
+			c_vf     = !c0 && !c1 && !c_cpu && (C_VF != C_TU) && (client == C_VF[7:0]);
+			c_tu     = !c0 && !c1 && !c_cpu && !c_vf && (C_TU != C_ROP) && (client == C_TU[7:0]);
+			c_rop    = !c0 && !c1 && !c_cpu && !c_vf && !c_tu && (C_ROP != C_ATOM) && (client == C_ROP[7:0]);
+			c_pre_su = ((C_ATOM != C_SA) && (client == C_ATOM[7:0])) ||
+			           ((C_SA != C_DC) && (client == C_SA[7:0]));
+			c_dc     = !c0 && !c1 && !c_cpu && !c_vf && !c_tu && !c_rop && !c_pre_su &&
+			           (DC_CLIENT != 8'hFF) && (client == DC_CLIENT[7:0]);
+			mc_client_to_unit = (c0 || c_cpu || c_dc) ? GHCI_FAULT_UNIT_CP :
+			                    c1                    ? GHCI_FAULT_UNIT_BLT :
+			                    c_vf                  ? GHCI_FAULT_UNIT_VF :
+			                    c_tu                  ? GHCI_FAULT_UNIT_TU :
+			                    c_rop                 ? GHCI_FAULT_UNIT_ROP :
+			                                            GHCI_FAULT_UNIT_SU;
 		end
 	endfunction
 	reg any;
@@ -509,56 +503,53 @@ module atg_cp_ctl #(
 	                     (kick_absent || kick_bad || locked_bad) ? 8'd0 :
 	                     wdt_fire ? wdt_tag : n_info[15:8];
 `else
-	always @(*) begin
-		n_addr = 32'd0;
-		n_info = 32'd0;
-		if (mc_gpu) begin
-			n_info = {11'd0, mc_fault_write,
-				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
-				mc_fault_tag, mc_client_to_unit(mc_fault_client),
-				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
-				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
-			n_addr = mc_fault_addr;
-		end else if (kick_absent) begin
-			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_KICK_ABSENT};
-		end else if (kick_bad) begin
-			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_INVALID_OP};
-		end else if (locked_bad) begin
-			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG};
-		end else if (wdt_fire) begin
-			n_info = {12'd0, 4'd0, wdt_tag, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG};
-		end
-	end
+	wire [3:0] mc_unit_w = mc_client_to_unit(mc_fault_client);
+	wire [31:0] mc_info_w = {11'd0, mc_fault_write,
+		(mc_unit_w == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
+		mc_fault_tag, mc_unit_w,
+		mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
+		(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
 
 	wire [NSRC-1:0] sf_1h;
-	wire [31:0] sf_info, sf_addr;
 	assign sf_1h[0] = src_fault[0];
-	genvar gsf;
+	genvar gsf, gsb;
 	generate
 		for (gsf = 1; gsf < NSRC; gsf = gsf + 1) begin : g_sf1h
 			assign sf_1h[gsf] = src_fault[gsf] && !(|src_fault[gsf-1:0]);
 		end
 	endgenerate
-	reg [31:0] sf_info_r, sf_addr_r;
-	always @(*) begin
-		sf_info_r = 32'd0;
-		sf_addr_r = 32'd0;
-		for (k = 0; k < NSRC; k = k + 1) begin
-			if (sf_1h[k]) begin
-				sf_info_r = sf_info_r | {12'd0, src_stage[k * 4 +: 4], src_tag[k * 8 +: 8],
-					SRC_BLOCK[k * 8 +: 4], src_kind[k * 4 +: 4]};
-				sf_addr_r = sf_addr_r | src_addr[k * 32 +: 32];
+
+	wire [31:0] sf_info, sf_addr;
+	generate
+		for (gsb = 0; gsb < 32; gsb = gsb + 1) begin : g_sf_or
+			wire [NSRC-1:0] si_vec, sa_vec;
+			for (gsf = 0; gsf < NSRC; gsf = gsf + 1) begin : g_sf_bit
+				wire [31:0] src_i_k = {12'd0, src_stage[gsf*4 +: 4], src_tag[gsf*8 +: 8],
+					SRC_BLOCK[gsf*8 +: 4], src_kind[gsf*4 +: 4]};
+				assign si_vec[gsf] = sf_1h[gsf] && src_i_k[gsb];
+				assign sa_vec[gsf] = sf_1h[gsf] && src_addr[gsf*32 + gsb];
 			end
+			assign sf_info[gsb] = |si_vec;
+			assign sf_addr[gsb] = |sa_vec;
 		end
-	end
-	assign sf_info = sf_info_r;
-	assign sf_addr = sf_addr_r;
+	endgenerate
 
 	wire any_src_fault = |src_fault;
-	wire use_src_fault = !mc_gpu && !kick_absent && !kick_bad && !locked_bad && !wdt_fire && any_src_fault;
-	wire [31:0] n_info_mux = use_src_fault ? sf_info : n_info;
-	wire [31:0] n_addr_mux = use_src_fault ? sf_addr : n_addr;
+	wire p_mc   = mc_gpu;
+	wire p_host = !mc_gpu && (kick_absent || kick_bad || locked_bad || wdt_fire);
+	wire p_src  = !mc_gpu && !kick_absent && !kick_bad && !locked_bad && !wdt_fire && any_src_fault;
+	wire [31:0] host_info_w = kick_absent ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_KICK_ABSENT} :
+	                          kick_bad    ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_INVALID_OP} :
+	                          locked_bad  ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG} :
+	                                        {12'd0, 4'd0, wdt_tag, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG};
+
+	wire [31:0] n_info_mux = (p_mc ? mc_info_w : 32'd0) |
+	                         (p_host ? host_info_w : 32'd0) |
+	                         (p_src ? sf_info : 32'd0);
+	wire [31:0] n_addr_mux = (p_mc ? mc_fault_addr : 32'd0) |
+	                         (p_src ? sf_addr : 32'd0);
 	wire any_mux = mc_gpu || kick_absent || kick_bad || locked_bad || wdt_fire || any_src_fault;
+	wire unused_n_c = &{1'b0, any, n_info, n_addr, k};
 
 	wire fault_info_uncleared = |fault_info;
 	wire take_fault = any_mux && can_fault_r[0];
@@ -687,6 +678,8 @@ module atg_cp_ctl #(
 			can_fault_r <= 4'b1111;
 			halt_r <= 3'b000;
 			st_is_run_r <= 1'b0;
+			st_mcf_rep <= 4'd0;
+			st_crst_n_r <= 1'b1;
 			ctrl_run <= 1'b0;
 			ctrl_halt <= 1'b0;
 			ctrl_wdt_en <= 1'b0;
@@ -704,6 +697,8 @@ module atg_cp_ctl #(
 `endif
 			axi_stuck <= 1'b0;
 		end else begin
+			st_mcf_rep <= 4'd0;
+			st_crst_n_r <= 1'b1;
 			/* Registers. */
 			if (wr_ctrl) begin
 				if (hcr_wdata[GHCI_CTRL_RESET]) begin
@@ -848,8 +843,11 @@ module atg_cp_ctl #(
 					can_fault_r <= 4'b0000;
 					halt_r <= 3'b111;
 					st_is_run_r <= 1'b0;
-					if (mc_idle)
+					if (mc_idle) begin
 						st <= S_RS_PULSE;
+						st_mcf_rep <= 4'hF;
+						st_crst_n_r <= 1'b0;
+					end
 				end
 				S_RS_PULSE: begin
 					open_r <= 4'b0000;

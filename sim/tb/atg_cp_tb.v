@@ -350,7 +350,7 @@ module atg_cp_tb;
 		.reg_rd(cp_reg_rd), .reg_raddr(cp_reg_raddr), .reg_rdata(cp_reg_rdata),
 		.diag_cp_pc(32'd0), .diag_cp_status(32'd0), .diag_pipe_fsm(32'd0),
 		.irq(), .mem_ready(1'b1), .core_rst_n(), .win_en(),
-		.mc_quiesce(), .mc_flush(), .l2_flush(), .l2_flush_done(1'b1), .l2_idle(1'b1),
+		.mc_quiesce(), .mc_flush(), .mc_flush_rep(), .l2_flush(), .l2_flush_done(1'b1), .l2_idle(1'b1),
 		.aperture_base(), .aperture_limit(), .mc_idle(1'b1), .mc_fault(1'b0),
 		.mc_fault_client(8'd0), .mc_fault_addr(32'd0), .mc_fault_write(1'b0),
 		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0), .mc_fault_req_tag(8'd0),

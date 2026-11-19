@@ -105,7 +105,8 @@ module atg_mc #(
 	parameter PROT_GIDX_W = 3,	/* clog2(PROT_GRANTS) */
 	parameter HAS_L2 = 0,		/* 256 KiB 16-way L2 cache (LLC) */
 	parameter L2_WAYS = 16,
-	parameter L2_SET_W = 8
+	parameter L2_SET_W = 8,
+	parameter USE_FLUSH_REP = 0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -129,6 +130,7 @@ module atg_mc #(
 
 	input wire quiesce,
 	input wire flush,
+	input wire [3:0] flush_rep,
 	input wire l2_flush,
 	output wire l2_flush_done,
 	output wire l2_idle_out,
@@ -263,12 +265,18 @@ module atg_mc #(
 	assign m_bready = m_bready_raw;
 `endif
 
+	/* Split flush fanout across independent replicated CP registers */
+	wire flush_tree = USE_FLUSH_REP ? flush_rep[0] : flush;
+	wire flush_asm  = USE_FLUSH_REP ? flush_rep[1] : flush;
+	wire flush_cnt  = USE_FLUSH_REP ? flush_rep[2] : flush;
+	wire flush_l2   = USE_FLUSH_REP ? flush_rep[3] : flush;
+
 	atg_mc_tree #(
 		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
 		.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
 	) tree (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .hold(tree_hold),
+		.clk(clk), .rst_n(rst_n), .flush(flush_tree), .hold(tree_hold),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready_raw), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag),
@@ -316,12 +324,12 @@ module atg_mc #(
 	wire [LINE_BITS-1:0] a_head, a_data, d_head, d_data;
 
 	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_a (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .t_valid(t_req_valid), .t_ready(t_req_ready_raw),
+		.clk(clk), .rst_n(rst_n), .flush(flush_asm), .t_valid(t_req_valid), .t_ready(t_req_ready_raw),
 		.t_data(t_req_data), .t_last(t_req_last), .t_ap(t_req_ap), .full(a_full), .head(a_head),
 		.data(a_data), .ap_ok(a_ap), .take(a_take)
 	);
 	atg_mc_asm #(.LINE_BYTES(LINE_BYTES)) asm_d (
-		.clk(clk), .rst_n(rst_n), .flush(flush && HAS_KEEP == 0), .t_valid(HAS_DC != 0 && s_req_valid),
+		.clk(clk), .rst_n(rst_n), .flush(flush_asm && HAS_KEEP == 0), .t_valid(HAS_DC != 0 && s_req_valid),
 		.t_ready(s_req_ready), .t_data(s_req_data), .t_last(s_req_last), .t_ap(s_req_ap), .full(d_full),
 		.head(d_head), .data(d_data), .ap_ok(d_ap), .take(d_take)
 	);
@@ -357,7 +365,7 @@ module atg_mc #(
 		.VRAM_BASE(VRAM_BASE), .RW(RW), .PLB(PROT_PLB), .PLB_W(PROT_PLB_W),
 		.NGRANT(PROT_GRANTS), .GIDX_W(PROT_GIDX_W)
 	) grant (
-		.clk(clk), .rst_n(rst_n), .flush(flush),
+		.clk(clk), .rst_n(rst_n), .flush(flush_asm),
 		.a_valid(a_full && !(HAS_DC != 0 && dc_panic && d_full)), .a_head(a_head), .a_data(a_data),
 		.a_ap(a_ap), .a_take(a_take_raw),
 		.d_valid(d_full), .d_head(d_head), .d_data(d_data), .d_ap(d_ap), .d_take(d_take),
@@ -455,7 +463,7 @@ module atg_mc #(
 	wire ax_zero;
 
 	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK), .KEEP_MASK(KEEP_MASK)) cnt (
-		.clk(clk), .rst_n(rst_n), .flush(flush), .take(c_req_valid & c_req_ready_raw),
+		.clk(clk), .rst_n(rst_n), .flush(flush_cnt), .take(c_req_valid & c_req_ready_raw),
 		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
 		.done_chk(done_chk), .done_keep(g_valid && g_ready ? g_keep : bad && bad_keep),
 		.ax_inc(g_valid && g_ready && !g_keep), .ax_dec(l2_rsp_valid && !l2_keep),
@@ -478,7 +486,7 @@ module atg_mc #(
 			bad_prot_r <= 1'b0;
 			bad_mem_r <= 1'b0;
 		end else begin
-			bad_r <= bad && (!flush || bad_keep);
+			bad_r <= bad && (!flush_cnt || bad_keep);
 			bad_head_r <= bad_head;
 			bad_line_r <= bad_line;
 			bad_prot_r <= bad_prot;
@@ -503,7 +511,7 @@ module atg_mc #(
 			if (err_load_raw) begin
 				err_v <= 1'b1;
 				fault <= 1'b1;
-			end else if (err_out || flush && !err_keep) begin
+			end else if (err_out || flush_cnt && !err_keep) begin
 				err_v <= 1'b0;
 			end
 		end
@@ -572,7 +580,7 @@ module atg_mc #(
 				fault_slot <= bad_head_r[HW+1 +: 6];
 				fault_mem <= bad_mem_r;
 				fault_tag <= bad_head_r[11:4];
-			end else if (err_out || flush && !err_keep) begin
+			end else if (err_out || flush_cnt && !err_keep) begin
 				err_v <= 1'b0;
 			end
 		end
@@ -606,10 +614,11 @@ module atg_mc #(
 		wire [SKID_W-1:0] l2_s_req_data;
 
 		am_skid #(
-			.WIDTH(SKID_W)
+			.WIDTH(SKID_W),
+			.RST_DATA(0)
 		) u_l2_skid (
 			.clk(clk),
-			.rst_n(rst_n && !flush),
+			.rst_n(rst_n && !flush_l2),
 			.in_valid(g_valid),
 			.in_ready(g_ready),
 			.in_data({g_write, g_line, g_be, g_wdata, g_user, g_host, g_host, s_high}),
@@ -642,7 +651,7 @@ module atg_mc #(
 			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.UW(UW), .WAYS(L2_WAYS), .SET_W(L2_SET_W)
 		) l2 (
-			.clk(clk), .rst_n(rst_n), .flush(flush), .quiesce(quiesce),
+			.clk(clk), .rst_n(rst_n), .flush(flush_l2), .quiesce(quiesce),
 			.s_req_valid(l2_s_req_valid), .s_req_ready(l2_s_req_ready), .s_req_write(l2_req_write),
 			.s_req_line(l2_req_line), .s_req_be(l2_req_be), .s_req_wdata(l2_req_wdata),
 			.s_req_user(l2_req_user), .s_req_id(l2_req_id), .s_req_nc(l2_req_nc),

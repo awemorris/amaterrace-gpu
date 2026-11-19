@@ -502,30 +502,131 @@ module am_fpu_core #(
 			end
 		end
 
-		/* Stage 2: i2f LOD and shift, f2i -> latched into Stage 3 */
+		/* Stage 2: parallel-prefix leading-1 LOD + 1-hot factored shift (replaces am_msb + am_shift) */
 		wire [31:0] s2_xf = f_flush(s2_a);
 		wire s2_s = s2_s_val;
 
-		wire [4:0] s2_i2f_msb;
-		wire s2_i2f_nz;
-		am_msb #(.W(32), .SW(5)) u_msb_i2f (.a(s2_i2f_in), .n(s2_i2f_msb), .nz(s2_i2f_nz));
+		/* i2f 32-bit parallel prefix OR (i2f_pre[k] = |s2_i2f_in[31:k]) */
+		wire [31:0] i2f_p1 = s2_i2f_in | {1'b0,  s2_i2f_in[31:1]};
+		wire [31:0] i2f_p2 = i2f_p1    | {2'd0,  i2f_p1[31:2]};
+		wire [31:0] i2f_p3 = i2f_p2    | {4'd0,  i2f_p2[31:4]};
+		wire [31:0] i2f_p4 = i2f_p3    | {8'd0,  i2f_p3[31:8]};
+		wire [31:0] i2f_p5 = i2f_p4    | {16'd0, i2f_p4[31:16]};
+		wire [31:0] l1h_i2f = {i2f_p5[31], i2f_p5[30:0] & ~i2f_p5[31:1]};
+		wire s2_i2f_nz = i2f_p5[0];
+		wire [4:0] s2_i2f_msb = {
+			|l1h_i2f[31:16],
+			(|l1h_i2f[15:8])  | (|l1h_i2f[31:24]),
+			(|l1h_i2f[7:4])   | (|l1h_i2f[15:12]) | (|l1h_i2f[23:20]) | (|l1h_i2f[31:28]),
+			l1h_i2f[2]  | l1h_i2f[3]  | l1h_i2f[6]  | l1h_i2f[7]  |
+			l1h_i2f[10] | l1h_i2f[11] | l1h_i2f[14] | l1h_i2f[15] |
+			l1h_i2f[18] | l1h_i2f[19] | l1h_i2f[22] | l1h_i2f[23] |
+			l1h_i2f[26] | l1h_i2f[27] | l1h_i2f[30] | l1h_i2f[31],
+			l1h_i2f[1]  | l1h_i2f[3]  | l1h_i2f[5]  | l1h_i2f[7]  |
+			l1h_i2f[9]  | l1h_i2f[11] | l1h_i2f[13] | l1h_i2f[15] |
+			l1h_i2f[17] | l1h_i2f[19] | l1h_i2f[21] | l1h_i2f[23] |
+			l1h_i2f[25] | l1h_i2f[27] | l1h_i2f[29] | l1h_i2f[31]
+		};
+		/* Factored left-shift amt = 31 - pos: mod-4 and div-4 1-hot */
+		wire [3:0] i2f_sh_lo = {
+			l1h_i2f[28] | l1h_i2f[24] | l1h_i2f[20] | l1h_i2f[16] | l1h_i2f[12] | l1h_i2f[8]  | l1h_i2f[4] | l1h_i2f[0],
+			l1h_i2f[29] | l1h_i2f[25] | l1h_i2f[21] | l1h_i2f[17] | l1h_i2f[13] | l1h_i2f[9]  | l1h_i2f[5] | l1h_i2f[1],
+			l1h_i2f[30] | l1h_i2f[26] | l1h_i2f[22] | l1h_i2f[18] | l1h_i2f[14] | l1h_i2f[10] | l1h_i2f[6] | l1h_i2f[2],
+			l1h_i2f[31] | l1h_i2f[27] | l1h_i2f[23] | l1h_i2f[19] | l1h_i2f[15] | l1h_i2f[11] | l1h_i2f[7] | l1h_i2f[3]
+		};
+		wire [7:0] i2f_sh_hi = {
+			|l1h_i2f[3:0],   |l1h_i2f[7:4],   |l1h_i2f[11:8],  |l1h_i2f[15:12],
+			|l1h_i2f[19:16], |l1h_i2f[23:20], |l1h_i2f[27:24], |l1h_i2f[31:28]
+		};
+		wire [34:0] i2f_in_p = {s2_i2f_in, 3'd0};
+		wire [31:0] i2f_sh1, s2_w_i2f;
+		wire [59:0] i2f_sh1_p = {i2f_sh1, 28'd0};
+		genvar gi2f;
+		for (gi2f = 0; gi2f < 32; gi2f = gi2f + 1) begin : g_i2f_sh1
+			assign i2f_sh1[gi2f] =
+				(i2f_sh_lo[0] & i2f_in_p[gi2f + 3]) | (i2f_sh_lo[1] & i2f_in_p[gi2f + 2]) |
+				(i2f_sh_lo[2] & i2f_in_p[gi2f + 1]) | (i2f_sh_lo[3] & i2f_in_p[gi2f]);
+		end
+		for (gi2f = 0; gi2f < 32; gi2f = gi2f + 1) begin : g_i2f_sh2
+			assign s2_w_i2f[gi2f] =
+				(i2f_sh_hi[0] & i2f_sh1_p[gi2f + 28]) | (i2f_sh_hi[1] & i2f_sh1_p[gi2f + 24]) |
+				(i2f_sh_hi[2] & i2f_sh1_p[gi2f + 20]) | (i2f_sh_hi[3] & i2f_sh1_p[gi2f + 16]) |
+				(i2f_sh_hi[4] & i2f_sh1_p[gi2f + 12]) | (i2f_sh_hi[5] & i2f_sh1_p[gi2f + 8])  |
+				(i2f_sh_hi[6] & i2f_sh1_p[gi2f + 4])  | (i2f_sh_hi[7] & i2f_sh1_p[gi2f]);
+		end
 
-		wire [4:0] s2_rint_msb;
-		wire s2_rint_nz;
-		am_msb #(.W(25), .SW(5)) u_msb_rint (.a(s2_n), .n(s2_rint_msb), .nz(s2_rint_nz));
+		/* rint 25-bit 3-chunk parallel LOD (max 3 OR levels per chunk) */
+		wire [7:0]  rn0 = s2_n[7:0], rn1 = s2_n[15:8];
+		wire [8:0]  rn2 = s2_n[24:16];
+		wire [7:0]  rn0_p1 = rn0 | {1'b0, rn0[7:1]};
+		wire [7:0]  rn0_p2 = rn0_p1 | {2'd0, rn0_p1[7:2]};
+		wire [7:0]  rn0_p3 = rn0_p2 | {4'd0, rn0_p2[7:4]};
+		wire [7:0]  rn0_l1h = {rn0_p3[7], rn0_p3[6:0] & ~rn0_p3[7:1]};
+		wire [7:0]  rn1_p1 = rn1 | {1'b0, rn1[7:1]};
+		wire [7:0]  rn1_p2 = rn1_p1 | {2'd0, rn1_p1[7:2]};
+		wire [7:0]  rn1_p3 = rn1_p2 | {4'd0, rn1_p2[7:4]};
+		wire [7:0]  rn1_l1h = {rn1_p3[7], rn1_p3[6:0] & ~rn1_p3[7:1]};
+		wire [8:0]  rn2_p1 = rn2 | {1'b0, rn2[8:1]};
+		wire [8:0]  rn2_p2 = rn2_p1 | {2'd0, rn2_p1[8:2]};
+		wire [8:0]  rn2_p3 = rn2_p2 | {4'd0, rn2_p2[8:4]};
+		wire [8:0]  rn2_p4 = rn2_p3 | {8'd0, rn2_p3[8]};
+		wire [8:0]  rn2_l1h = {rn2_p4[8], rn2_p4[7:0] & ~rn2_p4[8:1]};
+		wire rn0_nz = rn0_p3[0], rn1_nz = rn1_p3[0], rn2_nz = rn2_p4[0];
+		wire [2:0] rn_blk_1h = {rn2_nz, rn1_nz & ~rn2_nz, rn0_nz & ~rn1_nz & ~rn2_nz};
+		wire [24:0] l1h_rint = {
+			{9{rn_blk_1h[2]}} & rn2_l1h,
+			{8{rn_blk_1h[1]}} & rn1_l1h,
+			{8{rn_blk_1h[0]}} & rn0_l1h
+		};
+		wire s2_rint_nz = rn2_nz | rn1_nz | rn0_nz;
+		wire [4:0] s2_rint_msb = {
+			rn_blk_1h[2],
+			rn_blk_1h[1],
+			rn_blk_1h[2] ? (|rn2_l1h[7:4]) : (rn_blk_1h[1] ? (|rn1_l1h[7:4]) : (|rn0_l1h[7:4])),
+			(rn_blk_1h[2] & (|rn2_l1h[3:2] | |rn2_l1h[7:6])) |
+			(rn_blk_1h[1] & (|rn1_l1h[3:2] | |rn1_l1h[7:6])) |
+			(rn_blk_1h[0] & (|rn0_l1h[3:2] | |rn0_l1h[7:6])),
+			(rn_blk_1h[2] & (rn2_l1h[1] | rn2_l1h[3] | rn2_l1h[5] | rn2_l1h[7])) |
+			(rn_blk_1h[1] & (rn1_l1h[1] | rn1_l1h[3] | rn1_l1h[5] | rn1_l1h[7])) |
+			(rn_blk_1h[0] & (rn0_l1h[1] | rn0_l1h[3] | rn0_l1h[5] | rn0_l1h[7]))
+		};
+		wire [3:0] rint_sh_lo = {
+			l1h_rint[24] | l1h_rint[20] | l1h_rint[16] | l1h_rint[12] | l1h_rint[8]  | l1h_rint[4] | l1h_rint[0],
+			l1h_rint[21] | l1h_rint[17] | l1h_rint[13] | l1h_rint[9]  | l1h_rint[5]  | l1h_rint[1],
+			l1h_rint[22] | l1h_rint[18] | l1h_rint[14] | l1h_rint[10] | l1h_rint[6]  | l1h_rint[2],
+			l1h_rint[23] | l1h_rint[19] | l1h_rint[15] | l1h_rint[11] | l1h_rint[7]  | l1h_rint[3]
+		};
+		wire [7:0] rint_sh_hi = {
+			|l1h_rint[3:0],   |l1h_rint[7:4],   |l1h_rint[11:8],  |l1h_rint[15:12],
+			|l1h_rint[19:16], |l1h_rint[23:20], l1h_rint[24],     1'b0
+		};
+		wire [34:0] rint_vec_p = {7'd0, s2_n, 3'd0};
+		wire [31:0] rint_sh1, s2_w_rint;
+		wire [59:0] rint_sh1_p = {rint_sh1, 28'd0};
+		for (gi2f = 0; gi2f < 32; gi2f = gi2f + 1) begin : g_rint_sh1
+			assign rint_sh1[gi2f] =
+				(rint_sh_lo[0] & rint_vec_p[gi2f + 3]) | (rint_sh_lo[1] & rint_vec_p[gi2f + 2]) |
+				(rint_sh_lo[2] & rint_vec_p[gi2f + 1]) | (rint_sh_lo[3] & rint_vec_p[gi2f]);
+		end
+		for (gi2f = 0; gi2f < 32; gi2f = gi2f + 1) begin : g_rint_sh2
+			assign s2_w_rint[gi2f] =
+				(rint_sh_hi[1] & rint_sh1_p[gi2f + 24]) | (rint_sh_hi[2] & rint_sh1_p[gi2f + 20]) |
+				(rint_sh_hi[3] & rint_sh1_p[gi2f + 16]) | (rint_sh_hi[4] & rint_sh1_p[gi2f + 12]) |
+				(rint_sh_hi[5] & rint_sh1_p[gi2f + 8])  | (rint_sh_hi[6] & rint_sh1_p[gi2f + 4])  |
+				(rint_sh_hi[7] & rint_sh1_p[gi2f]);
+		end
 
 		wire [4:0] s2_msb = s2_is_i2f ? s2_i2f_msb : s2_rint_msb;
 		wire s2_nz = s2_is_i2f ? s2_i2f_nz : s2_rint_nz;
 
-		wire [31:0] s2_w_i2f, s2_w_rint;
-		wire [11:0] s2_e;
-		wire [7:0] s2_e_rint;
+		/* Exponent = 127 + msb: 5-bit dec instead of 12b ripple add cuts i2f_in_p -> s2_e by ~10 cmos3 */
+		wire [4:0] s2_msb_m1, s2_rmsb_m1;
 		wire carry_unused2_e, carry_unused2_er;
-		am_shift #(.W(32), .SW(5), .DIR(2)) u_w2_i2f  (.a(s2_i2f_in),     .amt(~s2_i2f_msb),  .left(1'b1), .arith(1'b0), .y(s2_w_i2f));
-		am_shift #(.W(32), .SW(5), .DIR(2)) u_w2_rint (.a({7'd0, s2_n}),  .amt(~s2_rint_msb), .left(1'b1), .arith(1'b0), .y(s2_w_rint));
+		am_sub #(.W(5)) u_e2_m1  (.a(s2_msb),      .b(5'd1), .bi(1'b0), .d(s2_msb_m1),  .bo(carry_unused2_e));
+		am_sub #(.W(5)) u_e2_rm1 (.a(s2_rint_msb), .b(5'd1), .bi(1'b0), .d(s2_rmsb_m1), .bo(carry_unused2_er));
+		wire [11:0] s2_e      = (|s2_msb)      ? {5'd1, 2'd0, s2_msb_m1}  : 12'd127;
+		wire [7:0]  s2_e_rint = (|s2_rint_msb) ? {1'b1, 2'd0, s2_rmsb_m1} : 8'd127;
 		wire [31:0] s2_w = s2_is_i2f ? s2_w_i2f : s2_w_rint;
-		am_add #(.W(12)) u_e2      (.a({7'd0, s2_msb}),      .b(12'd127), .ci(1'b0), .s(s2_e),      .co(carry_unused2_e));
-		am_add #(.W(8))  u_e2_rint (.a({3'd0, s2_rint_msb}), .b(8'd127),  .ci(1'b0), .s(s2_e_rint), .co(carry_unused2_er));
 
 		wire [31:0] s3_ri;
 		am_fp_f2i #(.LAT(1)) u_f2i2 (
@@ -613,15 +714,23 @@ module am_fpu_core #(
 
 		/* FRACT exponent and shift precomputation in Stage 2 (exp_a offset precomputed in Stage 1) */
 		wire s2_fract_use_msb = !s2_fl_nan_r && !s2_fl_pass_r && s2_rint_nz;
-		wire [11:0] s2_fract_msb_w = s2_fract_use_msb ? {7'd0, s2_rint_msb} : 12'd0;
+		wire [4:0] s2_fract_msb_lo = s2_fract_use_msb ? s2_rint_msb : 5'd0;
 		wire [11:0] s2_fract_b150  = s2_fract_use_msb ? s2_f_off150 : s2_f_z150;
 		wire [11:0] s2_fract_b152  = s2_fract_use_msb ? s2_f_off152 : s2_f_z152;
 		wire [11:0] s2_fract_b101  = s2_fract_use_msb ? s2_f_off101 : s2_f_z101;
-		wire [11:0] s2_fract_k, s2_fract_kadj, s2_fract_kp2;
-		wire [2:0]  s2_fract_carry_unused;
-		am_add #(.W(12)) u_fract2_k    (.a(s2_fract_b150), .b(s2_fract_msb_w), .ci(1'b0), .s(s2_fract_k),    .co(s2_fract_carry_unused[0]));
-		am_add #(.W(12)) u_fract2_kadj (.a(s2_fract_b101), .b(s2_fract_msb_w), .ci(1'b0), .s(s2_fract_kadj), .co(s2_fract_carry_unused[1]));
-		am_add #(.W(12)) u_fract2_kp2  (.a(s2_fract_b152), .b(s2_fract_msb_w), .ci(1'b0), .s(s2_fract_kp2),  .co(s2_fract_carry_unused[2]));
+		wire [6:0] s2_b150_hp1, s2_b101_hp1, s2_b152_hp1;
+		wire [4:0] s2_fk_lo, s2_fka_lo, s2_fkp_lo;
+		wire [2:0] s2_fk_co, s2_fhp_unused;
+		am_add #(.W(7)) u_f2_hp0 (.a(s2_fract_b150[11:5]), .b(7'd1), .ci(1'b0), .s(s2_b150_hp1), .co(s2_fhp_unused[0]));
+		am_add #(.W(7)) u_f2_hp1 (.a(s2_fract_b101[11:5]), .b(7'd1), .ci(1'b0), .s(s2_b101_hp1), .co(s2_fhp_unused[1]));
+		am_add #(.W(7)) u_f2_hp2 (.a(s2_fract_b152[11:5]), .b(7'd1), .ci(1'b0), .s(s2_b152_hp1), .co(s2_fhp_unused[2]));
+		am_add #(.W(5)) u_fract2_k    (.a(s2_fract_b150[4:0]), .b(s2_fract_msb_lo), .ci(1'b0), .s(s2_fk_lo),  .co(s2_fk_co[0]));
+		am_add #(.W(5)) u_fract2_kadj (.a(s2_fract_b101[4:0]), .b(s2_fract_msb_lo), .ci(1'b0), .s(s2_fka_lo), .co(s2_fk_co[1]));
+		am_add #(.W(5)) u_fract2_kp2  (.a(s2_fract_b152[4:0]), .b(s2_fract_msb_lo), .ci(1'b0), .s(s2_fkp_lo), .co(s2_fk_co[2]));
+		wire [11:0] s2_fract_k    = {s2_fk_co[0] ? s2_b150_hp1 : s2_fract_b150[11:5], s2_fk_lo};
+		wire [11:0] s2_fract_kadj = {s2_fk_co[1] ? s2_b101_hp1 : s2_fract_b101[11:5], s2_fka_lo};
+		wire [11:0] s2_fract_kp2  = {s2_fk_co[2] ? s2_b152_hp1 : s2_fract_b152[11:5], s2_fkp_lo};
+		wire [2:0]  s2_fract_carry_unused = s2_fhp_unused;
 
 		wire s2_is_fract = (s2_op == OP_FRACT);
 		wire [11:0] s2_sel_k    = s2_is_fract ? s2_fract_k    : s2_fma_k;
@@ -747,15 +856,18 @@ module am_fpu_core #(
 			endcase
 		end
 
-		wire [24:0] s3_mr0;
-		wire carry_unused3_mr;
-		am_add #(.W(25)) u_mr3 (
-			.a({1'b0, s3_w[31:9], s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st))}),
-			.b(25'd0),
-			.ci(s3_up),
-			.s(s3_mr0),
-			.co(carry_unused3_mr)
-		);
+		wire [24:0] mr3_in = {1'b0, s3_w[31:9], s3_w[8] | (((s3_rm == 3'd5 || s3_rm == 3'd6) && (cvsw3 || cvswu3)) && (s3_g || s3_st))};
+		wire [8:0]  mr3_lo;
+		wire [7:0]  mr3_m0, mr3_m1, mr3_h0, mr3_h1;
+		wire        mr3_c0, mr3_cm0, mr3_cm1, mr3_ch0, mr3_ch1;
+		am_add #(.W(9)) u_mr3_lo  (.a(mr3_in[8:0]),   .b(9'd0), .ci(s3_up), .s(mr3_lo), .co(mr3_c0));
+		am_add #(.W(8)) u_mr3_m0  (.a(mr3_in[16:9]),  .b(8'd0), .ci(1'b0),  .s(mr3_m0), .co(mr3_cm0));
+		am_add #(.W(8)) u_mr3_m1  (.a(mr3_in[16:9]),  .b(8'd0), .ci(1'b1),  .s(mr3_m1), .co(mr3_cm1));
+		am_add #(.W(8)) u_mr3_h0  (.a(mr3_in[24:17]), .b(8'd0), .ci(1'b0),  .s(mr3_h0), .co(mr3_ch0));
+		am_add #(.W(8)) u_mr3_h1  (.a(mr3_in[24:17]), .b(8'd0), .ci(1'b1),  .s(mr3_h1), .co(mr3_ch1));
+		wire mr3_c1 = mr3_c0 ? mr3_cm1 : mr3_cm0;
+		wire [24:0] s3_mr0 = {mr3_c1 ? mr3_h1 : mr3_h0, mr3_c0 ? mr3_m1 : mr3_m0, mr3_lo};
+		wire carry_unused3_mr = &{1'b0, mr3_cm0, mr3_ch0, mr3_ch1};
 
 		wire [11:0] s3_e_p1;
 		wire carry_unused3_ep;
@@ -792,20 +904,68 @@ module am_fpu_core #(
 		wire [11:0] fma3_kadj = s3_fma_kadj;
 		wire [11:0] fma3_kp2  = s3_fma_kp2;
 
-		wire [4:0] fma3_rs;
-		am_sub #(.W(5))  u_fma3_rs   (.a(5'd0), .b(fma3_kp2[4:0]), .bi(1'b0), .d(fma3_rs),   .bo(fma3_carry_unused[0]));
+		wire [4:0] fma3_rs = 5'd0;
+		assign fma3_carry_unused = 1'b0;
 		wire signed [11:0] fma3_ks = fma3_k;
 		wire fma3_kbig = fma3_ks > 12'sd49;
 		wire fma3_kleft = !fma3_kp2[11];
 		wire fma3_kright = fma3_ks > -12'sd26;
-		wire [76:0] fma3_cs;
-		am_shift #(.W(77), .SW(7)) u_fma3_cs (.a({53'd0, fma3_mc}), .amt(fma3_kleft ? fma3_kp2[6:0] : {2'd0, fma3_rs}), .left(fma3_kleft),
-			.arith(1'b0), .y(fma3_cs));
 
-		wire [23:0] fma3_cst_mask = ~({24{1'b1}} << fma3_rs);
-		wire fma3_cst = (fma3_rs == 5'd0) ? 1'b0 :
-		                (fma3_rs >= 5'd24) ? (|fma3_mc) :
-		                |(fma3_mc & fma3_cst_mask);
+		/* Factored 2-stage byte+bit shifter on 24-bit fma3_mc using two's complement
+		 * identity: kp2 = 8 * signed'(kp2[6:3]) + kp2[2:0] (kp2 in [-23..+51]).
+		 * Avoids 5-bit am_sub and 77-bit barrel shifter. */
+		reg [30:0] fma3_pre;
+		always @(*) begin
+			case (fma3_kp2[2:0])
+			3'd0: fma3_pre = {7'd0, fma3_mc};
+			3'd1: fma3_pre = {6'd0, fma3_mc, 1'b0};
+			3'd2: fma3_pre = {5'd0, fma3_mc, 2'b0};
+			3'd3: fma3_pre = {4'd0, fma3_mc, 3'b0};
+			3'd4: fma3_pre = {3'd0, fma3_mc, 4'b0};
+			3'd5: fma3_pre = {2'd0, fma3_mc, 5'b0};
+			3'd6: fma3_pre = {1'b0, fma3_mc, 6'b0};
+			default: fma3_pre = {fma3_mc, 7'b0};
+			endcase
+		end
+		/* Compute pre-shift sticky flags directly from fma3_mc prefix OR in parallel with fma3_pre */
+		wire [23:0] mc_p1 = fma3_mc | {fma3_mc[22:0], 1'b0};
+		wire [23:0] mc_p2 = mc_p1   | {mc_p1[21:0],   2'd0};
+		wire [23:0] mc_p3 = mc_p2   | {mc_p2[19:0],   4'd0};
+		wire [23:0] mc_p4 = mc_p3   | {mc_p3[15:0],   8'd0};
+		wire [23:0] mc_pfx = mc_p4  | {mc_p4[7:0],   16'd0};
+		wire [2:0] kp2_inv = ~fma3_kp2[2:0];
+		wire fma3_st8  = mc_pfx[{2'b00, kp2_inv}];
+		wire fma3_st16 = mc_pfx[{2'b01, kp2_inv}];
+		wire fma3_st24 = mc_pfx[{2'b10, kp2_inv}];
+		reg [76:0] fma3_cs_w;
+		reg        fma3_cst_w;
+		always @(*) begin
+			fma3_cst_w = 1'b0;
+			case (fma3_kp2[6:3])
+			4'b1101: begin /* -3 -> >>24 */
+				fma3_cs_w  = {70'd0, fma3_pre[30:24]};
+				fma3_cst_w = fma3_st8 | fma3_st16 | fma3_st24;
+			end
+			4'b1110: begin /* -2 -> >>16 */
+				fma3_cs_w  = {62'd0, fma3_pre[30:16]};
+				fma3_cst_w = fma3_st8 | fma3_st16;
+			end
+			4'b1111: begin /* -1 -> >>8 */
+				fma3_cs_w  = {54'd0, fma3_pre[30:8]};
+				fma3_cst_w = fma3_st8;
+			end
+			4'b0000: fma3_cs_w = {46'd0, fma3_pre};
+			4'b0001: fma3_cs_w = {38'd0, fma3_pre, 8'd0};
+			4'b0010: fma3_cs_w = {30'd0, fma3_pre, 16'd0};
+			4'b0011: fma3_cs_w = {22'd0, fma3_pre, 24'd0};
+			4'b0100: fma3_cs_w = {14'd0, fma3_pre, 32'd0};
+			4'b0101: fma3_cs_w = {6'd0,  fma3_pre, 40'd0};
+			4'b0110: fma3_cs_w = {fma3_pre[28:0], 48'd0};
+			default: fma3_cs_w = 77'd0;
+			endcase
+		end
+		wire [76:0] fma3_cs = fma3_cs_w;
+		wire fma3_cst = fma3_cst_w;
 
 		wire [11:0] fma3_adj = !fma3_zc && fma3_kbig ? fma3_kadj : 12'd0;
 		wire [76:0] fma3_cw = fma3_zc ? 77'd0 : fma3_kbig ? {2'b00, fma3_mc, 51'd0} : fma3_kleft ? fma3_cs : fma3_kright ? {fma3_cs[76:1], fma3_cs[0] | fma3_cst} : 77'd1;
@@ -1058,100 +1218,150 @@ module am_fpu_core #(
 
 		/* Stage 5: Hierarchical LOD, Normalization, Exponent for LAT >= 6 */
 
-		/* Parallel per-block MSB encoders (avoids serial 5:1 MUX before LOD) */
-		wire [3:0] msb_b4, msb_b3, msb_b2, msb_b1, msb_b0;
-		wire nz_b4, nz_b3, nz_b2, nz_b1, nz_b0;
-		am_msb #(.W(16), .SW(4)) u_msb_b4 (.a({3'd0, s5_sum[76:64]}), .n(msb_b4), .nz(nz_b4));
-		am_msb #(.W(16), .SW(4)) u_msb_b3 (.a(s5_sum[63:48]),         .n(msb_b3), .nz(nz_b3));
-		am_msb #(.W(16), .SW(4)) u_msb_b2 (.a(s5_sum[47:32]),         .n(msb_b2), .nz(nz_b2));
-		am_msb #(.W(16), .SW(4)) u_msb_b1 (.a(s5_sum[31:16]),         .n(msb_b1), .nz(nz_b1));
-		am_msb #(.W(16), .SW(4)) u_msb_b0 (.a(s5_sum[15:0]),          .n(msb_b0), .nz(nz_b0));
+		/* Parallel 16-bit prefix LOD per block + factored 1-hot window normalizer & prefix sticky */
+		wire [15:0] blk_in4 = {3'd0, s5_sum[76:64]};
+		wire [15:0] blk_in3 = s5_sum[63:48];
+		wire [15:0] blk_in2 = s5_sum[47:32];
+		wire [15:0] blk_in1 = s5_sum[31:16];
+		wire [15:0] blk_in0 = s5_sum[15:0];
+		wire [79:0] blk_all = {blk_in4, blk_in3, blk_in2, blk_in1, blk_in0};
 
-		wire [4:0] s5_blk_nz = {nz_b4, nz_b3, nz_b2, nz_b1, nz_b0};
-		wire [2:0] s5_top_blk = s5_blk_nz[4] ? 3'd4 :
-		                        s5_blk_nz[3] ? 3'd3 :
-		                        s5_blk_nz[2] ? 3'd2 :
-		                        s5_blk_nz[1] ? 3'd1 : 3'd0;
+		wire [79:0] blk_l1h;
+		wire [4:0]  s5_blk_nz;
+		wire [19:0] blk_sub_msb;
+		genvar gb5, gk5;
+		for (gb5 = 0; gb5 < 5; gb5 = gb5 + 1) begin : g_blk5
+			wire [15:0] bin = blk_all[gb5*16 +: 16];
+			wire [15:0] bp1 = bin | {1'b0, bin[15:1]};
+			wire [15:0] bp2 = bp1 | {2'd0, bp1[15:2]};
+			wire [15:0] bp3 = bp2 | {4'd0, bp2[15:4]};
+			wire [15:0] bp4 = bp3 | {8'd0, bp3[15:8]};
+			wire [15:0] bl1h = {bp4[15], bp4[14:0] & ~bp4[15:1]};
+			assign blk_l1h[gb5*16 +: 16] = bl1h;
+			assign s5_blk_nz[gb5] = bp4[0];
+			/* Fast direct 4-bit MSB index per 16-bit block (runs in parallel with bp1..bp4) */
+			wire [3:0] nib_nz = {|bin[15:12], |bin[11:8], |bin[7:4], |bin[3:0]};
+			wire [1:0] nib_m3 = {|bin[15:14], bin[15] | (!bin[14] & bin[13])};
+			wire [1:0] nib_m2 = {|bin[11:10], bin[11] | (!bin[10] & bin[9])};
+			wire [1:0] nib_m1 = {|bin[7:6],   bin[7]  | (!bin[6]  & bin[5])};
+			wire [1:0] nib_m0 = {|bin[3:2],   bin[3]  | (!bin[2]  & bin[1])};
+			wire [1:0] sms_hi = {nib_nz[3] | nib_nz[2], nib_nz[3] | (!nib_nz[2] & nib_nz[1])};
+			wire [1:0] sms_lo = nib_nz[3] ? nib_m3 : nib_nz[2] ? nib_m2 : nib_nz[1] ? nib_m1 : nib_m0;
+			assign blk_sub_msb[gb5*4 +: 4] = {sms_hi, sms_lo};
+		end
+
+		wire [4:0] top_blk_1h = {
+			s5_blk_nz[4],
+			s5_blk_nz[3] & ~s5_blk_nz[4],
+			s5_blk_nz[2] & ~|s5_blk_nz[4:3],
+			s5_blk_nz[1] & ~|s5_blk_nz[4:2],
+			~|s5_blk_nz[4:1]
+		};
+		wire [2:0] s5_top_blk = {
+			top_blk_1h[4],
+			top_blk_1h[3] | top_blk_1h[2],
+			top_blk_1h[3] | top_blk_1h[1]
+		};
 		wire s5_sum_nz = |s5_blk_nz;
 
-		wire [3:0] s5_sub_msb = (s5_top_blk == 3'd4) ? msb_b4 :
-		                        (s5_top_blk == 3'd3) ? msb_b3 :
-		                        (s5_top_blk == 3'd2) ? msb_b2 :
-		                        (s5_top_blk == 3'd1) ? msb_b1 : msb_b0;
+		wire [3:0] s5_sub_msb =
+			({4{top_blk_1h[4]}} & blk_sub_msb[19:16]) |
+			({4{top_blk_1h[3]}} & blk_sub_msb[15:12]) |
+			({4{top_blk_1h[2]}} & blk_sub_msb[11:8])  |
+			({4{top_blk_1h[1]}} & blk_sub_msb[7:4])   |
+			({4{top_blk_1h[0]}} & blk_sub_msb[3:0]);
 
 		wire [6:0] s5_msb = {s5_top_blk, s5_sub_msb};
 
-		/* High-speed coarse-fine normalization window:
-		 * Since s5_msb is within block s5_top_blk at offset s5_sub_msb,
-		 * the 25 bits needed (s5_m and s5_g) are always within a 40-bit window
-		 * aligned to that block, and right-shifted by s5_sub_msb!
-		 * No subtraction, no 77-bit shifter!
-		 */
-		wire [39:0] win4 = {3'b000, s5_sum[76:40]};
-		wire [39:0] win3 = s5_sum[63:24];
-		wire [39:0] win2 = s5_sum[47:8];
-		wire [39:0] win1 = {s5_sum[31:0], 8'd0};
-		wire [39:0] win0 = {s5_sum[15:0], 24'd0};
+		/* Per-block 16:1 1-hot window shift in parallel with top_blk selection */
+		wire [39:0] win_blk [0:4];
+		assign win_blk[4] = {3'b000, s5_sum[76:40]};
+		assign win_blk[3] = s5_sum[63:24];
+		assign win_blk[2] = s5_sum[47:8];
+		assign win_blk[1] = {s5_sum[31:0], 8'd0};
+		assign win_blk[0] = {s5_sum[15:0], 24'd0};
 
-		wire [39:0] s5_win = (s5_top_blk == 3'd4) ? win4 :
-		                     (s5_top_blk == 3'd3) ? win3 :
-		                     (s5_top_blk == 3'd2) ? win2 :
-		                     (s5_top_blk == 3'd1) ? win1 : win0;
-
-		wire [39:0] s5_win_shifted;
-		am_shift #(.W(40), .SW(4), .DIR(1)) u_fma_nrm (
-			.a(s5_win),
-			.amt(s5_sub_msb),
-			.left(1'b0),
-			.arith(1'b0),
-			.y(s5_win_shifted)
-		);
-
-		wire [23:0] s5_m = s5_win_shifted[24:1];
-		wire s5_g = s5_win_shifted[0];
-		wire [7:0] s5_er, s5_er_p1;
-		wire [1:0] fma_carry_unused5;
-		am_add #(.W(8)) u_fma_er    (.a(s5_exp_base), .b({1'b0, s5_msb}), .ci(1'b0), .s(s5_er),    .co(fma_carry_unused5[0]));
-		am_add #(.W(8)) u_fma_er_p1 (.a(s5_exp_base), .b({1'b0, s5_msb}), .ci(1'b1), .s(s5_er_p1), .co(fma_carry_unused5[1]));
-
-		/* Independent Parallel Sticky Bit Computation:
-		 * s5_msb + s5_rev_msb = 16*(T1+T2) + (S1+S2) >= 101 = 16*6 + 5
-		 */
-		wire [76:0] s5_sum_rev;
-		genvar gr;
-		for (gr = 0; gr < 77; gr = gr + 1) begin : g_sum_rev
-			assign s5_sum_rev[gr] = s5_sum[76 - gr];
+		wire [24:0] blk_sh25 [0:4];
+		for (gb5 = 0; gb5 < 5; gb5 = gb5 + 1) begin : g_wsh5
+			wire [15:0] sl1h = blk_l1h[gb5*16 +: 16];
+			wire [39:0] wcur = win_blk[gb5];
+			wire [3:0] s_lo = {
+				sl1h[3] | sl1h[7] | sl1h[11] | sl1h[15],
+				sl1h[2] | sl1h[6] | sl1h[10] | sl1h[14],
+				sl1h[1] | sl1h[5] | sl1h[9]  | sl1h[13],
+				sl1h[0] | sl1h[4] | sl1h[8]  | sl1h[12]
+			};
+			wire [3:0] s_hi = {|sl1h[15:12], |sl1h[11:8], |sl1h[7:4], |sl1h[3:0]};
+			wire [36:0] w_s1;
+			for (gk5 = 0; gk5 < 37; gk5 = gk5 + 1) begin : g_ws1
+				assign w_s1[gk5] =
+					(s_lo[0] & wcur[gk5])     | (s_lo[1] & wcur[gk5 + 1]) |
+					(s_lo[2] & wcur[gk5 + 2]) | (s_lo[3] & wcur[gk5 + 3]);
+			end
+			for (gk5 = 0; gk5 < 25; gk5 = gk5 + 1) begin : g_ws2
+				assign blk_sh25[gb5][gk5] =
+					(s_hi[0] & w_s1[gk5])     | (s_hi[1] & w_s1[gk5 + 4]) |
+					(s_hi[2] & w_s1[gk5 + 8]) | (s_hi[3] & w_s1[gk5 + 12]);
+			end
 		end
 
-		wire [3:0] rev_msb_b4, rev_msb_b3, rev_msb_b2, rev_msb_b1, rev_msb_b0;
-		wire rev_nz_b4, rev_nz_b3, rev_nz_b2, rev_nz_b1, rev_nz_b0;
-		am_msb #(.W(16), .SW(4)) u_rev_msb_b4 (.a({3'd0, s5_sum_rev[76:64]}), .n(rev_msb_b4), .nz(rev_nz_b4));
-		am_msb #(.W(16), .SW(4)) u_rev_msb_b3 (.a(s5_sum_rev[63:48]),         .n(rev_msb_b3), .nz(rev_nz_b3));
-		am_msb #(.W(16), .SW(4)) u_rev_msb_b2 (.a(s5_sum_rev[47:32]),         .n(rev_msb_b2), .nz(rev_nz_b2));
-		am_msb #(.W(16), .SW(4)) u_rev_msb_b1 (.a(s5_sum_rev[31:16]),         .n(rev_msb_b1), .nz(rev_nz_b1));
-		am_msb #(.W(16), .SW(4)) u_rev_msb_b0 (.a(s5_sum_rev[15:0]),          .n(rev_msb_b0), .nz(rev_nz_b0));
+		wire [24:0] s5_win_top =
+			({25{top_blk_1h[4]}} & blk_sh25[4]) |
+			({25{top_blk_1h[3]}} & blk_sh25[3]) |
+			({25{top_blk_1h[2]}} & blk_sh25[2]) |
+			({25{top_blk_1h[1]}} & blk_sh25[1]) |
+			({25{top_blk_1h[0]}} & blk_sh25[0]);
 
-		wire [4:0] s5_rev_blk_nz = {rev_nz_b4, rev_nz_b3, rev_nz_b2, rev_nz_b1, rev_nz_b0};
-		wire [2:0] s5_rev_top_blk = s5_rev_blk_nz[4] ? 3'd4 :
-		                            s5_rev_blk_nz[3] ? 3'd3 :
-		                            s5_rev_blk_nz[2] ? 3'd2 :
-		                            s5_rev_blk_nz[1] ? 3'd1 : 3'd0;
+		wire [23:0] s5_m = s5_win_top[24:1];
+		wire s5_g = s5_win_top[0];
 
-		wire [3:0] s5_rev_sub_msb = (s5_rev_top_blk == 3'd4) ? rev_msb_b4 :
-		                            (s5_rev_top_blk == 3'd3) ? rev_msb_b3 :
-		                            (s5_rev_top_blk == 3'd2) ? rev_msb_b2 :
-		                            (s5_rev_top_blk == 3'd1) ? rev_msb_b1 : rev_msb_b0;
+		/* Speculative per-block exponent addition in parallel with top_blk_1h selection */
+		wire [7:0] blk_er [0:4];
+		wire [7:0] blk_er_p1 [0:4];
+		wire [4:0] er_hi_co_unused0, er_hi_co_unused1;
+		for (gb5 = 0; gb5 < 5; gb5 = gb5 + 1) begin : g_er5
+			wire [3:0] er_lo0_b, er_lo1_b, er_hi_k, er_hi_kp1;
+			wire er_c0_b, er_c1_b;
+			am_add #(.W(4)) u_fma_er_lo0 (.a(s5_exp_base[3:0]), .b(blk_sub_msb[gb5*4 +: 4]), .ci(1'b0), .s(er_lo0_b), .co(er_c0_b));
+			am_add #(.W(4)) u_fma_er_lo1 (.a(s5_exp_base[3:0]), .b(blk_sub_msb[gb5*4 +: 4]), .ci(1'b1), .s(er_lo1_b), .co(er_c1_b));
+			am_add #(.W(4)) u_fma_er_hk  (.a(s5_exp_base[7:4]), .b(gb5[3:0]),     .ci(1'b0), .s(er_hi_k),   .co(er_hi_co_unused0[gb5]));
+			am_add #(.W(4)) u_fma_er_hkp (.a(s5_exp_base[7:4]), .b(gb5[3:0]),     .ci(1'b1), .s(er_hi_kp1), .co(er_hi_co_unused1[gb5]));
+			assign blk_er[gb5]    = {er_c0_b ? er_hi_kp1 : er_hi_k, er_lo0_b};
+			assign blk_er_p1[gb5] = {er_c1_b ? er_hi_kp1 : er_hi_k, er_lo1_b};
+		end
+		wire [7:0] s5_er =
+			({8{top_blk_1h[4]}} & blk_er[4]) |
+			({8{top_blk_1h[3]}} & blk_er[3]) |
+			({8{top_blk_1h[2]}} & blk_er[2]) |
+			({8{top_blk_1h[1]}} & blk_er[1]) |
+			({8{top_blk_1h[0]}} & blk_er[0]);
+		wire [7:0] s5_er_p1 =
+			({8{top_blk_1h[4]}} & blk_er_p1[4]) |
+			({8{top_blk_1h[3]}} & blk_er_p1[3]) |
+			({8{top_blk_1h[2]}} & blk_er_p1[2]) |
+			({8{top_blk_1h[1]}} & blk_er_p1[1]) |
+			({8{top_blk_1h[0]}} & blk_er_p1[0]);
+		wire [9:0] fma_carry_unused5 = {er_hi_co_unused1, er_hi_co_unused0};
 
-		wire [3:0] t_blk_sum;
-		wire [4:0] s_sub_sum;
-		wire [1:0] st_co_unused;
-		am_add #(.W(4)) u_st_t (.a({1'b0, s5_top_blk}),     .b({1'b0, s5_rev_top_blk}), .ci(1'b0), .s(t_blk_sum), .co(st_co_unused[0]));
-		am_add #(.W(5)) u_st_s (.a({1'b0, s5_sub_msb}),     .b({1'b0, s5_rev_sub_msb}), .ci(1'b0), .s(s_sub_sum), .co(st_co_unused[1]));
-		wire s5_st = s5_sum_nz && (
-			(t_blk_sum >= 4'd7) ||
-			((t_blk_sum == 4'd6) && (s_sub_sum >= 5'd5)) ||
-			((t_blk_sum == 4'd5) && (s_sub_sum >= 5'd21))
-		);
+		/* Fast per-block prefix OR sticky computation in parallel with top_blk_1h */
+		wire [15:0] st_pfx [0:3];
+		for (gb5 = 0; gb5 < 4; gb5 = gb5 + 1) begin : g_st_pfx5
+			wire [15:0] sin = blk_all[gb5*16 +: 16];
+			wire [15:0] sp1 = sin | {sin[14:0], 1'b0};
+			wire [15:0] sp2 = sp1 | {sp1[13:0], 2'd0};
+			wire [15:0] sp3 = sp2 | {sp2[11:0], 4'd0};
+			assign st_pfx[gb5] = sp3 | {sp3[7:0], 8'd0};
+		end
+		wire [4:0] blk_st;
+		assign blk_st[0] = 1'b0;
+		assign blk_st[1] = |(blk_l1h[1*16+9 +: 7] & st_pfx[0][6:0]);
+		assign blk_st[2] = (|(blk_l1h[2*16+0 +: 9] & st_pfx[0][15:7])) |
+			(|blk_l1h[2*16+9 +: 7] & (s5_blk_nz[0] | (|(blk_l1h[2*16+9 +: 7] & st_pfx[1][6:0]))));
+		assign blk_st[3] = (|blk_l1h[3*16+0 +: 9] & (s5_blk_nz[0] | (|(blk_l1h[3*16+0 +: 9] & st_pfx[1][15:7])))) |
+			(|blk_l1h[3*16+9 +: 7] & (|s5_blk_nz[1:0] | (|(blk_l1h[3*16+9 +: 7] & st_pfx[2][6:0]))));
+		assign blk_st[4] = (|blk_l1h[4*16+0 +: 9] & (|s5_blk_nz[1:0] | (|(blk_l1h[4*16+0 +: 9] & st_pfx[2][15:7])))) |
+			(|blk_l1h[4*16+9 +: 4] & (|s5_blk_nz[2:0] | (|(blk_l1h[4*16+9 +: 4] & st_pfx[3][3:0]))));
+		wire s5_st = |(top_blk_1h & blk_st);
 
 		/* --- Stage 6: Pipeline match & Rounding for LAT >= 6 --- */
 		/* Precompute early/FF-only bypass and rounding controls in Stage 5 (keeps Stage 5 sum->m/st crisp) */
@@ -1292,9 +1502,9 @@ module am_fpu_core #(
 
 		assign res = (LAT >= 6) ? cur_rs : ((cur_sat && cur_flt) ? f_sat(cur_rs) : cur_rs);
 		wire unused_c4 = &{1'b0, carry_unused1_neg, carry_unused2_e, carry_unused2_er, s1_fract_bo_unused, s1_fma_carry_unused, carry_unused3_mr, carry_unused3_ep,
-			fma3_carry_unused, carry_unused_c_p, fma_carry_unused5, fma_thr_bo_unused, st_co_unused, s4_exp_base[11:8],
+			fma3_carry_unused, carry_unused_c_p, fma_carry_unused5, fma_thr_bo_unused, s4_exp_base[11:8],
 			s2_fma_sub_carry_unused, s2_fract_carry_unused,
-			s3_e_p1[11:8], pr_s4[65:64], s6_rnd_carry_unused, s6_mr[24:23], s6_m_p1[24], s5_win_shifted[39:25]};
+			s3_e_p1[11:8], pr_s4[65:64], s6_rnd_carry_unused, s6_mr[24:23], s6_m_p1[24], fma3_rs};
 	end
 	endgenerate
 

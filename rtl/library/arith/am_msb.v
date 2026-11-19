@@ -35,22 +35,73 @@ module am_msb #(
 		end
 	endgenerate
 
-	/* Level k halves the vector of level k + 1: bit k of n is whether its
-	 * upper half has a set bit, and that half (or the lower) goes on. */
+	/*
+	 * Parallel radix-4 LZD (O(log4 P) gate depth instead of O(SW) serial halving):
+	 *   Stage 0: 4-bit leaves -> (nz, 2b idx)
+	 *   Stage 1: 4-to-1 combine (16-bit groups) -> (nz, 4b idx)
+	 *   Stage 2: 4-to-1 combine (64-bit groups) -> (nz, 6b idx)
+	 *   Top:     if 2 groups remain (odd SW >= 3), 2-to-1 select.
+	 */
+	localparam integer N0 = (P >= 4) ? (P / 4) : 1;
+	localparam integer N1 = (N0 >= 4) ? (N0 / 4) : 1;
+	localparam integer N2 = (N1 >= 4) ? (N1 / 4) : 1;
 	genvar k;
 	generate
-		for (k = SW - 1; k >= 0; k = k - 1) begin : g_l
-			wire [(2 << k)-1:0] src;
-			wire [(1 << k)-1:0] v;
-			if (k == SW - 1) begin : g_top
-				assign src = v0;
-			end else begin : g_mid
-				assign src = g_l[k + 1].v;
+		if (SW == 1) begin : g_sw1
+			assign n[0] = v0[1];
+		end else begin : g_tree
+			wire [N0-1:0]   s0_nz;
+			wire [N0*2-1:0] s0_id;
+			for (k = 0; k < N0; k = k + 1) begin : g_s0
+				wire [3:0] b4 = v0[k*4 +: 4];
+				assign s0_nz[k] = |b4;
+				assign s0_id[k*2 +: 2] = {b4[3] | b4[2], b4[3] | (~b4[2] & b4[1])};
 			end
-			assign n[k] = |src[(2 << k)-1:(1 << k)];
-			assign v = n[k] ? src[(2 << k)-1:(1 << k)] : src[(1 << k)-1:0];
-			if (k == 0) begin : g_last
-				wire unused_ok = &{1'b0, v};	/* the last half: the set bit itself */
+
+			if (SW == 2) begin : g_sw2
+				assign n = s0_id;
+			end else if (SW == 3) begin : g_sw3
+				assign n = s0_nz[1] ? {1'b1, s0_id[3:2]} : {1'b0, s0_id[1:0]};
+			end else begin : g_ge4
+				wire [N1-1:0]   s1_nz;
+				wire [N1*4-1:0] s1_id;
+				for (k = 0; k < N1; k = k + 1) begin : g_s1
+					wire [3:0] z4 = s0_nz[k*4 +: 4];
+					wire [1:0] h2 = {z4[3] | z4[2], z4[3] | (~z4[2] & z4[1])};
+					wire [3:0] oh = {z4[3], ~z4[3] & z4[2], ~z4[3] & ~z4[2] & z4[1], ~z4[3] & ~z4[2] & ~z4[1]};
+					wire [1:0] l2 = ({2{oh[3]}} & s0_id[(k*4 + 3)*2 +: 2]) |
+					                ({2{oh[2]}} & s0_id[(k*4 + 2)*2 +: 2]) |
+					                ({2{oh[1]}} & s0_id[(k*4 + 1)*2 +: 2]) |
+					                ({2{oh[0]}} & s0_id[(k*4 + 0)*2 +: 2]);
+					assign s1_nz[k] = |z4;
+					assign s1_id[k*4 +: 4] = {h2, l2};
+				end
+
+				if (SW == 4) begin : g_sw4
+					assign n = s1_id;
+				end else if (SW == 5) begin : g_sw5
+					assign n = s1_nz[1] ? {1'b1, s1_id[7:4]} : {1'b0, s1_id[3:0]};
+				end else begin : g_ge6
+					wire [N2-1:0]   s2_nz;
+					wire [N2*6-1:0] s2_id;
+					for (k = 0; k < N2; k = k + 1) begin : g_s2
+						wire [3:0] z4 = s1_nz[k*4 +: 4];
+						wire [1:0] h2 = {z4[3] | z4[2], z4[3] | (~z4[2] & z4[1])};
+						wire [3:0] oh = {z4[3], ~z4[3] & z4[2], ~z4[3] & ~z4[2] & z4[1], ~z4[3] & ~z4[2] & ~z4[1]};
+						wire [3:0] l4 = ({4{oh[3]}} & s1_id[(k*4 + 3)*4 +: 4]) |
+						                ({4{oh[2]}} & s1_id[(k*4 + 2)*4 +: 4]) |
+						                ({4{oh[1]}} & s1_id[(k*4 + 1)*4 +: 4]) |
+						                ({4{oh[0]}} & s1_id[(k*4 + 0)*4 +: 4]);
+						assign s2_nz[k] = |z4;
+						assign s2_id[k*6 +: 6] = {h2, l4};
+					end
+
+					if (SW == 6) begin : g_sw6
+						assign n = s2_id;
+					end else begin : g_sw7
+						assign n = s2_nz[1] ? {1'b1, s2_id[11:6]} : {1'b0, s2_id[5:0]};
+					end
+				end
 			end
 		end
 	endgenerate

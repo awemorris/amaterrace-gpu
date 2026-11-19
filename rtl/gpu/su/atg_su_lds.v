@@ -121,6 +121,7 @@ module atg_su_lds #(
 	reg rlast;
 	reg [SBE_W:0] rsbe;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [LW-1:0] li, pli_1, pli_2, pli_3;
+	(* shreg_extract = "no", keep = "true" *) reg [LW-1:0] li_radr, li_lane, li_rdat_lo, li_rdat_hi, li_rcmp_lo, li_rcmp_hi, li_atom;
 	(* shreg_extract = "no", max_fanout = 12 *) reg pval_1, pval_2, pval_3;
 	reg [AW-1:0] ram_addr_r;
 	(* max_fanout = 12 *) reg ram_we_r;
@@ -133,12 +134,36 @@ module atg_su_lds #(
 	(* max_fanout = 12 *) wire is_atom = x_uop[ATG_UOP_OP +: 8] == ATG_LDS_ATOM;
 	wire [NPHYS-1:0] xl = is_sts || is_atom ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
 	(* max_fanout = 12 *) wire [31:0] imm = is_atom ? 32'd0 : x_uop[ATG_UOP_IMM +: 32];
-	/* Lane li's word address (a selection: AW bits a lane). */
-	(* max_fanout = 12 *) wire [AW-1:0] a = radr[li*AW +: AW];
-	(* max_fanout = 12 *) wire lane_on = lanes[li];
+	/* Lane li's word address (parallel 4-lane group tree avoids 31-deep priority chain). */
+	localparam integer NG_ADR = (NPHYS >= 32) ? 8 : (NPHYS >= 16) ? 4 : (NPHYS >= 8) ? 2 : 1;
+	wire [NG_ADR*AW-1:0] a_grp;
+	genvar gg_a, gl_a;
+	generate
+		for (gg_a = 0; gg_a < NG_ADR; gg_a = gg_a + 1) begin : g_adr_grp
+			wire [3:0] gm;
+			for (gl_a = 0; gl_a < 4; gl_a = gl_a + 1) begin : g_adr_ln
+				localparam integer LI_A = gg_a * 4 + gl_a;
+				assign gm[gl_a] = (LI_A < NPHYS) && (li_radr == LI_A[LW-1:0]);
+			end
+			assign a_grp[gg_a*AW +: AW] =
+				(gm[0] ? radr[((gg_a*4 + 0) < NPHYS ? (gg_a*4 + 0) : 0)*AW +: AW] : {AW{1'b0}}) |
+				(gm[1] ? radr[((gg_a*4 + 1) < NPHYS ? (gg_a*4 + 1) : 0)*AW +: AW] : {AW{1'b0}}) |
+				(gm[2] ? radr[((gg_a*4 + 2) < NPHYS ? (gg_a*4 + 2) : 0)*AW +: AW] : {AW{1'b0}}) |
+				(gm[3] ? radr[((gg_a*4 + 3) < NPHYS ? (gg_a*4 + 3) : 0)*AW +: AW] : {AW{1'b0}});
+		end
+	endgenerate
+	reg [AW-1:0] a_mux;
+	integer ga;
+	always @(*) begin
+		a_mux = {AW{1'b0}};
+		for (ga = 0; ga < NG_ADR; ga = ga + 1)
+			a_mux = a_mux | a_grp[ga*AW +: AW];
+	end
+	(* max_fanout = 12 *) wire [AW-1:0] a = a_mux;
+	(* max_fanout = 12 *) wire lane_on = lanes[li_lane];
 	/* An atom lane's read-modify-write uses q_pipe (dedicated fabric register after BRAM q). */
-	wire [31:0] cur_rdat = rdat[li*32 +: 32];
-	wire [31:0] cur_rcmp = rcmp[li*32 +: 32];
+	wire [31:0] cur_rdat = {rdat[{li_rdat_hi, 5'd16} +: 16], rdat[{li_rdat_lo, 5'd0} +: 16]};
+	wire [31:0] cur_rcmp = {rcmp[{li_rcmp_hi, 5'd16} +: 16], rcmp[{li_rcmp_lo, 5'd0} +: 16]};
 	wire [31:0] asum;
 	wire as_co_unused;
 	am_addsub #(.W(32)) u_asum (.a(q_pipe), .b(atom_b), .sub(rsub == 4'd5), .s(asum),
@@ -308,6 +333,13 @@ module atg_su_lds #(
 			st <= IDLE;
 			lds_idle_rep <= {NPHYS{1'b1}};
 			li <= {LW{1'b0}};
+			li_radr <= {LW{1'b0}};
+			li_lane <= {LW{1'b0}};
+			li_rdat_lo <= {LW{1'b0}};
+			li_rdat_hi <= {LW{1'b0}};
+			li_rcmp_lo <= {LW{1'b0}};
+			li_rcmp_hi <= {LW{1'b0}};
+			li_atom <= {LW{1'b0}};
 			pli_1 <= {LW{1'b0}};
 			pli_2 <= {LW{1'b0}};
 			pli_3 <= {LW{1'b0}};
@@ -362,6 +394,13 @@ module atg_su_lds #(
 				case (st)
 				IDLE: if (mine && !ram_we_r) begin
 					li <= {LW{1'b0}};
+					li_radr <= {LW{1'b0}};
+					li_lane <= {LW{1'b0}};
+					li_rdat_lo <= {LW{1'b0}};
+					li_rdat_hi <= {LW{1'b0}};
+					li_rcmp_lo <= {LW{1'b0}};
+					li_rcmp_hi <= {LW{1'b0}};
+					li_atom <= {LW{1'b0}};
 					aph <= 3'd0;
 					st <= xl == {NPHYS{1'b0}} ? BEAT : ACCESS;
 					lds_idle_rep <= {NPHYS{1'b0}};
@@ -382,7 +421,14 @@ module atg_su_lds #(
 					default: begin
 						aph <= 3'd0;
 						li <= li_next;
-						if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
+						li_radr <= li_next;
+						li_lane <= li_next;
+						li_rdat_lo <= li_next;
+						li_rdat_hi <= li_next;
+						li_rcmp_lo <= li_next;
+						li_rcmp_hi <= li_next;
+						li_atom <= li_next;
+						if ({{(32-LW){1'b0}}, li_atom} == NPHYS - 1)
 							st <= DRAIN1;
 					end
 					endcase
@@ -396,7 +442,14 @@ module atg_su_lds #(
 					pval_1 <= lane_on && !rsts && !ratom;
 					pli_1 <= li;
 					li <= li_next;
-					if ({{(32-LW){1'b0}}, li} == NPHYS - 1)
+					li_radr <= li_next;
+					li_lane <= li_next;
+					li_rdat_lo <= li_next;
+					li_rdat_hi <= li_next;
+					li_rcmp_lo <= li_next;
+					li_rcmp_hi <= li_next;
+					li_atom <= li_next;
+					if ({{(32-LW){1'b0}}, li_atom} == NPHYS - 1)
 						st <= DRAIN1;
 				end
 				DRAIN1: st <= DRAIN2;

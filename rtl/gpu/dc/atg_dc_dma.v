@@ -464,8 +464,7 @@ module atg_dc_dma #(
 		end
 	end
 	always @(posedge clk) begin
-		if (keep_in)
-			rsp_rdata_q <= rsp_rdata;
+		rsp_rdata_q <= rsp_rdata;
 	end
 	wire keep = rsp_keep_ctl;
 

@@ -448,7 +448,7 @@ module atg_dc_cursor #(
 
 	wire skid_lo_ready;
 	assign skid_in_ready = skid_lo_ready;
-	wire unused_sk1_rdy, unused_sk2_rdy, unused_sk3_rdy;
+	wire pipe_en_1, pipe_en_2, pipe_en_3;
 	wire unused_sk1_vld, unused_sk2_vld, unused_sk3_vld;
 
 	reg st_out_valid_lo, st_out_valid_hi;
@@ -469,7 +469,7 @@ module atg_dc_cursor #(
 		.clk(clk),
 		.rst_n(skid_rst_n_1),
 		.in_valid(st_out_valid_lo),
-		.in_ready(unused_sk1_rdy),
+		.in_ready(pipe_en_1),
 		.in_data(st_out_data_lo[15:8]),
 		.out_valid(unused_sk1_vld),
 		.out_ready(o_ready),
@@ -480,7 +480,7 @@ module atg_dc_cursor #(
 		.clk(clk),
 		.rst_n(skid_rst_n_2),
 		.in_valid(st_out_valid_hi),
-		.in_ready(unused_sk2_rdy),
+		.in_ready(pipe_en_2),
 		.in_data(st_out_data_hi[7:0]),
 		.out_valid(unused_sk2_vld),
 		.out_ready(o_ready),
@@ -491,7 +491,7 @@ module atg_dc_cursor #(
 		.clk(clk),
 		.rst_n(skid_rst_n_3),
 		.in_valid(st_out_valid_hi),
-		.in_ready(unused_sk3_rdy),
+		.in_ready(pipe_en_3),
 		.in_data(st_out_data_hi[15:8]),
 		.out_valid(unused_sk3_vld),
 		.out_ready(o_ready),
@@ -569,48 +569,48 @@ module atg_dc_cursor #(
 	wire pe_s1_pxh = pipe_en;
 	wire pe_s1_c = pipe_en;
 	wire pe_s1_ctl = pipe_en;
-	wire pe_s1b_pxl = pipe_en;
-	wire pe_s1b_pxh = pipe_en;
-	wire pe_s1b_pa0 = pipe_en;
-	wire pe_s1b_pa1 = pipe_en;
-	wire pe_s1b_pa2 = pipe_en;
-	wire pe_s1b_c = pipe_en;
-	wire pe_s1b_ctl = pipe_en;
-	wire pe_s2a_pxl = pipe_en;
-	wire pe_s2a_pxh = pipe_en;
-	wire pe_s2a_t0 = pipe_en;
-	wire pe_s2a_t1 = pipe_en;
-	wire pe_s2a_t2 = pipe_en;
-	wire pe_s2a_c = pipe_en;
-	wire pe_s2a_ctl = pipe_en;
-	wire pe_s2b_pxl = pipe_en;
-	wire pe_s2b_pxh = pipe_en;
-	wire pe_s2b_u0 = pipe_en;
-	wire pe_s2b_u1 = pipe_en;
-	wire pe_s2b_u2 = pipe_en;
-	wire pe_s2b_c = pipe_en;
-	wire pe_s2b_ctl = pipe_en;
-	wire pe_s2c_pxl = pipe_en;
-	wire pe_s2c_pxh = pipe_en;
-	wire pe_s2c_v = pipe_en;
-	wire pe_s2c_ctl = pipe_en;
-	wire pe_s3a_pxl = pipe_en;
-	wire pe_s3a_pxh = pipe_en;
-	wire pe_s3a_vm0 = pipe_en;
-	wire pe_s3a_vm1 = pipe_en;
-	wire pe_s3a_vm2 = pipe_en;
-	wire pe_s3a_v = pipe_en;
-	wire pe_s3a_ctl = pipe_en;
-	wire pe_s3b_pxl = pipe_en;
-	wire pe_s3b_pxh = pipe_en;
-	wire pe_s3b_nt0 = pipe_en;
-	wire pe_s3b_nt1 = pipe_en;
-	wire pe_s3b_nt2 = pipe_en;
-	wire pe_s3b_v = pipe_en;
-	wire pe_s3b_ctl = pipe_en;
-	wire pe_out_l = pipe_en;
-	wire pe_out_h = pipe_en;
-	wire pe_out_ctl = pipe_en;
+	wire pe_s1b_pxl = pipe_en_1;
+	wire pe_s1b_pxh = pipe_en_1;
+	wire pe_s1b_pa0 = pipe_en_1;
+	wire pe_s1b_pa1 = pipe_en_1;
+	wire pe_s1b_pa2 = pipe_en_1;
+	wire pe_s1b_c = pipe_en_1;
+	wire pe_s1b_ctl = pipe_en_1;
+	wire pe_s2a_pxl = pipe_en_1;
+	wire pe_s2a_pxh = pipe_en_1;
+	wire pe_s2a_t0 = pipe_en_1;
+	wire pe_s2a_t1 = pipe_en_1;
+	wire pe_s2a_t2 = pipe_en_1;
+	wire pe_s2a_c = pipe_en_1;
+	wire pe_s2a_ctl = pipe_en_1;
+	wire pe_s2b_pxl = pipe_en_2;
+	wire pe_s2b_pxh = pipe_en_2;
+	wire pe_s2b_u0 = pipe_en_2;
+	wire pe_s2b_u1 = pipe_en_2;
+	wire pe_s2b_u2 = pipe_en_2;
+	wire pe_s2b_c = pipe_en_2;
+	wire pe_s2b_ctl = pipe_en_2;
+	wire pe_s2c_pxl = pipe_en_2;
+	wire pe_s2c_pxh = pipe_en_2;
+	wire pe_s2c_v = pipe_en_2;
+	wire pe_s2c_ctl = pipe_en_2;
+	wire pe_s3a_pxl = pipe_en_3;
+	wire pe_s3a_pxh = pipe_en_3;
+	wire pe_s3a_vm0 = pipe_en_3;
+	wire pe_s3a_vm1 = pipe_en_3;
+	wire pe_s3a_vm2 = pipe_en_3;
+	wire pe_s3a_v = pipe_en_3;
+	wire pe_s3a_ctl = pipe_en_3;
+	wire pe_s3b_pxl = pipe_en_3;
+	wire pe_s3b_pxh = pipe_en_3;
+	wire pe_s3b_nt0 = pipe_en_3;
+	wire pe_s3b_nt1 = pipe_en_3;
+	wire pe_s3b_nt2 = pipe_en_3;
+	wire pe_s3b_v = pipe_en_3;
+	wire pe_s3b_ctl = pipe_en_3;
+	wire pe_out_l = pipe_en_3;
+	wire pe_out_h = pipe_en_3;
+	wire pe_out_ctl = pipe_en_3;
 `endif
 
 	/* Screen coordinate tracking */

@@ -88,11 +88,16 @@ module atg_su_div #(
 
 	/* The next lane in the mask at or after lane n (NPHYS when none). */
 	wire [NPHYS-1:0] x_mask_rev;
-	wire [NPHYS-1:0] rm_after = rm & ({{(NPHYS-1){1'b1}}, 1'b0} << li);
+	wire [NPHYS-1:0] rm_after;
 	wire [NPHYS-1:0] rm_after_rev;
 	genvar gdr;
 	generate
 		for (gdr = 0; gdr < NPHYS; gdr = gdr + 1) begin : g_div_rev
+			if (gdr == 0) begin : g_div_z
+				assign rm_after[gdr] = 1'b0;
+			end else begin : g_div_nz
+				assign rm_after[gdr] = rm[gdr] && ({{(32-LW){1'b0}}, li} < gdr);
+			end
 			assign x_mask_rev[gdr]   = x_mask[NPHYS - 1 - gdr];
 			assign rm_after_rev[gdr] = rm_after[NPHYS - 1 - gdr];
 		end
@@ -103,6 +108,44 @@ module atg_su_div #(
 	am_msb #(.W(NPHYS), .SW(LW)) u_div_after (.a(rm_after_rev), .n(after_rev_n), .nz(after_nz));
 	wire [LW:0] first = first_nz ? {1'b0, ~first_rev_n} : NPHYS[LW:0];
 	wire [LW:0] after = after_nz ? {1'b0, ~after_rev_n} : NPHYS[LW:0];
+	(* keep = "true" *) reg [LW-1:0] after_q_a0, after_q_a1, after_q_b0, after_q_b1;
+	(* keep = "true" *) reg after_nz_q;
+`ifndef SYNTH_KINTEX7
+	(* keep = "true" *) reg [NPHYS-1:0] rm_a0, rm_a1, rm_b0, rm_b1;
+	(* keep = "true" *) reg [LW-1:0] li_a0, li_a1, li_b0, li_b1;
+	wire [NPHYS-1:0] rm_after_a0, rm_after_a1, rm_after_b0, rm_after_b1;
+	wire [NPHYS-1:0] rm_after_rev_a0, rm_after_rev_a1, rm_after_rev_b0, rm_after_rev_b1;
+	generate
+		for (gdr = 0; gdr < NPHYS; gdr = gdr + 1) begin : g_div_rev_rep
+			if (gdr == 0) begin : g_div_rep_z
+				assign rm_after_a0[gdr] = 1'b0;
+				assign rm_after_a1[gdr] = 1'b0;
+				assign rm_after_b0[gdr] = 1'b0;
+				assign rm_after_b1[gdr] = 1'b0;
+			end else begin : g_div_rep_nz
+				assign rm_after_a0[gdr] = rm_a0[gdr] && ({{(32-LW){1'b0}}, li_a0} < gdr);
+				assign rm_after_a1[gdr] = rm_a1[gdr] && ({{(32-LW){1'b0}}, li_a1} < gdr);
+				assign rm_after_b0[gdr] = rm_b0[gdr] && ({{(32-LW){1'b0}}, li_b0} < gdr);
+				assign rm_after_b1[gdr] = rm_b1[gdr] && ({{(32-LW){1'b0}}, li_b1} < gdr);
+			end
+			assign rm_after_rev_a0[gdr] = rm_after_a0[NPHYS - 1 - gdr];
+			assign rm_after_rev_a1[gdr] = rm_after_a1[NPHYS - 1 - gdr];
+			assign rm_after_rev_b0[gdr] = rm_after_b0[NPHYS - 1 - gdr];
+			assign rm_after_rev_b1[gdr] = rm_after_b1[NPHYS - 1 - gdr];
+		end
+	endgenerate
+	wire [LW-1:0] after_n_a0, after_n_a1, after_n_b0, after_n_b1;
+	wire after_nz_a0, after_nz_a1, after_nz_b0, after_nz_b1;
+	am_msb #(.W(NPHYS), .SW(LW)) u_da_a0 (.a(rm_after_rev_a0), .n(after_n_a0), .nz(after_nz_a0));
+	am_msb #(.W(NPHYS), .SW(LW)) u_da_a1 (.a(rm_after_rev_a1), .n(after_n_a1), .nz(after_nz_a1));
+	am_msb #(.W(NPHYS), .SW(LW)) u_da_b0 (.a(rm_after_rev_b0), .n(after_n_b0), .nz(after_nz_b0));
+	am_msb #(.W(NPHYS), .SW(LW)) u_da_b1 (.a(rm_after_rev_b1), .n(after_n_b1), .nz(after_nz_b1));
+	wire [LW-1:0] after_a0 = ~after_n_a0;
+	wire [LW-1:0] after_a1 = ~after_n_a1;
+	wire [LW-1:0] after_b0 = ~after_n_b0;
+	wire [LW-1:0] after_b1 = ~after_n_b1;
+	wire unused_da_nz = &{1'b0, after_nz_a0, after_nz_a1, after_nz_b0, after_nz_b1};
+`endif
 	wire [DW-1:0] ra, rb, rq;
 	wire [31:0] la = la_cur_r;
 	wire [31:0] lb = lb_cur_r;
@@ -113,16 +156,45 @@ module atg_su_div #(
 	 * trial r:dn[31] - d of the steps 1-32, 0 - the result at the end; and
 	 * 0 - b at the load.
 	 */
-	(* max_fanout = 12 *) wire s_load = step == 6'd0;
-	(* max_fanout = 12 *) wire s_end = step > 6'd32;
+	reg s_load_r, s_end_r;
+	(* max_fanout = 12 *) wire s_load = s_load_r;
+	(* max_fanout = 12 *) wire s_end = s_end_r;
 	(* max_fanout = 12 *) wire [32:0] d0;
 	wire [31:0] neg_b;
 	wire [5:0] step_next;
 	wire d0_bo_unused, nb_bo_unused, sn_co_unused;
-	am_sub #(.W(33)) u_d0 (.a(s_load || s_end ? 33'd0 : {r[31:0], dn[31]}),
-		.b(s_load ? {1'b0, la} : s_end ? {1'b0, rop[1] ? r[31:0] : q} : {1'b0, dd}), .bi(1'b0),
-		.d(d0), .bo(d0_bo_unused));
-	am_sub #(.W(32)) u_neg_b (.a(32'd0), .b(lb), .bi(1'b0), .d(neg_b), .bo(nb_bo_unused));
+	/* Fast 4-chunk carry-select 33-bit subtractor u_d0 and 32-bit negate u_neg_b */
+	wire [32:0] d0_a = s_load || s_end ? 33'd0 : {r[31:0], dn[31]};
+	wire [32:0] d0_b = s_load ? {1'b0, la} : s_end ? {1'b0, rop[1] ? r[31:0] : q} : {1'b0, dd};
+	wire [7:0] d0_s0, d0_s1_0, d0_s1_1, d0_s2_0, d0_s2_1;
+	wire [8:0] d0_s3_0, d0_s3_1;
+	wire d0_b0, d0_b1_0, d0_b1_1, d0_b2_0, d0_b2_1, d0_b3_0, d0_b3_1;
+	am_sub #(.W(8)) u_d0_0  (.a(d0_a[7:0]),   .b(d0_b[7:0]),   .bi(1'b0), .d(d0_s0),   .bo(d0_b0));
+	am_sub #(.W(8)) u_d0_10 (.a(d0_a[15:8]),  .b(d0_b[15:8]),  .bi(1'b0), .d(d0_s1_0), .bo(d0_b1_0));
+	am_sub #(.W(8)) u_d0_11 (.a(d0_a[15:8]),  .b(d0_b[15:8]),  .bi(1'b1), .d(d0_s1_1), .bo(d0_b1_1));
+	am_sub #(.W(8)) u_d0_20 (.a(d0_a[23:16]), .b(d0_b[23:16]), .bi(1'b0), .d(d0_s2_0), .bo(d0_b2_0));
+	am_sub #(.W(8)) u_d0_21 (.a(d0_a[23:16]), .b(d0_b[23:16]), .bi(1'b1), .d(d0_s2_1), .bo(d0_b2_1));
+	am_sub #(.W(9)) u_d0_30 (.a(d0_a[32:24]), .b(d0_b[32:24]), .bi(1'b0), .d(d0_s3_0), .bo(d0_b3_0));
+	am_sub #(.W(9)) u_d0_31 (.a(d0_a[32:24]), .b(d0_b[32:24]), .bi(1'b1), .d(d0_s3_1), .bo(d0_b3_1));
+	wire d0_b1 = d0_b0 ? d0_b1_1 : d0_b1_0;
+	wire d0_b2 = d0_b1 ? d0_b2_1 : d0_b2_0;
+	assign d0 = {d0_b2 ? d0_s3_1 : d0_s3_0, d0_b1 ? d0_s2_1 : d0_s2_0, d0_b0 ? d0_s1_1 : d0_s1_0, d0_s0};
+	assign d0_bo_unused = d0_b2 ? d0_b3_1 : d0_b3_0;
+
+	wire [7:0] nb_s0, nb_s1_0, nb_s1_1, nb_s2_0, nb_s2_1, nb_s3_0, nb_s3_1;
+	wire nb_b0, nb_b1_0, nb_b1_1, nb_b2_0, nb_b2_1, nb_b3_0, nb_b3_1;
+	am_sub #(.W(8)) u_nb_0  (.a(8'd0), .b(lb[7:0]),   .bi(1'b0), .d(nb_s0),   .bo(nb_b0));
+	am_sub #(.W(8)) u_nb_10 (.a(8'd0), .b(lb[15:8]),  .bi(1'b0), .d(nb_s1_0), .bo(nb_b1_0));
+	am_sub #(.W(8)) u_nb_11 (.a(8'd0), .b(lb[15:8]),  .bi(1'b1), .d(nb_s1_1), .bo(nb_b1_1));
+	am_sub #(.W(8)) u_nb_20 (.a(8'd0), .b(lb[23:16]), .bi(1'b0), .d(nb_s2_0), .bo(nb_b2_0));
+	am_sub #(.W(8)) u_nb_21 (.a(8'd0), .b(lb[23:16]), .bi(1'b1), .d(nb_s2_1), .bo(nb_b2_1));
+	am_sub #(.W(8)) u_nb_30 (.a(8'd0), .b(lb[31:24]), .bi(1'b0), .d(nb_s3_0), .bo(nb_b3_0));
+	am_sub #(.W(8)) u_nb_31 (.a(8'd0), .b(lb[31:24]), .bi(1'b1), .d(nb_s3_1), .bo(nb_b3_1));
+	wire nb_b1 = nb_b0 ? nb_b1_1 : nb_b1_0;
+	wire nb_b2 = nb_b1 ? nb_b2_1 : nb_b2_0;
+	assign neg_b = {nb_b2 ? nb_s3_1 : nb_s3_0, nb_b1 ? nb_s2_1 : nb_s2_0, nb_b0 ? nb_s1_1 : nb_s1_0, nb_s0};
+	assign nb_bo_unused = nb_b2 ? nb_b3_1 : nb_b3_0;
+
 	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step_next), .co(sn_co_unused));
 	(* keep = "true", max_fanout = 12 *) wire trial_pos = !d0[32];
 
@@ -149,14 +221,14 @@ module atg_su_div #(
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb2 (.I0(first[gbf]), .O(first_b_b2[gbf]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_f_bb3 (.I0(first[gbf]), .O(first_b_b3[gbf]));
 
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab0 (.I0(after[gbf]), .O(after_a_b0[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab1 (.I0(after[gbf]), .O(after_a_b1[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab2 (.I0(after[gbf]), .O(after_a_b2[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab3 (.I0(after[gbf]), .O(after_a_b3[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb0 (.I0(after[gbf]), .O(after_b_b0[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb1 (.I0(after[gbf]), .O(after_b_b1[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb2 (.I0(after[gbf]), .O(after_b_b2[gbf]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb3 (.I0(after[gbf]), .O(after_b_b3[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab0 (.I0(after_q_a0[gbf]), .O(after_a_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab1 (.I0(after_q_a0[gbf]), .O(after_a_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab2 (.I0(after_q_a1[gbf]), .O(after_a_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_ab3 (.I0(after_q_a1[gbf]), .O(after_a_b3[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb0 (.I0(after_q_b0[gbf]), .O(after_b_b0[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb1 (.I0(after_q_b0[gbf]), .O(after_b_b1[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb2 (.I0(after_q_b1[gbf]), .O(after_b_b2[gbf]));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_b_a_bb3 (.I0(after_q_b1[gbf]), .O(after_b_b3[gbf]));
 `else
 			assign first_a_b0[gbf] = first[gbf];
 			assign first_a_b1[gbf] = first[gbf];
@@ -167,20 +239,20 @@ module atg_su_div #(
 			assign first_b_b2[gbf] = first[gbf];
 			assign first_b_b3[gbf] = first[gbf];
 
-			assign after_a_b0[gbf] = after[gbf];
-			assign after_a_b1[gbf] = after[gbf];
-			assign after_a_b2[gbf] = after[gbf];
-			assign after_a_b3[gbf] = after[gbf];
-			assign after_b_b0[gbf] = after[gbf];
-			assign after_b_b1[gbf] = after[gbf];
-			assign after_b_b2[gbf] = after[gbf];
-			assign after_b_b3[gbf] = after[gbf];
+			assign after_a_b0[gbf] = after_q_a0[gbf];
+			assign after_a_b1[gbf] = after_q_a0[gbf];
+			assign after_a_b2[gbf] = after_q_a1[gbf];
+			assign after_a_b3[gbf] = after_q_a1[gbf];
+			assign after_b_b0[gbf] = after_q_b0[gbf];
+			assign after_b_b1[gbf] = after_q_b0[gbf];
+			assign after_b_b2[gbf] = after_q_b1[gbf];
+			assign after_b_b3[gbf] = after_q_b1[gbf];
 `endif
 		end
 	endgenerate
 
 	wire cur_load_raw = ((st == IDLE) && mine && (first != NPHYS[LW:0])) ||
-	                    ((st == DIV) && s_end && (after != NPHYS[LW:0]));
+	                    ((st == DIV) && s_end && after_nz_q);
 	wire idle_sel_raw = (st == IDLE);
 
 	wire cur_load_ab0, cur_load_ab1, cur_load_ab2, cur_load_ab3;
@@ -399,6 +471,12 @@ module atg_su_div #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			rm <= {NPHYS{1'b0}};
+`ifndef SYNTH_KINTEX7
+			rm_a0 <= {NPHYS{1'b0}};
+			rm_a1 <= {NPHYS{1'b0}};
+			rm_b0 <= {NPHYS{1'b0}};
+			rm_b1 <= {NPHYS{1'b0}};
+`endif
 			rop <= 2'd0;
 			rrd <= 7'd0;
 			rwarp <= {WARP_W{1'b0}};
@@ -406,8 +484,15 @@ module atg_su_div #(
 			rlast <= 1'b0;
 			rsbe <= {(SBE_W+1){1'b0}};
 		end else begin
-			if (idle_mine_rm)
+			if (idle_mine_rm) begin
 				rm <= x_mask[NPHYS-1:0];
+`ifndef SYNTH_KINTEX7
+				rm_a0 <= x_mask[NPHYS-1:0];
+				rm_a1 <= x_mask[NPHYS-1:0];
+				rm_b0 <= x_mask[NPHYS-1:0];
+				rm_b1 <= x_mask[NPHYS-1:0];
+`endif
+			end
 			if (idle_mine_ctl1) begin
 				rop <= x_uop[ATG_UOP_OP +: 2];
 				rrd <= x_uop[ATG_UOP_RD +: 7];
@@ -425,7 +510,20 @@ module atg_su_div #(
 		if (rst_p) begin
 			st <= IDLE;
 			li <= {LW{1'b0}};
+`ifndef SYNTH_KINTEX7
+			li_a0 <= {LW{1'b0}};
+			li_a1 <= {LW{1'b0}};
+			li_b0 <= {LW{1'b0}};
+			li_b1 <= {LW{1'b0}};
+`endif
+			after_q_a0 <= {LW{1'b0}};
+			after_q_a1 <= {LW{1'b0}};
+			after_q_b0 <= {LW{1'b0}};
+			after_q_b1 <= {LW{1'b0}};
+			after_nz_q <= 1'b0;
 			step <= 6'd0;
+			s_load_r <= 1'b1;
+			s_end_r  <= 1'b0;
 			r32 <= 1'b0;
 			neg_q <= 1'b0;
 			neg_r <= 1'b0;
@@ -434,30 +532,64 @@ module atg_su_div #(
 			case (st)
 			IDLE: if (mine) begin
 				step <= 6'd0;
+				s_load_r <= 1'b1;
+				s_end_r  <= 1'b0;
 				if (first == NPHYS[LW:0])
 					st <= RET;
 				else begin
 					li <= first[LW-1:0];
+`ifndef SYNTH_KINTEX7
+					li_a0 <= first[LW-1:0];
+					li_a1 <= first[LW-1:0];
+					li_b0 <= first[LW-1:0];
+					li_b1 <= first[LW-1:0];
+`endif
 					st <= DIV;
 				end
 			end
 			DIV: begin
-				if (step == 6'd0) begin
+				if (s_load_r) begin
 					/* Load the lane: magnitudes and the signs of the results. */
 					neg_q <= sgn && (la[31] ^ lb[31]);
 					neg_r <= sgn && la[31];
 					lb_zero_r <= (lb == 32'd0);
 					r32 <= 1'b0;
 					step <= 6'd1;
-				end else if (step <= 6'd32) begin
+					s_load_r <= 1'b0;
+					s_end_r  <= 1'b0;
+				end else if (!s_end_r) begin
+					if (step == 6'd1) begin
+`ifndef SYNTH_KINTEX7
+						after_q_a0 <= after_a0;
+						after_q_a1 <= after_a1;
+						after_q_b0 <= after_b0;
+						after_q_b1 <= after_b1;
+`else
+						after_q_a0 <= ~after_rev_n;
+						after_q_a1 <= ~after_rev_n;
+						after_q_b0 <= ~after_rev_n;
+						after_q_b1 <= ~after_rev_n;
+`endif
+						after_nz_q <= after_nz;
+					end
 					r32 <= trial_pos ? d0[32] : r[31];
 					step <= step_next;
+					if (step == 6'd32)
+						s_end_r <= 1'b1;
 				end else begin
 					step <= 6'd0;
-					if (after == NPHYS[LW:0])
+					s_load_r <= 1'b1;
+					s_end_r  <= 1'b0;
+					if (!after_nz_q)
 						st <= RET;
 					else begin
-						li <= after[LW-1:0];
+						li <= after_q_a0;
+`ifndef SYNTH_KINTEX7
+						li_a0 <= after_q_a0;
+						li_a1 <= after_q_a1;
+						li_b0 <= after_q_b0;
+						li_b1 <= after_q_b1;
+`endif
 						st <= DIV;
 					end
 				end
@@ -486,7 +618,7 @@ module atg_su_div #(
 	assign l_cls = ATG_CLS_X;
 
 	wire unused_ok = &{1'b0, x_pc, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop, r32,
-		(NWARPS != 0)};
+		after, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

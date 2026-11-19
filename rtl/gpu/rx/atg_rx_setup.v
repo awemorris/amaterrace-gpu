@@ -747,6 +747,8 @@ module atg_rx_setup #(
 	wire [7:0] ea23;
 	wire su_bo_unused;
 	(* extract_enable = "no", extract_reset = "no" *) reg [7:0] ea_in;
+	(* extract_enable = "no", extract_reset = "no" *) reg [7:0] ea23_r;
+	(* extract_enable = "no", extract_reset = "no" *) reg       ea_gt_23_r;
 	am_sub #(.W(8)) u_ea23 (.a(ea_in), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_bo_unused));
 
 	wire [7:0] max_z01_exp = (R[36][30:23] > R[33][30:23]) ? R[36][30:23] : R[33][30:23];
@@ -1007,11 +1009,11 @@ module atg_rx_setup #(
 	/* 1. FPU Input Registers (fm_a, fm_b, fa_a, fa_b) split into 8 x 4-bit slices */
 	 wire [1:0] kind_s [0:7];
 	 wire [7:0] rm3_s, ea_gt23_s;
-	wire ea_gt_23 = (ea_in > 8'd23);
+	wire ea_gt_23 = ea_gt_23_r;
 	wire [31:0] bm_val_32 = {bm_val_hi, bm_val_lo};
 	wire [31:0] b_clamp_32 = {b_clamp_hi, b_clamp_lo};
 	wire [31:0] r_bias_fa_32 = {r_bias_fa_hi, r_bias_fa_lo};
-	wire [31:0] ea23_f32 = {1'b0, ea23, 23'd0};
+	wire [31:0] ea23_f32 = {1'b0, ea23_r, 23'd0};
 
 	genvar gs;
 	generate
@@ -1801,6 +1803,18 @@ module atg_rx_setup #(
 		seq_step_hi == 5'd14 || seq_step_hi == 5'd17 || seq_step_hi == 5'd20 ||
 		seq_step_hi == 5'd25 || seq_step_hi == 5'd28 || seq_step_hi == 5'd31);
 
+	(* keep = "true" *) reg [3:0] s_plane_done_st_r;
+	wire [3:0] s_plane_done_st_w = raw ? S_OUT :
+		(p_plane != 2'd3) ? S_PLANE :
+		(kind == 2'd1) ? S_OUT :
+		(rm[0] && (rm[5:4] != 2'd0)) ? S_BIAS : S_OUT;
+	wire seq_ge_2 = |seq_step_rep_a[4:1];
+	wire seq_ge_5 = seq_step_rep_a[4] || seq_step_rep_a[3] || (seq_step_rep_a[2] && (|seq_step_rep_a[1:0]));
+	wire seq_ge_8 = |seq_step_rep_a[4:3];
+	wire p_step_ge_14 = &p_step_ctrl[3:1];
+	wire next_is_idle = (st == S_IDLE) ? !we_idle_fsm :
+		(st == S_OUT) ? (sp_valid && sp_ready && !more) : 1'b0;
+
 	(* keep = "true" *) reg [3:0] st_next;
 	always @(*) begin
 		st_next = st;
@@ -1808,12 +1822,12 @@ module atg_rx_setup #(
 			S_IDLE:
 				if (we_idle_fsm) st_next = in_raw ? S_EDGE : S_PERSP_W;
 			S_PERSP_W:
-				if (fd_o_w && (seq_step_rep_a >= 5'd2)) st_next = S_PERSP_XYZ;
+				if (fd_o_w && seq_ge_2) st_next = S_PERSP_XYZ;
 			S_PERSP_XYZ:
 				if ((seq_step_rep_a == 5'd31) && fa_o_c_st) st_next = S_RECT;
 			S_RECT:
 				if ((seq_step_rep_a == 5'd1) && fm_o_c_st && !rm[3]) st_next = S_EDGE;
-				else if ((seq_step_rep_a >= 5'd5) && fa_o_c_st) st_next = S_EDGE;
+				else if (seq_ge_5 && fa_o_c_st) st_next = S_EDGE;
 			S_EDGE:
 				if (e_done) st_next = e_empty_buf ? S_OUT : S_PLANE_DIV;
 			S_PLANE_DIV:
@@ -1823,15 +1837,10 @@ module atg_rx_setup #(
 					st_next = S_PLANE;
 				end
 			S_PLANE:
-				if ((p_step_ctrl >= 4'd14) && fa_o_c_st) begin
-					if (raw) st_next = S_OUT;
-					else if (p_plane != 2'd3) st_next = S_PLANE;
-					else if (kind == 2'd1) st_next = S_OUT;
-					else if (rm[0] && (rm[5:4] != 2'd0)) st_next = S_BIAS;
-					else st_next = S_OUT;
-				end
+				if (p_step_ge_14 && fa_o_c_st)
+					st_next = s_plane_done_st_r;
 			S_BIAS:
-				if ((seq_step_rep_a >= 5'd8) && fa_o_c_st) st_next = S_OUT;
+				if (seq_ge_8 && fa_o_c_st) st_next = S_OUT;
 			S_OUT:
 				if (sp_valid && sp_ready) st_next = more ? S_EDGE : S_IDLE;
 			default: ;
@@ -2010,6 +2019,9 @@ module atg_rx_setup #(
 			fa_sub <= 1'b0;
 			p_plane <= 2'd0;
 			ea_in <= 8'd0;
+			ea23_r <= 8'd0;
+			ea_gt_23_r <= 1'b0;
+			s_plane_done_st_r <= S_OUT;
 		end else begin
 			st <= st_next;
 			st_rep_a <= st_next;
@@ -2018,7 +2030,8 @@ module atg_rx_setup #(
 			st_rep_d <= st_next;
 			st_rep_e <= st_next;
 			st_rep_f <= st_next;
-			r_st_idle_br <= {5{st_next == S_IDLE}};
+			r_st_idle_br <= {5{next_is_idle}};
+			s_plane_done_st_r <= s_plane_done_st_w;
 
 			seq_step <= seq_next;
 			seq_step_hi <= seq_next;
@@ -2148,10 +2161,18 @@ module atg_rx_setup #(
 
 		S_BIAS:
 			case (seq_step_v)
-			5'd1, 5'd3: fm_v <= 1'b1;
-			5'd2: if (fm_o_c_v) begin
+			5'd1: begin
+				fm_v <= 1'b1;
 				if (rm[5:4] == 2'd3) ea_in <= max_z_exp;
-				else fm_v <= 1'b1;
+			end
+			5'd3: fm_v <= 1'b1;
+			5'd2: if (fm_o_c_v) begin
+				if (rm[5:4] == 2'd3) begin
+					ea23_r <= ea23;
+					ea_gt_23_r <= (ea_in > 8'd23);
+				end else begin
+					fm_v <= 1'b1;
+				end
 			end
 			5'd4: if (fm_o_c_v) begin
 				fa_v <= 1'b1;

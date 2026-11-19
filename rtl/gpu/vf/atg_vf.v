@@ -169,13 +169,13 @@ module atg_vf #(
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 	LUT1 #(.INIT(2'b10)) u_vk1 (.O(vmux_k_b[1]), .I0(vmux_k));
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_re_ix (.O(ix_rsp_error), .I0(rsp_error));
+	LUT1 #(.INIT(2'b10)) u_re_ix (.O(ix_rsp_error), .I0(r_ix_rsp_error));
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
-	LUT1 #(.INIT(2'b10)) u_re_fx (.O(fx_rsp_error), .I0(rsp_error));
+	LUT1 #(.INIT(2'b10)) u_re_fx (.O(fx_rsp_error), .I0(r_fx_rsp_error));
 `else
 	assign vmux_k_b     = {2{vmux_k}};
-	assign ix_rsp_error = rsp_error;
-	assign fx_rsp_error = rsp_error;
+	assign ix_rsp_error = r_ix_rsp_error;
+	assign fx_rsp_error = r_fx_rsp_error;
 `endif
 
 	wire vmux_out_valid = vmux_lock ? 1'b1 : vmux_any;
@@ -210,19 +210,52 @@ module atg_vf #(
 	);
 	assign req_be       = {LINE_BYTES{1'b0}};
 	assign req_wdata    = {LB{1'b0}};
+	/*
+	 * Register inbound AMB response once at VF boundary (Rule 3 / fanout isolation):
+	 * breaks mc.tree -> g_vf.vf.index (40 cmos3) and decouples mc rsp_error from vf.fetch.
+	 */
+	reg          r_rsp_valid, r_ix_rsp_valid, r_fx_rsp_valid;
+	reg          r_rsp_write, r_ix_rsp_error, r_fx_rsp_error;
+	reg [7:0]    r_rsp_tag;
+	reg [LB-1:0] r_rsp_rdata;
+
+	always @(posedge clk or posedge rst_sync) begin
+		if (rst_sync) begin
+			r_rsp_valid    <= 1'b0;
+			r_ix_rsp_valid <= 1'b0;
+			r_fx_rsp_valid <= 1'b0;
+			r_rsp_write    <= 1'b0;
+			r_rsp_tag      <= 8'd0;
+			r_ix_rsp_error <= 1'b0;
+			r_fx_rsp_error <= 1'b0;
+		end else begin
+			r_rsp_valid    <= rsp_valid;
+			r_ix_rsp_valid <= rsp_valid && !rsp_tag[7];
+			r_fx_rsp_valid <= rsp_valid &&  rsp_tag[7];
+			r_rsp_write    <= rsp_write;
+			r_rsp_tag      <= rsp_tag;
+			r_ix_rsp_error <= rsp_error;
+			r_fx_rsp_error <= rsp_error;
+		end
+	end
+
+	always @(posedge clk) begin
+		r_rsp_rdata <= rsp_rdata;
+	end
+
 	assign ix_req_ready = vmux_out_valid && vmux_out_ready && !vmux_k;
 	assign fx_req_ready = vmux_out_valid && vmux_out_ready &&  vmux_k;
-	assign ix_rsp_valid = rsp_valid && !rsp_tag[7];
-	assign fx_rsp_valid = rsp_valid &&  rsp_tag[7];
-	assign ix_rsp_write = rsp_write;
-	assign fx_rsp_write = rsp_write;
-	assign ix_rsp_tag   = {1'b0, rsp_tag[6:0]};
-	assign fx_rsp_tag   = {1'b0, rsp_tag[6:0]};
-	assign ix_rsp_rdata = rsp_rdata;
-	assign fx_rsp_rdata = rsp_rdata;
+	assign ix_rsp_valid = r_ix_rsp_valid;
+	assign fx_rsp_valid = r_fx_rsp_valid;
+	assign ix_rsp_write = r_rsp_write;
+	assign fx_rsp_write = r_rsp_write;
+	assign ix_rsp_tag   = {1'b0, r_rsp_tag[6:0]};
+	assign fx_rsp_tag   = {1'b0, r_rsp_tag[6:0]};
+	assign ix_rsp_rdata = r_rsp_rdata;
+	assign fx_rsp_rdata = r_rsp_rdata;
 
 	wire unused_amb = &{1'b0, ix_req_be, fx_req_be, ix_req_wdata, fx_req_wdata,
-		ix_req_tag[7], fx_req_tag[7]};
+		ix_req_tag[7], fx_req_tag[7], r_rsp_valid, r_rsp_tag[7], r_ix_rsp_error, r_fx_rsp_error};
 
 	atg_vf_index #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) index (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we_ix), .st_idx(st_idx_ix), .st_wdata(st_wdata_ix),

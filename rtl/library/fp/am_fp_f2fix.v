@@ -42,25 +42,61 @@ module am_fp_f2fix #(
 	wire is_nan = (exp == 8'hFF) && (mant != 23'd0);
 	wire is_zero = (exp == 8'd0);
 
-	/* Shift distance calculation: s = E_BASE - exp */
-	wire [7:0] shift_amt;
-	wire s_bo_unused;
-	am_sub #(.W(8)) u_s (.a(E_BASE), .b(exp), .bi(1'b0), .d(shift_amt), .bo(s_bo_unused));
+	/* Shift distance calculation: s = E_BASE - exp
+	 * Compute 3-bit fine shift (sh_lo) and speculative 5-bit coarse shifts
+	 * (bi=0 and bi=1) in parallel, then apply factored 8:1 + 6:1 1-hot shifts. */
+	wire [2:0] sh_lo;
+	wire sh_lo_bo;
+	am_sub #(.W(3)) u_s_lo (.a(E_BASE[2:0]), .b(exp[2:0]), .bi(1'b0), .d(sh_lo), .bo(sh_lo_bo));
 
-	/* Place 1.mantissa at top of 48-bit word, shift right by shift_amt */
+	wire [4:0] sh_hi0, sh_hi1;
+	wire sh_hi0_bo_unused, sh_hi1_bo_unused;
+	am_sub #(.W(5)) u_s_hi0 (.a(E_BASE[7:3]), .b(exp[7:3]), .bi(1'b0), .d(sh_hi0), .bo(sh_hi0_bo_unused));
+	am_sub #(.W(5)) u_s_hi1 (.a(E_BASE[7:3]), .b(exp[7:3]), .bi(1'b1), .d(sh_hi1), .bo(sh_hi1_bo_unused));
+
+	wire [7:0] oh_lo;
+	wire [5:0] oh_hi0, oh_hi1;
+	genvar gk;
+	generate
+		for (gk = 0; gk < 8; gk = gk + 1) begin : g_oh_lo
+			assign oh_lo[gk] = (sh_lo == gk[2:0]);
+		end
+		for (gk = 0; gk < 6; gk = gk + 1) begin : g_oh_hi
+			assign oh_hi0[gk] = (sh_hi0 == gk[4:0]);
+			assign oh_hi1[gk] = (sh_hi1 == gk[4:0]);
+		end
+	endgenerate
+	wire [5:0] oh_hi = sh_lo_bo ? oh_hi1 : oh_hi0;
+
+	/* Stage 0a: fine right shift 0..7 across [47:17] (bits [16:0] are always 0) */
+	wire [37:0] sh_pad = {7'd0, 1'b1, mant, 7'd0};
+	wire [30:0] sh1;
+	genvar gb;
+	generate
+		for (gb = 0; gb < 31; gb = gb + 1) begin : g_sh_lo
+			wire lo4 = |(oh_lo[3:0] & sh_pad[gb +: 4]);
+			wire hi4 = |(oh_lo[7:4] & sh_pad[gb + 4 +: 4]);
+			assign sh1[gb] = lo4 || hi4;
+		end
+	endgenerate
+
+	/* Stage 0b: coarse right shift 0, 8, 16, 24, 32, 40 (>= 48 yields 0) */
 	wire [47:0] shifted_comb;
-	am_shift #(
-		.W(48),
-		.SW(8),
-		.DIR(1),
-		.USE_DSP(USE_DSP)
-	) u_sh (
-		.a({1'b1, mant, 24'd0}),
-		.amt(shift_amt),
-		.left(1'b0),
-		.arith(1'b0),
-		.y(shifted_comb)
-	);
+	genvar gm;
+	generate
+		for (gb = 0; gb < 48; gb = gb + 1) begin : g_sh_hi
+			wire [5:0] term;
+			for (gm = 0; gm < 6; gm = gm + 1) begin : g_m
+				localparam integer SRC = gb + 8 * gm;
+				if (SRC >= 17 && SRC <= 47) begin : g_in
+					assign term[gm] = oh_hi[gm] && sh1[SRC - 17];
+				end else begin : g_z
+					assign term[gm] = 1'b0;
+				end
+			end
+			assign shifted_comb[gb] = |term;
+		end
+	endgenerate
 
 	/* Pipeline register stage (LAT = 1) */
 	reg [47:0] r_shifted;
@@ -98,18 +134,37 @@ module am_fp_f2fix #(
 	wire lsb = unrounded[0];
 	wire round_up = (ROUND != 0) ? (guard && (sticky || lsb)) : 1'b0;
 
-	/* Single adder for round-to-nearest-even + optional sign negation */
-	wire [W-1:0] signed_res;
-	wire [W-1:0] rs_a_in = (SIGNED && act_sign) ? ~unrounded : unrounded;
-	wire rs_ci_in = (SIGNED && act_sign) ? !round_up : round_up;
-	wire r_co_unused;
-	am_add #(.W(W)) u_rnd_sign (
-		.a(rs_a_in),
+	/* Speculative rounding/sign adders run in parallel with sticky/round_up */
+	wire [W-1:0] pos_1;
+	wire pos_co_unused;
+	am_add #(.W(W)) u_pos1 (
+		.a(unrounded),
 		.b({W{1'b0}}),
-		.ci(rs_ci_in),
-		.s(signed_res),
-		.co(r_co_unused)
+		.ci(1'b1),
+		.s(pos_1),
+		.co(pos_co_unused)
 	);
+
+	wire [W-1:0] neg_1;
+	wire neg_co_unused;
+	generate
+		if (SIGNED != 0) begin : g_neg1
+			am_add #(.W(W)) u_neg1 (
+				.a(~unrounded),
+				.b({W{1'b0}}),
+				.ci(1'b1),
+				.s(neg_1),
+				.co(neg_co_unused)
+			);
+		end else begin : g_no_neg1
+			assign neg_1 = {W{1'b0}};
+			assign neg_co_unused = 1'b0;
+		end
+	endgenerate
+
+	wire [W-1:0] pos_res = round_up ? pos_1 : unrounded;
+	wire [W-1:0] neg_res = round_up ? ~unrounded : neg_1;
+	wire [W-1:0] signed_res = (SIGNED && act_sign) ? neg_res : pos_res;
 
 	/* Saturation limits */
 	wire [W-1:0] sat_pos;
@@ -157,7 +212,8 @@ module am_fp_f2fix #(
 	assign q = act_nan || is_underflow ? {W{1'b0}} :
 		(SATURATE && is_overflow) ? sat_res : signed_res;
 
-	wire unused_ok = &{1'b0, s_bo_unused, r_co_unused, sn_co_unused, clk, rst_n, en};
+	wire unused_ok = &{1'b0, sh_hi0_bo_unused, sh_hi1_bo_unused, pos_co_unused, neg_co_unused,
+		sn_co_unused, clk, rst_n, en, USE_DSP[0]};
 endmodule
 
 `default_nettype wire

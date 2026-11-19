@@ -27,15 +27,14 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module atg_blt_avg (
+module atg_blt_avg_s1 (
 	input wire [2:0] fmt,
-	input wire [2:0] psl,	/* log2 of the pixel's bytes */
+	input wire [2:0] psl,
 	input wire [511:0] in_s,
-	output reg [127:0] out_p,
-	output wire [127:0] avg_only,
+	output wire [191:0] csa_s_out,
+	output wire [191:0] csa_c_out,
 	output wire [127:0] s0_only
 );
-	/* SAMPLE0: the bytes of sample 0 of each pixel, for a pixel of 2^pl bytes (pl constant). */
 	function [127:0] sample0;
 		input [2:0] pl;
 		input [511:0] x;
@@ -51,15 +50,6 @@ module atg_blt_avg (
 			sample0 = o;
 		end
 	endfunction
-
-	/*
-	 * Sixteen averagers, one for channel c of pixel p (j = 4 p + c): the
-	 * sum of the four samples' codes (at most 4 x 1023) and its quarter,
-	 * rounded to the nearest code, ties to even.  The samples' words and
-	 * the codes are chosen by the format and the pixel size: UNORM8 byte c
-	 * of a pixel of 1, 2 or 4 bytes, or field c of a 16- or 32-bit pixel.
-	 */
-	wire [159:0] q;	/* average j at bits 10 j */
 
 	genvar j, sm;
 	generate
@@ -115,7 +105,6 @@ module atg_blt_avg (
 			assign v[sm] = v_val;
 		end
 
-		/* Two-level 3:2 CSA of v[0..3], then parallel sum0 and sum1 (sum + 4) adders */
 		wire [11:0] w0 = {2'd0, v[0]};
 		wire [11:0] w1 = {2'd0, v[1]};
 		wire [11:0] w2 = {2'd0, v[2]};
@@ -124,6 +113,39 @@ module atg_blt_avg (
 		wire [11:0] csa1_c = {((w0[10:0] & w1[10:0]) | (w1[10:0] & w2[10:0]) | (w0[10:0] & w2[10:0])), 1'b0};
 		wire [11:0] csa2_s = csa1_s ^ csa1_c ^ w3;
 		wire [11:0] csa2_c = {((csa1_s[10:0] & csa1_c[10:0]) | (csa1_c[10:0] & w3[10:0]) | (csa1_s[10:0] & w3[10:0])), 1'b0};
+		assign csa_s_out[j*12 +: 12] = csa2_s;
+		assign csa_c_out[j*12 +: 12] = csa2_c;
+	end
+	endgenerate
+
+	reg [127:0] s0_data;
+	always @(*) begin
+		case (psl)
+		3'd0: s0_data = sample0(3'd0, in_s);
+		3'd1: s0_data = sample0(3'd1, in_s);
+		3'd2: s0_data = sample0(3'd2, in_s);
+		3'd3: s0_data = sample0(3'd3, in_s);
+		3'd4: s0_data = sample0(3'd4, in_s);
+		default: s0_data = sample0(3'd5, in_s);
+		endcase
+	end
+	assign s0_only = s0_data;
+endmodule
+
+module atg_blt_avg_s2 (
+	input wire [2:0] fmt,
+	input wire [2:0] psl,
+	input wire [191:0] csa_s_in,
+	input wire [191:0] csa_c_in,
+	output wire [127:0] avg_only
+);
+	wire [159:0] q;
+
+	genvar j;
+	generate
+	for (j = 0; j < 16; j = j + 1) begin : g_avg
+		wire [11:0] csa2_s = csa_s_in[j*12 +: 12];
+		wire [11:0] csa2_c = csa_c_in[j*12 +: 12];
 		wire [11:0] sum, sum_p4;
 		wire [1:0] sum_co_unused;
 		am_add #(.W(12)) a_s (.a(csa2_s), .b(csa2_c), .ci(1'b0), .s(sum), .co(sum_co_unused[0]));
@@ -158,15 +180,12 @@ module atg_blt_avg (
 	wire [9:0] q3_2 = q[10 * 14 +: 10];
 	wire [9:0] q3_3 = q[10 * 15 +: 10];
 
-	/* Format 6: UNORM2_10_10_10 (4 x 32 bits = 128 bits) */
 	wire [127:0] f6_out = {
 		q3_3[1:0], q3_2, q3_1, q3_0,
 		q2_3[1:0], q2_2, q2_1, q2_0,
 		q1_3[1:0], q1_2, q1_1, q1_0,
 		q0_3[1:0], q0_2, q0_1, q0_0
 	};
-
-	/* Format 1: UNORM565 (4 x 16 bits = 64 bits, high 64 bits 0) */
 	wire [127:0] f1_out = {
 		64'd0,
 		q3_2[4:0], q3_1[5:0], q3_0[4:0],
@@ -174,8 +193,6 @@ module atg_blt_avg (
 		q1_2[4:0], q1_1[5:0], q1_0[4:0],
 		q0_2[4:0], q0_1[5:0], q0_0[4:0]
 	};
-
-	/* Format 7: UNORM1555 (4 x 16 bits = 64 bits, high 64 bits 0) */
 	wire [127:0] f7_out = {
 		64'd0,
 		q3_3[0], q3_2[4:0], q3_1[4:0], q3_0[4:0],
@@ -183,8 +200,6 @@ module atg_blt_avg (
 		q1_3[0], q1_2[4:0], q1_1[4:0], q1_0[4:0],
 		q0_3[0], q0_2[4:0], q0_1[4:0], q0_0[4:0]
 	};
-
-	/* Format 0: UNORM8 (psl = 0, 1, 2) */
 	wire [127:0] f0_p0 = {96'd0, q3_0[7:0], q2_0[7:0], q1_0[7:0], q0_0[7:0]};
 	wire [127:0] f0_p1 = {64'd0, q3_1[7:0], q3_0[7:0], q2_1[7:0], q2_0[7:0], q1_1[7:0], q1_0[7:0], q0_1[7:0], q0_0[7:0]};
 	wire [127:0] f0_p2 = {
@@ -205,30 +220,46 @@ module atg_blt_avg (
 		default: avg_core = 128'd0;
 		endcase
 	end
-
 	assign avg_only = avg_core;
+endmodule
 
-	reg [127:0] s0_data;
-	always @(*) begin
-		case (psl)
-		3'd0: s0_data = sample0(3'd0, in_s);
-		3'd1: s0_data = sample0(3'd1, in_s);
-		3'd2: s0_data = sample0(3'd2, in_s);
-		3'd3: s0_data = sample0(3'd3, in_s);
-		3'd4: s0_data = sample0(3'd4, in_s);
-		default: s0_data = sample0(3'd5, in_s);
-		endcase
-	end
+module atg_blt_avg (
+	input wire [2:0] fmt,
+	input wire [2:0] psl,	/* log2 of the pixel's bytes */
+	input wire [511:0] in_s,
+	output reg [127:0] out_p,
+	output wire [127:0] avg_only,
+	output wire [127:0] s0_only
+);
+	wire [191:0] csa_s_w, csa_c_w;
+	wire [127:0] avg_w, s0_w;
 
-	assign s0_only = s0_data;
+	atg_blt_avg_s1 u_s1 (
+		.fmt(fmt),
+		.psl(psl),
+		.in_s(in_s),
+		.csa_s_out(csa_s_w),
+		.csa_c_out(csa_c_w),
+		.s0_only(s0_w)
+	);
+
+	atg_blt_avg_s2 u_s2 (
+		.fmt(fmt),
+		.psl(psl),
+		.csa_s_in(csa_s_w),
+		.csa_c_in(csa_c_w),
+		.avg_only(avg_w)
+	);
+
+	assign avg_only = avg_w;
+	assign s0_only = s0_w;
 
 	always @(*) begin
 		if (fmt != 3'd0 && fmt != 3'd1 && fmt != 3'd6 && fmt != 3'd7)
-			out_p = s0_data;
+			out_p = s0_w;
 		else
-			out_p = avg_core;
+			out_p = avg_w;
 	end
-
 endmodule
 
 `default_nettype wire

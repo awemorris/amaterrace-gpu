@@ -119,6 +119,7 @@ module atg_cpu_win #(
 	localparam [1:0] S_IDLE  = 2'd0;
 	localparam [1:0] S_DMEM  = 2'd1;
 	localparam [1:0] S_ACK   = 2'd2;
+	localparam [1:0] S_SUB   = 2'd3;
 
 	reg [1:0] state;
 	reg q_dmem, q_own, q_sub, q_write;
@@ -126,12 +127,14 @@ module atg_cpu_win #(
 	reg [31:0] q_wdata;
 	reg [31:0] q_addr;
 	reg [3:0]  q_be;
+	reg [31:0] q_rdata;
 
 	wire in_dmem = d_addr[31:16] == 16'h0002;
 	wire in_win = d_addr[31:8] == 24'hF0_0000;
 	wire [5:0] idx = d_addr[7:2];
 	wire take = d_valid && state == S_IDLE;
 	wire ack = state == S_ACK;
+	wire sub_rd = state == S_SUB;
 
 	/* Registers. */
 	reg [9:0] st_idx;
@@ -152,7 +155,7 @@ module atg_cpu_win #(
 	wire [2:0] cause = {halt_req, fence_pend, pkt && !taken};
 
 	wire own_wr = ack && q_own && q_write;
-	wire own_rd = ack && q_own && !q_write;
+	wire own_rd = sub_rd && q_own && !q_write;
 
 	/* UOP_FIFO. */
 	wire q_uop = q_own && q_write && (q_idx == W_UOP || q_idx == W_UOP_LAST);
@@ -183,34 +186,40 @@ module atg_cpu_win #(
 	assign m_addr = {16'd0, q_addr[15:0]};
 	assign m_wdata = q_wdata;
 
-	/* Sub-bus: in the answer cycle. */
+	/* Sub-bus: in the read capture or answer cycle. */
 	assign sb_we = ack && q_sub && q_write;
-	assign sb_re = ack && q_sub && !q_write;
+	assign sb_re = sub_rd && q_sub && !q_write;
 	assign sb_idx = q_idx;
 	assign sb_wdata = q_wdata;
 
+	reg [31:0] sub_own_rdata;
 	always @(*) begin
-		d_rdata = 32'd0;
-		if (q_dmem)
-			d_rdata = m_rdata;
-		else if (q_sub)
-			d_rdata = dma_rdata | fw_rdata;
+		sub_own_rdata = 32'd0;
+		if (q_sub)
+			sub_own_rdata = dma_rdata | fw_rdata;
 		else if (q_own)
 			case (q_idx)
-			W_PKT_ADDR: d_rdata = v_addr;
-			W_PKT_DWORDS: d_rdata = {16'd0, v_dwords};
-			W_PKT_INFO: d_rdata = {pkt_info, 23'd0, v_tag};
-			W_UOP_FREE: d_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
-			W_STATE_IDX: d_rdata = {22'd0, st_idx};
-			W_STATE_DATA: d_rdata = st_rdata;
-			W_FENCE_LAST: d_rdata = fence_last;
-			W_CYCLE: d_rdata = cycle;
-			W_IRQ: d_rdata = {29'd0, cause};
-			W_IRQ_EN: d_rdata = {29'd0, irq_en};
-			default: d_rdata = 32'd0;
+			W_PKT_ADDR: sub_own_rdata = v_addr;
+			W_PKT_DWORDS: sub_own_rdata = {16'd0, v_dwords};
+			W_PKT_INFO: sub_own_rdata = {pkt_info, 23'd0, v_tag};
+			W_UOP_FREE: sub_own_rdata = {{(31 - UOP_DEPTH_LOG2){1'b0}}, DEPTH - f_count};
+			W_STATE_IDX: sub_own_rdata = {22'd0, st_idx};
+			W_STATE_DATA: sub_own_rdata = st_rdata;
+			W_FENCE_LAST: sub_own_rdata = fence_last;
+			W_CYCLE: sub_own_rdata = cycle;
+			W_IRQ: sub_own_rdata = {29'd0, cause};
+			W_IRQ_EN: sub_own_rdata = {29'd0, irq_en};
+			default: sub_own_rdata = 32'd0;
 			endcase
+	end
+
+	always @(*) begin
 		if (q_write)
 			d_rdata = 32'd0;
+		else if (q_dmem)
+			d_rdata = m_rdata;
+		else
+			d_rdata = q_rdata;
 	end
 
 	always @(posedge clk or negedge rst_n) begin
@@ -235,6 +244,7 @@ module atg_cpu_win #(
 			q_dmem <= 1'b0;
 			q_own <= 1'b0;
 			q_sub <= 1'b0;
+			q_rdata <= 32'd0;
 			st_idx <= 10'd0;
 			cycle <= 32'd0;
 			irq_en <= 3'd0;
@@ -251,11 +261,14 @@ module atg_cpu_win #(
 			v_done <= 1'b0;
 			ev_result <= 1'b0;
 			if (take) begin
-				state <= in_dmem ? S_DMEM : S_ACK;
+				state <= in_dmem ? S_DMEM : (!d_write && in_win ? S_SUB : S_ACK);
 				q_dmem <= in_dmem;
 				q_own <= in_win && !idx[5] && !idx[4];
 				q_sub <= in_win && (idx[5] || idx[4]);
 			end else if (state == S_DMEM) begin
+				state <= S_ACK;
+			end else if (sub_rd) begin
+				q_rdata <= sub_own_rdata;
 				state <= S_ACK;
 			end else if (ack && !stall) begin
 				state <= S_IDLE;

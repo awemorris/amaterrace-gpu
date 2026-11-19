@@ -43,6 +43,7 @@ module atg_su_pk #(
 	output wire x_ready,
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -222,15 +223,18 @@ module atg_su_pk #(
 
 	/* SHORT_LAT stages of control pipeline matching u_lo / u_hi */
 	(* shreg_extract = "no" *) reg [CW-1:0] pipe [0:SHORT_LAT-1];
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] pipe_v_rep;
 	integer k;
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {CW{1'b0}};
+			pipe_v_rep <= 8'd0;
 		end else begin
 			pipe[0][CW-1] <= mine;
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe[k][CW-1] <= pipe[k-1][CW-1];
+			pipe_v_rep <= (SHORT_LAT > 1) ? {8{pipe[SHORT_LAT-2][CW-1]}} : {8{mine}};
 			pipe[0][CW-2:0] <= {x_warp, x_grp, x_uop[ATG_UOP_RD +: 7], x_mask[NPHYS-1:0]};
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe[k][CW-2:0] <= pipe[k-1][CW-2:0];
@@ -239,6 +243,7 @@ module atg_su_pk #(
 
 	wire [CW-1:0] o_ctrl = pipe[SHORT_LAT-1];
 	assign s_valid = o_ctrl[CW-1];
+	assign s_valid_rep = pipe_v_rep;
 	assign s_warp  = o_ctrl[CW-2 -: WARP_W];
 	assign s_grp   = o_ctrl[CW-2-WARP_W -: GRP_W];
 	assign s_rd    = o_ctrl[CW-2-WARP_W-GRP_W -: 7];

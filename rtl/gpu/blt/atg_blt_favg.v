@@ -48,10 +48,11 @@ module atg_blt_favg (
 	output reg [127:0] out_p
 );
 	`include "atg_srgb.vh"
-	localparam [2:0] IDLE = 3'd0, RUN = 3'd1, ENC_START = 3'd2, ENC = 3'd3, COMMIT = 3'd4, OUT = 3'd5;
+	localparam [3:0] IDLE = 4'd0, RUN = 4'd1, ENC_START = 4'd2, ENC = 4'd3,
+		FH0 = 4'd4, FH1 = 4'd5, FH2 = 4'd6, FH3 = 4'd7, COMMIT = 4'd8, OUT = 4'd9;
 	localparam [31:0] ONE = 32'h3F800000, QUARTER = 32'h3E800000;
 
-	reg [2:0] st;
+	reg [3:0] st;
 	reg [511:0] s_in;
 	reg [2:0] m_fmt, m_psl, m_n;
 	reg [1:0] p;		/* the pixel */
@@ -116,10 +117,12 @@ module atg_blt_favg (
 	am_add #(.W(32)) a_icf (.a({tc_ps[28:0], 3'b000}), .b({24'd0, j, 5'b00000}), .ci(1'b0), .s(ic_f), .co(idx_co_unused[5]));
 
 	/* Sample sn of channel j of pixel p: Stage A extracts raw slice from s_in; Stage B decodes (u_ha/atg_srgb_dec). */
-	wire [31:0] raw_xa = (m_fmt == 3'd3) ? {24'd0, s_in[{ia_s_r[28:0], 3'b000} +: 8]} :
-	                     (m_fmt == 3'd4) ? {16'd0, s_in[ia_h_r +: 16]} : s_in[ia_f_r +: 32];
-	wire [31:0] raw_xc = (m_fmt == 3'd3) ? {24'd0, s_in[{ic_s_r[28:0], 3'b000} +: 8]} :
-	                     (m_fmt == 3'd4) ? {16'd0, s_in[ic_h_r +: 16]} : s_in[ic_f_r +: 32];
+	wire [31:0] raw_xa = (m_fmt == 3'd3) ? {24'd0, s_in[{ia_s_r[5:0], 3'b000} +: 8]} :
+	                     (m_fmt == 3'd4) ? {16'd0, s_in[{ia_h_r[8:4], 4'b0000} +: 16]} :
+	                                       s_in[{ia_f_r[8:5], 5'b00000} +: 32];
+	wire [31:0] raw_xc = (m_fmt == 3'd3) ? {24'd0, s_in[{ic_s_r[5:0], 3'b000} +: 8]} :
+	                     (m_fmt == 3'd4) ? {16'd0, s_in[{ic_h_r[8:4], 4'b0000} +: 16]} :
+	                                       s_in[{ic_f_r[8:5], 5'b00000} +: 32];
 	wire [31:0] ha, hc;	/* the two fp16 samples as fp32, from registered 16-bit slice */
 	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(r_xa[15:0]), .f(ha));
 	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(r_xc[15:0]), .f(hc));
@@ -130,8 +133,49 @@ module atg_blt_favg (
 	wire [31:0] fr;
 	am_fp_fma_p #(.LAT(6)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, r_fa[30:23] != 8'd0 ? {1'b1, r_fa[22:0]} : 24'd0, 23'd0}), .r(fr));
-	wire [15:0] fh;
-	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
+
+	/*
+	 * 4-cycle pipelined fp32 -> fp16 conversion (exact match to am_fp_f2h)
+	 * so every stage stays <= 12 cmos3 levels instead of 63 cmos3.
+	 */
+	wire [23:0] fh_m = {1'b1, r_final[22:0]};
+	wire [11:0] fh_q_w;
+	wire [4:0] fh_sh_w, fh_sh1_w;
+	wire [5:0] fh_co_unused;
+	am_add #(.W(12)) u_fh_q (.a({1'b0, fh_m[23:13]}), .b(12'd0),
+		.ci(r_final[12] && (r_final[11:0] != 12'd0 || r_final[13])), .s(fh_q_w), .co(fh_co_unused[0]));
+	am_sub #(.W(5)) u_fh_sh (.a(5'd30), .b(r_final[27:23]), .bi(1'b0), .d(fh_sh_w), .bo(fh_co_unused[1]));
+	am_sub #(.W(5)) u_fh_sh1 (.a(5'd29), .b(r_final[27:23]), .bi(1'b0), .d(fh_sh1_w), .bo(fh_co_unused[2]));
+
+	reg        fh0_sign_r, fh0_ef_r, fh0_mnz_r, fh0_ge113_r, fh0_gt142_r, fh0_le101_r;
+	reg [11:0] fh0_q_r;
+	reg [4:0]  fh0_sh_r, fh0_sh1_r;
+	wire [7:0] fh_ex_w;
+	wire [23:0] fh_ds_w, fh_hi_w;
+	am_sub #(.W(8)) u_fh_ex (.a(r_final[30:23]), .b(fh0_q_r[11] ? 8'd111 : 8'd112), .bi(1'b0),
+		.d(fh_ex_w), .bo(fh_co_unused[3]));
+	am_shift #(.W(24), .SW(5), .DIR(1)) u_fh_ds (.a(fh_m), .amt(fh0_sh_r), .left(1'b0), .arith(1'b0), .y(fh_ds_w));
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_fh_hi (.a({24{1'b1}}), .amt(fh0_sh1_r), .left(1'b1), .arith(1'b0), .y(fh_hi_w));
+
+	reg [7:0]  fh1_ex_r;
+	reg [14:0] fh1_ds_r;
+	reg [23:0] fh1_hi_r;
+	reg        fh1_g_r;
+	wire fh2_st_w = (fh_m & ~fh1_hi_r) != 24'd0;
+	wire fh2_rnd_w = fh1_g_r && (fh2_st_w || fh1_ds_r[0]);
+
+	reg [14:0] fh2_ds_r;
+	reg        fh2_rnd_r, fh2_ovf_r;
+	wire [14:0] fh3_dr_w;
+	am_add #(.W(15)) u_fh_dr (.a(fh2_ds_r), .b(15'd0), .ci(fh2_rnd_r), .s(fh3_dr_w), .co(fh_co_unused[4]));
+	assign fh_co_unused[5] = 1'b0;
+
+	reg [15:0] fh_r;
+	wire [15:0] fh_mux_w = fh0_ef_r ? (fh0_mnz_r ? 16'h7E00 : {fh0_sign_r, 15'h7C00}) :
+		fh0_ge113_r ? (fh2_ovf_r ? {fh0_sign_r, 15'h7C00} :
+			{fh0_sign_r, fh1_ex_r[4:0], fh0_q_r[11:10] != 2'b01 ? 10'd0 : fh0_q_r[9:0]}) :
+		fh0_le101_r ? {fh0_sign_r, 15'd0} : {fh0_sign_r, fh3_dr_w};
+	wire [15:0] fh = fh_r;
 	wire [2:0] cpp_last, n_last;
 	wire [1:0] last_co_unused;
 
@@ -220,6 +264,23 @@ module atg_blt_favg (
 			ic_h_r <= 32'd0;
 			ia_f_r <= 32'd0;
 			ic_f_r <= 32'd0;
+			fh0_sign_r <= 1'b0;
+			fh0_ef_r <= 1'b0;
+			fh0_mnz_r <= 1'b0;
+			fh0_ge113_r <= 1'b0;
+			fh0_gt142_r <= 1'b0;
+			fh0_le101_r <= 1'b0;
+			fh0_q_r <= 12'd0;
+			fh0_sh_r <= 5'd0;
+			fh0_sh1_r <= 5'd0;
+			fh1_ex_r <= 8'd0;
+			fh1_ds_r <= 15'd0;
+			fh1_hi_r <= 24'd0;
+			fh1_g_r <= 1'b0;
+			fh2_ds_r <= 15'd0;
+			fh2_rnd_r <= 1'b0;
+			fh2_ovf_r <= 1'b0;
+			fh_r <= 16'd0;
 			out_p <= 128'd0;
 		end else begin
 			case (st)
@@ -278,12 +339,43 @@ module atg_blt_favg (
 						step <= 2'd0;
 						if (m_fmt == 3'd3)
 							st <= ENC_START;
+						else if (m_fmt == 3'd4)
+							st <= FH0;
 						else
 							st <= COMMIT;
 					end
 				end
 				default: fma_wait <= 4'd0;
 				endcase
+			end
+			FH0: begin
+				fh0_sign_r  <= r_final[31];
+				fh0_ef_r    <= (r_final[30:23] == 8'hFF);
+				fh0_mnz_r   <= (r_final[22:0] != 23'd0);
+				fh0_ge113_r <= (r_final[30:23] >= 8'd113);
+				fh0_gt142_r <= (r_final[30:23] > 8'd142);
+				fh0_le101_r <= (r_final[30:23] <= 8'd101);
+				fh0_q_r     <= fh_q_w;
+				fh0_sh_r    <= fh_sh_w;
+				fh0_sh1_r   <= fh_sh1_w;
+				st <= FH1;
+			end
+			FH1: begin
+				fh1_ex_r <= fh_ex_w;
+				fh1_ds_r <= fh_ds_w[14:0];
+				fh1_hi_r <= fh_hi_w;
+				fh1_g_r  <= fh_m[fh0_sh1_r];
+				st <= FH2;
+			end
+			FH2: begin
+				fh2_ds_r  <= fh1_ds_r;
+				fh2_rnd_r <= fh2_rnd_w;
+				fh2_ovf_r <= (fh1_ex_r >= 8'd31) || fh0_gt142_r;
+				st <= FH3;
+			end
+			FH3: begin
+				fh_r <= fh_mux_w;
+				st <= COMMIT;
 			end
 			ENC_START: begin
 				st <= ENC;
@@ -319,7 +411,10 @@ module atg_blt_favg (
 		end
 	end
 
-	wire unused_ok = &{1'b0, e_ready, idx_co_unused, last_co_unused, out_co_unused, ta_ps[31:29], tc_ps[31:29],
+	wire unused_ok = &{1'b0, e_ready, idx_co_unused, last_co_unused, out_co_unused, fh_co_unused,
+		fh_ds_w[23:15], ta_ps[31:29], tc_ps[31:29],
+		ia_s_r[31:6], ic_s_r[31:6], ia_h_r[31:9], ic_h_r[31:9], ia_h_r[3:0], ic_h_r[3:0],
+		ia_f_r[31:9], ic_f_r[31:9], ia_f_r[4:0], ic_f_r[4:0],
 		ia_h[31:9], ic_h[31:9], ps};
 endmodule
 

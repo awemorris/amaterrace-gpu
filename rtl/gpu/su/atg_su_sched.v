@@ -26,7 +26,8 @@ module atg_su_sched #(
 	parameter NSU = 1,	/* Number of SUs (compute workgroups are shared out: this SU takes wg_id % NSU == SU_INDEX) */
 	parameter SU_INDEX = 0,	/* This SU's number */
 	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps (design §3.8; KC705 2) */
-	parameter GTO = 1	/* Scheduling policy: 1 = Greedy-Then-Oldest, 0 = Round-Robin */
+	parameter GTO = 1,	/* Scheduling policy: 1 = Greedy-Then-Oldest, 0 = Round-Robin */
+	parameter USE_QW_REP = 0	/* 1: use 4-slice replicated q_warp_rep */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -68,6 +69,7 @@ module atg_su_sched #(
 	input wire [15:0] wc_pc,
 	/* Warp information */
 	input wire [WARP_W-1:0] q_warp,
+	input wire [WARP_W*4-1:0] q_warp_rep,
 	output wire [159:0] q_info,
 	output wire init_valid,
 	output wire [WARP_W-1:0] init_warp,
@@ -227,20 +229,26 @@ module atg_su_sched #(
 			assign n_free_ge_nw   = (nf3 >= nw[2:0]);
 			assign n_free_gt_frag = ({27'd0, n_free} > FRAG_RESERVE);
 		end else begin : g_nfree_gen
-			reg [WARP_W-1:0] fs_r;
-			reg [4:0] nf_r;
-			integer fi;
-			always @(*) begin
-				fs_r = {WARP_W{1'b0}};
-				nf_r = 5'd0;
-				for (fi = NWARPS - 1; fi >= 0; fi = fi - 1)
-					if (slot_free[fi]) begin
-						fs_r = fi[WARP_W-1:0];
-						nf_r = {nf_r[4:1] ^ {nf_r[3] & (&nf_r[2:0]), nf_r[2] & (&nf_r[1:0]), nf_r[1] & nf_r[0], nf_r[0]}, ~nf_r[0]};
-					end
+			am_popcount #(.W(NWARPS), .OW(5)) u_nf_pop (
+				.i_vec(slot_free),
+				.o_cnt(n_free)
+			);
+			if (NWARPS == 8) begin : g_fs8
+				wire lo_any = |slot_free[3:0];
+				wire [1:0] lo_s = slot_free[0] ? 2'd0 : (slot_free[1] ? 2'd1 : (slot_free[2] ? 2'd2 : 2'd3));
+				wire [1:0] hi_s = slot_free[4] ? 2'd0 : (slot_free[5] ? 2'd1 : (slot_free[6] ? 2'd2 : 2'd3));
+				assign free_slot = lo_any ? {1'b0, lo_s} : {1'b1, hi_s};
+			end else begin : g_fs_gen
+				reg [WARP_W-1:0] fs_r;
+				integer fi;
+				always @(*) begin
+					fs_r = {WARP_W{1'b0}};
+					for (fi = NWARPS - 1; fi >= 0; fi = fi - 1)
+						if (slot_free[fi])
+							fs_r = fi[WARP_W-1:0];
+				end
+				assign free_slot = fs_r;
 			end
-			assign free_slot = fs_r;
-			assign n_free = nf_r;
 			assign n_free_ge_nw   = ({1'b0, n_free} >= {2'b00, nw});
 			assign n_free_gt_frag = ({27'd0, n_free} > FRAG_RESERVE);
 		end
@@ -386,23 +394,27 @@ module atg_su_sched #(
 	genvar gqi;
 	generate
 		for (gqi = 0; gqi < 10; gqi = gqi + 1) begin : g_qinfo_sl
+			wire [WARP_W-1:0] q_warp_in = USE_QW_REP ? q_warp_rep[((gqi * 4) / 10) * WARP_W +: WARP_W] : q_warp;
 			wire [WARP_W-1:0] q_warp_sl;
 			genvar gqb;
 			for (gqb = 0; gqb < WARP_W; gqb = gqb + 1) begin : g_qw_buf
 `ifdef SYNTH_KINTEX7
-				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qw (.I0(q_warp[gqb]), .O(q_warp_sl[gqb]));
+				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_qw (.I0(q_warp_in[gqb]), .O(q_warp_sl[gqb]));
 `else
-				assign q_warp_sl[gqb] = q_warp[gqb];
+				assign q_warp_sl[gqb] = q_warp_in[gqb];
 `endif
+			end
+			wire [NWARPS*16-1:0] q_i_m;
+			genvar gy;
+			for (gy = 0; gy < NWARPS; gy = gy + 1) begin : g_qi_m
+				assign q_i_m[gy*16 +: 16] = (q_warp_sl == gy[WARP_W-1:0]) ? info[gy*160 + gqi*16 +: 16] : 16'd0;
 			end
 			reg [15:0] q_i_sl;
 			integer y;
 			always @(*) begin
 				q_i_sl = 16'd0;
-				for (y = 0; y < NWARPS; y = y + 1) begin
-					if (q_warp_sl == y[WARP_W-1:0])
-						q_i_sl = info[y*160 + gqi*16 +: 16];
-				end
+				for (y = 0; y < NWARPS; y = y + 1)
+					q_i_sl = q_i_sl | q_i_m[y*16 +: 16];
 			end
 			assign q_info_out[gqi*16 +: 16] = q_i_sl;
 		end

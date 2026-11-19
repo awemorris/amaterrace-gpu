@@ -521,17 +521,44 @@ module atg_top #(
 	assign j_rdata = j_rdata_q;
 	assign j_busy = j_busy_q;
 `else
+	reg        j_wr_q, j_rd_q;
+	reg [16:0] j_waddr_q, j_raddr_q;
+	reg [31:0] j_wdata_q;
+	reg [3:0]  j_wstrb_q;
+	reg [31:0] j_rdata_q;
+	reg        j_busy_q;
 	wire a_busy = a_reg_wr || a_reg_rd;
-	wire j_go_wr = HAS_JTAG != 0 && !a_reg_wr;
-	wire j_go_rd = HAS_JTAG != 0 && !a_reg_rd;
-	assign reg_wr = a_reg_wr || (j_go_wr && j_wr);
-	assign reg_waddr = a_reg_wr ? a_reg_waddr : j_waddr;
-	assign reg_wdata = a_reg_wr ? a_reg_wdata : j_wdata;
-	assign reg_wstrb = a_reg_wr ? a_reg_wstrb : j_wstrb;
-	assign reg_rd = a_reg_rd || (j_go_rd && j_rd);
-	assign reg_raddr = a_reg_rd ? a_reg_raddr : j_raddr;
-	assign j_rdata = reg_rdata;
-	assign j_busy = a_busy;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			j_wr_q    <= 1'b0;
+			j_waddr_q <= 17'd0;
+			j_wdata_q <= 32'd0;
+			j_wstrb_q <= 4'd0;
+			j_rd_q    <= 1'b0;
+			j_raddr_q <= 17'd0;
+			j_rdata_q <= 32'd0;
+			j_busy_q  <= 1'b0;
+		end else begin
+			j_wr_q    <= (HAS_JTAG != 0) ? j_wr      : 1'b0;
+			j_waddr_q <= (HAS_JTAG != 0) ? j_waddr   : 17'd0;
+			j_wdata_q <= (HAS_JTAG != 0) ? j_wdata   : 32'd0;
+			j_wstrb_q <= (HAS_JTAG != 0) ? j_wstrb   : 4'd0;
+			j_rd_q    <= (HAS_JTAG != 0) ? j_rd      : 1'b0;
+			j_raddr_q <= (HAS_JTAG != 0) ? j_raddr   : 17'd0;
+			j_rdata_q <= (HAS_JTAG != 0) ? reg_rdata : 32'd0;
+			j_busy_q  <= (HAS_JTAG != 0) ? a_busy    : 1'b0;
+		end
+	end
+	wire j_go_wr = (HAS_JTAG != 0) && !a_reg_wr;
+	wire j_go_rd = (HAS_JTAG != 0) && !a_reg_rd;
+	assign reg_wr    = a_reg_wr || (j_go_wr && j_wr_q);
+	assign reg_waddr = a_reg_wr ? a_reg_waddr : j_waddr_q;
+	assign reg_wdata = a_reg_wr ? a_reg_wdata : j_wdata_q;
+	assign reg_wstrb = a_reg_wr ? a_reg_wstrb : j_wstrb_q;
+	assign reg_rd    = a_reg_rd || (j_go_rd && j_rd_q);
+	assign reg_raddr = a_reg_rd ? a_reg_raddr : j_raddr_q;
+	assign j_rdata   = j_rdata_q;
+	assign j_busy    = j_busy_q;
 `endif
 
 	/* The DC (HAS_DISP) and the CP's atg_cp_disp: its register bus, flips and events. */
@@ -647,6 +674,7 @@ module atg_top #(
 	wire core_rst_n;
 	wire mc_quiesce;
 	wire mc_flush;
+	wire [3:0] mc_flush_rep;
 	wire l2_flush;
 	wire l2_flush_done;
 	wire l2_idle;
@@ -840,6 +868,7 @@ module atg_top #(
 		.win_en(win_en),
 		.mc_quiesce(mc_quiesce),
 		.mc_flush(mc_flush),
+		.mc_flush_rep(mc_flush_rep),
 		.l2_flush(l2_flush),
 		.l2_flush_done(l2_flush_done),
 		.l2_idle(l2_idle),
@@ -1030,7 +1059,8 @@ module atg_top #(
 		.PROT_GIDX_W(PROT_GIDX_W),
 		.HAS_L2(HAS_L2),
 		.L2_WAYS(L2_WAYS),
-		.L2_SET_W(L2_SET_W)
+		.L2_SET_W(L2_SET_W),
+		.USE_FLUSH_REP(1)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -1051,6 +1081,7 @@ module atg_top #(
 		.rsp_error(rsp_error_v),
 		.quiesce(mc_quiesce),
 		.flush(mc_flush),
+		.flush_rep(mc_flush_rep),
 		.l2_flush(l2_flush),
 		.l2_flush_done(l2_flush_done),
 		.l2_idle_out(l2_idle),

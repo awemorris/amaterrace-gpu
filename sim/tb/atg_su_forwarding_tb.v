@@ -112,7 +112,7 @@ module atg_su_forwarding_tb;
 		.w_en(s_valid && s_rd < 7'd32),
 		.w_warp(s_warp), .w_grp(s_grp), .w_reg(s_rd[5:0]), .w_data(s_data),
 		.w_lanes(s_lanes),
-		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp),
+		.r_en(r_en), .r_en_rep(8'd0), .r_warp(r_warp), .r_grp(r_grp),
 		.r_reg1(r_regs[5:0]), .r_reg2(r_regs[11:6]),
 		.r_data1(r_data1), .r_data2(r_data2)
 	);
@@ -125,10 +125,10 @@ module atg_su_forwarding_tb;
 		.clk(clk), .rst_n(rst_n),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe),
-		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
+		.r_en(r_en), .r_en_rep(), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
 		.r_data({r_data2, r_data1}),
 		.cr_en(), .cr_idx(), .cr_data(96'd0),
-		.a_q_warp(), .q_warp(), .q_info(160'd0), .q_exec(32'hFFFFFFFF), .q_killed(32'd0),
+		.a_q_warp(), .a_q_warp_rep(), .q_warp(), .q_info(160'd0), .q_exec(32'hFFFFFFFF), .q_killed(32'd0),
 		.rq_pop(), .rq_data({DW{1'b0}}),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
 		.x_pc(x_pc), .x_uop(x_uop), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),

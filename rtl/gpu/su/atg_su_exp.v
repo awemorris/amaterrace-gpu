@@ -287,6 +287,8 @@ module atg_su_exp #(
 	wire [WARP_W-1:0] dwarp;
 	wire [2:0] dq;
 	wire [2:0] drt;
+	wire [44*WARP_W-1:0] dwarp_rep;
+	wire [26*3-1:0] dq_rep;
 	wire dfirst, dlastb, dnocol;
 	wire [31:0] dcov, dxp_raw, ddw, dsm, dr6;
 	genvar gwm;
@@ -300,11 +302,11 @@ module atg_su_exp #(
 			genvar gb;
 			for (gb = 0; gb < WARP_W; gb = gb + 1) begin : g_wm_buf
 
-				assign dw_cov_s[gb] = dwarp[gb];
-				assign dw_xp_s[gb]  = dwarp[gb];
-				assign dw_dw_s[gb]  = dwarp[gb];
-				assign dw_sm_s[gb]  = dwarp[gb];
-				assign dw_r6_s[gb]  = dwarp[gb];
+				assign dw_cov_s[gb] = dwarp_rep[(16 + gwm*5 + 0)*WARP_W + gb];
+				assign dw_xp_s[gb]  = dwarp_rep[(16 + gwm*5 + 1)*WARP_W + gb];
+				assign dw_dw_s[gb]  = dwarp_rep[(16 + gwm*5 + 2)*WARP_W + gb];
+				assign dw_sm_s[gb]  = dwarp_rep[(16 + gwm*5 + 3)*WARP_W + gb];
+				assign dw_r6_s[gb]  = dwarp_rep[(16 + gwm*5 + 4)*WARP_W + gb];
 
 			end
 			assign dcov[gwm*16 +: 16]    = cov[dw_cov_s*32 + gwm*16 +: 16];
@@ -319,12 +321,10 @@ module atg_su_exp #(
 	generate
 		for (gbr = 0; gbr < WARP_W; gbr = gbr + 1) begin : g_dw_rtw_buf
 
-			assign dw_rtw[gbr] = dwarp[gbr];
+			assign dw_rtw[gbr] = dwarp_rep[26*WARP_W + gbr];
 
 		end
 	endgenerate
-	wire [36*WARP_W-1:0] dwarp_rep;
-	wire [20*3-1:0] dq_rep;
 	atg_su_exp_drain #(.NWARPS(NWARPS), .WARP_W(WARP_W)) drain (
 		.clk(clk), .rst_n(rst_n), .fl_go(fl_go), .fl_slot(fl_slot_top), .fl_seq(fl_info[47:32]),
 		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dw_rtw*8 +: 8]),
@@ -336,10 +336,10 @@ module atg_su_exp #(
 
 	wire [2:0] dq_dl;
 
-	assign dq_dl = dq;
+	assign dq_dl = dq_rep[4*3 +: 3];
 
 	wire [4:0] dl0 = {dq_dl, 2'b00};
-	wire [31:0] drow = {{(32-WARP_W){1'b0}}, dwarp} * G + {27'd0, dl0} / NPHYS;
+	wire [31:0] drow = {{(32-WARP_W){1'b0}}, dwarp_rep[26*WARP_W +: WARP_W]} * G + {27'd0, dl0} / NPHYS;
 	wire [CAW-1:0] dcrow, xcrow;
 	generate
 		if (RT_AW == 0) begin : g_crow_single
@@ -350,7 +350,7 @@ module atg_su_exp #(
 			assign xcrow = {xrow[RW-1:0], tk_xcrow[RT_AW-1:0]};
 		end
 	endgenerate
-	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp} * 8 + {29'd0, dq}) * 16;
+	wire [31:0] dqs = ({{(32-WARP_W){1'b0}}, dwarp_rep[26*WARP_W +: WARP_W]} * 8 + {29'd0, dq_dl}) * 16;
 	wire [31:0] dxp = dxp_raw & dcov;
 
 	wire [3:0] col_comp_match;
@@ -788,45 +788,40 @@ module atg_su_exp #(
 			genvar gwb;
 			for (gwb = 0; gwb < WARP_W; gwb = gwb + 1) begin : g_dw_buf
 
-				assign dw_sl[gwb] = dwarp[gwb];
+				assign dw_sl[gwb] = dwarp_rep[(27 + gds)*WARP_W + gwb];
 
 			end
 			assign dsv_mux[gds * 16 +: 16] = dsv[{dw_sl, gds[2:0], 4'd0} +: 16];
 		end
 	endgenerate
 
-	wire [WARP_W-1:0] dwarp_qx, dwarp_qy;
-	wire [2:0] dq_qx, dq_qy;
-	genvar gq_b;
-	for (gq_b = 0; gq_b < WARP_W; gq_b = gq_b + 1) begin : g_dw_buf_xy
-
-		assign dwarp_qx[gq_b] = dwarp[gq_b];
-		assign dwarp_qy[gq_b] = dwarp[gq_b];
-
-	end
-	for (gq_b = 0; gq_b < 3; gq_b = gq_b + 1) begin : g_dq_buf_xy
-
-		assign dq_qx[gq_b] = dq[gq_b];
-		assign dq_qy[gq_b] = dq[gq_b];
-
-	end
-	wire [WARP_W+2:0] dqs_x = {dwarp_qx, dq_qx};
-	wire [WARP_W+2:0] dqs_y = {dwarp_qy, dq_qy};
+	wire [4*WARP_W-1:0] dwarp_qx_sl, dwarp_qy_sl;
+	wire [4*3-1:0]      dq_qx_sl, dq_qy_sl;
+	genvar gq_b, gq_s;
+	generate
+		for (gq_s = 0; gq_s < 4; gq_s = gq_s + 1) begin : g_qs_rep
+			localparam integer DW_X_I = (gq_s == 0) ? 35 : (35 + gq_s);
+			localparam integer DW_Y_I = 39 + gq_s;
+			localparam integer DQ_X_I = (gq_s == 0) ? 5 : (19 + gq_s);
+			localparam integer DQ_Y_I = (gq_s == 0) ? 6 : (22 + gq_s);
+			for (gq_b = 0; gq_b < WARP_W; gq_b = gq_b + 1) begin : g_dwb
+				assign dwarp_qx_sl[gq_s*WARP_W + gq_b] = dwarp_rep[DW_X_I*WARP_W + gq_b];
+				assign dwarp_qy_sl[gq_s*WARP_W + gq_b] = dwarp_rep[DW_Y_I*WARP_W + gq_b];
+			end
+			for (gq_b = 0; gq_b < 3; gq_b = gq_b + 1) begin : g_dqb
+				assign dq_qx_sl[gq_s*3 + gq_b] = dq_rep[DQ_X_I*3 + gq_b];
+				assign dq_qy_sl[gq_s*3 + gq_b] = dq_rep[DQ_Y_I*3 + gq_b];
+			end
+		end
+	endgenerate
 	assign x_ready = 1'b1;
 
 	wire [15:0] qx_out, qy_out;
 	genvar gq_sl;
 	generate
 		for (gq_sl = 0; gq_sl < 8; gq_sl = gq_sl + 1) begin : g_qx_mux
-			wire [WARP_W+2:0] dqs_x_sl;
-			wire [WARP_W+2:0] dqs_y_sl;
-			genvar gb;
-			for (gb = 0; gb < WARP_W+3; gb = gb + 1) begin : g_sel_buf
-
-				assign dqs_x_sl[gb] = dqs_x[gb];
-				assign dqs_y_sl[gb] = dqs_y[gb];
-
-			end
+			wire [WARP_W+2:0] dqs_x_sl = {dwarp_qx_sl[(gq_sl/2)*WARP_W +: WARP_W], dq_qx_sl[(gq_sl/2)*3 +: 3]};
+			wire [WARP_W+2:0] dqs_y_sl = {dwarp_qy_sl[(gq_sl/2)*WARP_W +: WARP_W], dq_qy_sl[(gq_sl/2)*3 +: 3]};
 			assign qx_out[gq_sl*2 +: 2] = qx[{dqs_x_sl, gq_sl[2:0], 1'b0} +: 2];
 			assign qy_out[gq_sl*2 +: 2] = qy[{dqs_y_sl, gq_sl[2:0], 1'b0} +: 2];
 		end
@@ -837,12 +832,12 @@ module atg_su_exp #(
 	assign ex_aux = {drt, dlastb, dfirst, dnocol, 1'b1, dsv_mux,
 		zexp & dxp[dl0 +: 4], smask};
 `else
-	assign ex_aux = {drt, dlastb, dfirst, dnocol, fr[dwarp], dsv_mux,
+	assign ex_aux = {drt, dlastb, dfirst, dnocol, fr[dw_rtw], dsv_mux,
 		zexp & dxp[dl0 +: 4], smask};
 `endif
 	assign ex_color = col;
 	assign ex_color1 = col1;
-	assign ex_has_src1 = (DUAL_SOURCE != 0) ? has_src1_w[dwarp] : 1'b0;
+	assign ex_has_src1 = (DUAL_SOURCE != 0) ? has_src1_w[dw_rtw] : 1'b0;
 	assign ex_depth = dep;
 
 	genvar gw, gq;
@@ -1086,7 +1081,7 @@ module atg_su_exp #(
 
 	wire unused_ok = &{1'b0, x_last, x_sbe, x_pc, x_a, x_c, x_mask[NPHYS-1:0], x_info[31:18],
 		x_uop, fl_info[63:49], fl_data[7:0], tgt, xrow, lane0, zrow, drow, fq, dqs, mesh_done_unused,
-		mesh_pb_10, mesh_vb_10};
+		mesh_pb_10, mesh_vb_10, dwarp, dq, dcrow, dq_rep[7*3 +: 3]};
 endmodule
 
 module atg_su_exp_ch_mux #(

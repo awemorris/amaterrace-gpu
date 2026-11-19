@@ -594,6 +594,13 @@ module atg_vf_index #(
 			buf1_all1 <= rdata_h_all1;
 	end
 
+	/* Flattened next-state logic for bv and bv_free*_r to avoid chained priority trees */
+	wire drain_done = st_is_drain && !rq_pend && (rd_rsp ? (inflight == 2'd1) : (inflight == 2'd0));
+	wire bv0_next = drain_done ? 1'b0 : (pop && !e_slot) ? 1'b0 : (rd_rsp_ok && !rsp_tag[0]) ? 1'b1 : bv[0];
+	wire bv1_next = drain_done ? 1'b0 : (pop &&  e_slot) ? 1'b0 : (rd_rsp_ok &&  rsp_tag[0]) ? 1'b1 : bv[1];
+	wire bv0_free_next = drain_done ? 1'b1 : (pop && !e_slot) ? 1'b1 : (rd_rsp_ok && !rsp_tag[0]) ? 1'b0 : bv_free0_r[0];
+	wire bv1_free_next = drain_done ? 1'b1 : (pop &&  e_slot) ? 1'b1 : (rd_rsp_ok &&  rsp_tag[0]) ? 1'b0 : bv_free1_r[0];
+
 	always @(posedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			st_is_idle  <= 1'b1;
@@ -641,13 +648,9 @@ module atg_vf_index #(
 			iv_restart_r <= 1'b0;
 			iv_last_r <= 1'b0;
 		end else begin
-			if (rd_rsp_ok) begin
-				bv[rsp_tag[0]] <= 1'b1;
-				if (!rsp_tag[0])
-					bv_free0_r <= 16'h0000;
-				else
-					bv_free1_r <= 16'h0000;
-			end
+			bv <= {bv1_next, bv0_next};
+			bv_free0_r <= {16{bv0_free_next}};
+			bv_free1_r <= {16{bv1_free_next}};
 			inflight <= inflight_next;
 
 			if (ce_ka0_b[0])  k_a0_r[15:0]     <= k_a0[15:0];
@@ -684,13 +687,8 @@ module atg_vf_index #(
 				rq_slot <= !rq_slot;
 			end
 			nalloc <= nalloc_next;
-			if (pop) begin
-				bv[e_slot] <= 1'b0;
-				if (!e_slot)
-					bv_free0_r <= 16'hFFFF;
-				else
-					bv_free1_r <= 16'hFFFF;
-			end
+			if (pop)
+				e_slot <= e_slot; /* bv/bv_free*_r handled above by bv*_next */
 
 			if (ce_ea_b[0])     e_a[15:0]  <= next_ea_val[15:0];
 			if (ce_ea_b[1])     e_a[31:16] <= next_ea_val[31:16];
@@ -769,14 +767,11 @@ module atg_vf_index #(
 					end
 				end
 			end else if (st_is_drain) begin
-				if (!rq_pend && inflight == {1'b0, rd_rsp}) begin
+				if (drain_done) begin
 					st_is_drain <= 1'b0;
 					st_is_idle  <= 1'b1;
 					rq_more <= 1'b0;
 					nalloc <= 2'd0;
-					bv <= 2'b00;
-					bv_free0_r <= 16'hFFFF;
-					bv_free1_r <= 16'hFFFF;
 				end
 			end
 		end

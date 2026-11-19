@@ -140,11 +140,16 @@ module atg_su_xu #(
 	wire [27:0] carry_unused;	/* the adders' carries and borrows */
 
 	wire [NPHYS-1:0] x_mask_rev;
-	wire [NPHYS-1:0] rm_after = rmask & ({{(NPHYS-1){1'b1}}, 1'b0} << li);
+	wire [NPHYS-1:0] rm_after;
 	wire [NPHYS-1:0] rm_after_rev;
 	genvar gxr;
 	generate
 		for (gxr = 0; gxr < NPHYS; gxr = gxr + 1) begin : g_xu_rev
+			if (gxr == 0) begin : g_xu_z
+				assign rm_after[gxr] = 1'b0;
+			end else begin : g_xu_nz
+				assign rm_after[gxr] = rmask[gxr] && ({{(32-LW){1'b0}}, li} < gxr);
+			end
 			assign x_mask_rev[gxr]   = x_mask[NPHYS - 1 - gxr];
 			assign rm_after_rev[gxr] = rm_after[NPHYS - 1 - gxr];
 		end
@@ -155,6 +160,8 @@ module atg_su_xu #(
 	am_msb #(.W(NPHYS), .SW(LW)) u_xu_after (.a(rm_after_rev), .n(after_rev_n), .nz(after_nz));
 	wire [LW:0] first = first_nz ? {1'b0, ~first_rev_n} : NPHYS[LW:0];
 	wire [LW:0] after = after_nz ? {1'b0, ~after_rev_n} : NPHYS[LW:0];
+	(* keep = "true" *) reg [LW-1:0] after_q_0, after_q_1, after_q_2, after_q_3;
+	(* keep = "true" *) reg after_nz_q;
 	assign carry_unused[0] = 1'b0;
 	/* The lane's input, flushed, and its fields (registered in sub_st 0). */
 	wire [31:0] lx_cur_r;
@@ -255,10 +262,7 @@ assign lodd_lmm0 = le[0];
 	/* The low 40 bits of tp[39:0] << tsh or tp >> -tsh: one shifter. */
 	am_shift #(.W(83), .SW(8)) u_tps (.a(tp_r), .amt(tsh_amt_r), .left(tsh_left_r),
 		.arith(1'b0), .y(tps));
-	wire t0_zero_a, t0_zero_b, t0_zero_c;
-assign t0_zero_a = $signed(tsh_r) >= 12'sd40;
-	assign t0_zero_b = $signed(tsh_r) >= 12'sd40;
-	assign t0_zero_c = $signed(tsh_r) >= 12'sd40;
+	(* keep = "true" *) reg t0_zero_a, t0_zero_b, t0_zero_c;
 
 	wire [39:0] t0 = {
 		t0_zero_c ? 8'd0 : tps_r[39:32],
@@ -816,16 +820,16 @@ assign first_x_b0[gxb] = first[gxb];
 			assign first_x_b1[gxb] = first[gxb];
 			assign first_x_b2[gxb] = first[gxb];
 			assign first_x_b3[gxb] = first[gxb];
-			assign after_x_b0[gxb] = after[gxb];
-			assign after_x_b1[gxb] = after[gxb];
-			assign after_x_b2[gxb] = after[gxb];
-			assign after_x_b3[gxb] = after[gxb];
+			assign after_x_b0[gxb] = after_q_0[gxb];
+			assign after_x_b1[gxb] = after_q_1[gxb];
+			assign after_x_b2[gxb] = after_q_2[gxb];
+			assign after_x_b3[gxb] = after_q_3[gxb];
 
 		end
 	endgenerate
 
 	wire cur_lx_load_raw = ((st == IDLE) && mine && (first != NPHYS[LW:0])) ||
-	                       ((st == STORE) && (after != NPHYS[LW:0]));
+	                       ((st == STORE) && after_nz_q);
 	wire idle_lx_raw = (st == IDLE);
 
 	wire cur_lx_lo, cur_lx_hi;
@@ -1315,6 +1319,14 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 			sub_st_step <= 4'd0;
 			sub_st_fin <= 4'd0;
 			li <= {LW{1'b0}};
+			after_q_0 <= {LW{1'b0}};
+			after_q_1 <= {LW{1'b0}};
+			after_q_2 <= {LW{1'b0}};
+			after_q_3 <= {LW{1'b0}};
+			after_nz_q <= 1'b0;
+			t0_zero_a <= 1'b0;
+			t0_zero_b <= 1'b0;
+			t0_zero_c <= 1'b0;
 			step <= 6'd0;
 			step_cnt <= 6'd0;
 			step_cordic <= 6'd0;
@@ -1397,9 +1409,19 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 				sub_st_step <= sub_st1;
 				sub_st_fin <= sub_st1;
 				case (sub_st_load)
-				4'd0, 4'd1, 4'd2, 4'd3, 4'd4, 4'd5, 4'd7: ;
+				4'd0, 4'd2, 4'd3, 4'd4, 4'd5, 4'd7: ;
+				4'd1: begin
+					after_nz_q <= after_nz;
+					after_q_0 <= ~after_rev_n;
+					after_q_1 <= ~after_rev_n;
+					after_q_2 <= ~after_rev_n;
+					after_q_3 <= ~after_rev_n;
+				end
 				4'd6: begin
 					ex_l_r <= ex_l;
+					t0_zero_a <= ($signed(tsh_r) >= 12'sd40);
+					t0_zero_b <= ($signed(tsh_r) >= 12'sd40);
+					t0_zero_c <= ($signed(tsh_r) >= 12'sd40);
 				end
 				4'd8: begin
 					load_go_step_r <= load_go_step_w;
@@ -1502,10 +1524,10 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 				sub_st_load <= 4'd0;
 				sub_st_step <= 4'd0;
 				sub_st_fin <= 4'd0;
-				if (after == NPHYS[LW:0])
+				if (!after_nz_q)
 					st <= RET;
 				else begin
-					li <= after[LW-1:0];
+					li <= after_q_0;
 					st <= LOAD;
 				end
 			end
@@ -1534,7 +1556,7 @@ assign l_valid_buf = st == RET;
 	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
 		snext, prod_r, tp_r[82:40], tps[82:40], y[41], esh_r[10:4], carry_unused[27],
 		sub_st_co_unused, step_end, nr_ep1_co_unused, nr_mp1_r[23], nw_r[40], nw_r[15:0],
-		np_msb_nz_unused, step_fbit_hi[4], step_fbit_lo[3:0], (NWARPS != 0)};
+		np_msb_nz_unused, step_fbit_hi[4], step_fbit_lo[3:0], after, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

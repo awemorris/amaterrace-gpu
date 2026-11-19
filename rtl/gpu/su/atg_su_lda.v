@@ -59,6 +59,7 @@ module atg_su_lda #(
 	output wire x_ready,
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -381,15 +382,18 @@ module atg_su_lda #(
 
 	/* SHORT_LAT stages of the group's control; stage 0 is registered from x_*. */
 	(* shreg_extract = "no", max_fanout = 12 *) reg [SHORT_LAT-1:0] pipe_v;
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] pipe_v_rep;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [EW-2:0] pipe_d [0:SHORT_LAT-1];
 	integer k;
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			pipe_v <= {SHORT_LAT{1'b0}};
+			pipe_v_rep <= 8'd0;
 		end else begin
 			pipe_v[0] <= take;
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe_v[k] <= pipe_v[k-1];
+			pipe_v_rep <= (SHORT_LAT > 1) ? {8{pipe_v[SHORT_LAT-2]}} : {8{take}};
 		end
 	end
 	always @(posedge clk) begin
@@ -417,6 +421,7 @@ module atg_su_lda #(
 
 	wire [EW-1:0] o = {pipe_v[SHORT_LAT-1], pipe_d[SHORT_LAT-1]};
 	assign s_valid = o[EW-1];
+	assign s_valid_rep = pipe_v_rep;
 	assign s_warp = o[EW-2 -: WARP_W];
 	assign s_grp = o[EW-2-WARP_W -: GRP_W];
 	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];

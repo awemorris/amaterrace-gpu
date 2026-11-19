@@ -1,3 +1,10 @@
+/*
+ * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
 /* Auto-generated SMPTE ST 2084 (PQ) 1024-entry 10-bit LUT */
 /* verilator lint_off UNUSEDPARAM */
 lut[   0] = 10'd0;

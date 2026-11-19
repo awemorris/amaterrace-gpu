@@ -227,12 +227,14 @@ module atg_su_wb #(
 	parameter NS = 6,	/* Short sources (alu, fpu, pk, lane, lda, exec) */
 	parameter NL = 6,	/* Long sources (lsu, lds, cbank, tex, xu, div) */
 	parameter SHORT_LAT = 6,	/* Cycles from x_valid to the short result (sizes the input FIFOs) */
-	parameter REG_LONG = 0	/* 1: register long inputs via am_skid and pipeline lq/fq before RF mux */
+	parameter REG_LONG = 0,	/* 1: register long inputs via am_skid and pipeline lq/fq before RF mux */
+	parameter USE_SV_REP = 0	/* 1: use replicated 8-slice s_valid_rep to bound fanout <= 256 */
 ) (
 	input wire clk,
 	input wire rst_n,
 	/* Short results (packed, source 0 in the low bits; at most one valid per cycle) */
 	input wire [NS-1:0] s_valid,
+	input wire [NS*8-1:0] s_valid_rep,
 	input wire [NS*WARP_W-1:0] s_warp,
 	input wire [NS*GRP_W-1:0] s_grp,
 	input wire [NS*7-1:0] s_rd,
@@ -339,11 +341,14 @@ module atg_su_wb #(
 	genvar gsd;
 	generate
 	for (gsd = 0; gsd < DW / 16; gsd = gsd + 1) begin : g_sd_sl
-		(* dont_touch = "true" *) wire sv0_s = s_valid_sd[0];
-		(* dont_touch = "true" *) wire sv2_s = s_valid_sd[2];
-		(* dont_touch = "true" *) wire sv4_s = s_valid_sd[4];
-		wire v01_s = (gsd < 8) ? v_01_q0 : ((gsd < 16) ? v_01_q1 : ((gsd < 24) ? v_01_q2 : v_01_q3));
-		wire v23_s = (gsd < 8) ? v_23_q0 : ((gsd < 16) ? v_23_q1 : ((gsd < 24) ? v_23_q2 : v_23_q3));
+		localparam integer SV_SL = (gsd * 8) / (DW / 16);
+		(* dont_touch = "true" *) wire sv0_s = USE_SV_REP ? s_valid_rep[0*8 + SV_SL] : s_valid_sd[0];
+		(* dont_touch = "true" *) wire sv1_s = USE_SV_REP ? s_valid_rep[1*8 + SV_SL] : s_valid_sd[1];
+		(* dont_touch = "true" *) wire sv2_s = USE_SV_REP ? s_valid_rep[2*8 + SV_SL] : s_valid_sd[2];
+		(* dont_touch = "true" *) wire sv3_s = USE_SV_REP ? s_valid_rep[3*8 + SV_SL] : s_valid_sd[3];
+		(* dont_touch = "true" *) wire sv4_s = USE_SV_REP ? s_valid_rep[4*8 + SV_SL] : s_valid_sd[4];
+		wire v01_s = USE_SV_REP ? (sv0_s || sv1_s) : ((gsd < 8) ? v_01_q0 : ((gsd < 16) ? v_01_q1 : ((gsd < 24) ? v_01_q2 : v_01_q3)));
+		wire v23_s = USE_SV_REP ? (sv2_s || sv3_s) : ((gsd < 8) ? v_23_q0 : ((gsd < 16) ? v_23_q1 : ((gsd < 24) ? v_23_q2 : v_23_q3)));
 		(* dont_touch = "true" *) wire [15:0] sd_01_s = sv0_s ? s_data[0*DW + gsd*16 +: 16] : s_data[1*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_23_s = sv2_s ? s_data[2*DW + gsd*16 +: 16] : s_data[3*DW + gsd*16 +: 16];
 		(* dont_touch = "true" *) wire [15:0] sd_45_s = sv4_s ? s_data[4*DW + gsd*16 +: 16] : s_data[5*DW + gsd*16 +: 16];
@@ -659,11 +664,16 @@ module atg_su_wb #(
 
 		genvar glqd, glqh;
 		for (glqd = 0; glqd < DW / 16; glqd = glqd + 1) begin : g_lqd_sl
+			localparam integer LQ_SL = (glqd * 8) / (DW / 16);
+			wire [NS-1:0] sv_lqd = USE_SV_REP ?
+				{s_valid_rep[5*8+LQ_SL], s_valid_rep[4*8+LQ_SL], s_valid_rep[3*8+LQ_SL],
+				 s_valid_rep[2*8+LQ_SL], s_valid_rep[1*8+LQ_SL], s_valid_rep[0*8+LQ_SL]} :
+				s_valid_sel;
 			(* dont_touch = "true" *) wire lq_ld_s = !lq_valid || !lq_wr || (!sv && !fq_valid_sl[glqd]);
-			(* keep = "true", max_fanout = 12 *) wire wb_sel1_w = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
-			(* keep = "true", max_fanout = 12 *) wire wb_sel0_w = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
-			(* keep = "true", max_fanout = 12 *) wire wb_sel1_r = !(s_valid_sel[0] || s_valid_sel[1] || s_valid_sel[2] || s_valid_sel[3]);
-			(* keep = "true", max_fanout = 12 *) wire wb_sel0_r = !(s_valid_sel[0] || s_valid_sel[1]) && (s_valid_sel[2] || s_valid_sel[3] || !(s_valid_sel[4] || s_valid_sel[5]));
+			(* keep = "true", max_fanout = 12 *) wire wb_sel1_w = !(sv_lqd[0] || sv_lqd[1] || sv_lqd[2] || sv_lqd[3]);
+			(* keep = "true", max_fanout = 12 *) wire wb_sel0_w = !(sv_lqd[0] || sv_lqd[1]) && (sv_lqd[2] || sv_lqd[3] || !(sv_lqd[4] || sv_lqd[5]));
+			(* keep = "true", max_fanout = 12 *) wire wb_sel1_r = !(sv_lqd[0] || sv_lqd[1] || sv_lqd[2] || sv_lqd[3]);
+			(* keep = "true", max_fanout = 12 *) wire wb_sel0_r = !(sv_lqd[0] || sv_lqd[1]) && (sv_lqd[2] || sv_lqd[3] || !(sv_lqd[4] || sv_lqd[5]));
 
 			wire [15:0] lk_s_data_sl;
 			for (glqh = 0; glqh < 2; glqh = glqh + 1) begin : g_lqd_h

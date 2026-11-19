@@ -63,6 +63,8 @@ module am_amb_mux #(
 	/* The chosen requester: locked while its request waits for ready. */
 	reg lock;
 	reg [ID_W-1:0] lock_k;
+	(* keep = "true" *) reg [4:0] lock_rep;
+	(* keep = "true" *) reg [4:0] lock_k_b0_rep, lock_k_b1_rep;
 	reg [ID_W-1:0] pick;
 	reg any;
 	integer i;
@@ -80,28 +82,58 @@ module am_amb_mux #(
 	end
 
 	wire [ID_W-1:0] k = lock ? lock_k : pick;
-	wire [7:0] tag_k = i_req_tag[k * 8 +: 8];
+	wire [5*ID_W-1:0] k_sl;
+	genvar gks;
+	generate
+		for (gks = 0; gks < 5; gks = gks + 1) begin : g_k_sl
+			wire [ID_W-1:0] lk_s = (ID_W == 1) ? lock_k_b0_rep[gks] : {lock_k_b1_rep[gks], lock_k_b0_rep[gks]};
+			assign k_sl[gks*ID_W +: ID_W] = lock_rep[gks] ? lk_s : pick;
+		end
+	endgenerate
+	wire [ID_W-1:0] k_ctl = k_sl[4*ID_W +: ID_W];
+	wire [7:0] tag_k = i_req_tag[k_ctl * 8 +: 8];
 
 	reg [SLA_W-1:0] o_req_line_mux;
 	integer gi;
 	always @(*) begin
 		o_req_line_mux = {SLA_W{1'b0}};
 		for (gi = 0; gi < N; gi = gi + 1)
-			if (k == gi[ID_W-1:0])
+			if (k_ctl == gi[ID_W-1:0])
 				o_req_line_mux = i_req_line[gi * SLA_W +: SLA_W];
 	end
 
-	assign o_req_valid = lock ? 1'b1 : any;
-	assign o_req_write = i_req_write[k];
+	assign o_req_valid = lock_rep[4] ? 1'b1 : any;
+	assign o_req_write = i_req_write[k_ctl];
 	assign o_req_line = o_req_line_mux;
-	assign o_req_be = i_req_be[k * LINE_BYTES +: LINE_BYTES];
-	assign o_req_wdata = i_req_wdata[k * SLB +: SLB];
-	assign o_req_tag = {k, tag_k[TAG_LO-1:0]};
+	assign o_req_tag = {k_ctl, tag_k[TAG_LO-1:0]};
+
+	localparam integer BE_SL = LINE_BYTES / 4;
+	localparam integer WD_SL = SLB / 4;
+	genvar gds;
+	generate
+		for (gds = 0; gds < 4; gds = gds + 1) begin : g_data_sl
+			wire [ID_W-1:0] k_ds = k_sl[gds*ID_W +: ID_W];
+			reg [BE_SL-1:0] be_sl_mux;
+			reg [WD_SL-1:0] wd_sl_mux;
+			integer ig;
+			always @(*) begin
+				be_sl_mux = {BE_SL{1'b0}};
+				wd_sl_mux = {WD_SL{1'b0}};
+				for (ig = 0; ig < N; ig = ig + 1)
+					if (k_ds == ig[ID_W-1:0]) begin
+						be_sl_mux = i_req_be[ig*LINE_BYTES + gds*BE_SL +: BE_SL];
+						wd_sl_mux = i_req_wdata[ig*SLB + gds*WD_SL +: WD_SL];
+					end
+			end
+			assign o_req_be[gds*BE_SL +: BE_SL]    = be_sl_mux;
+			assign o_req_wdata[gds*WD_SL +: WD_SL] = wd_sl_mux;
+		end
+	endgenerate
 
 	genvar g;
 	generate
 		for (g = 0; g < N; g = g + 1) begin : g_port
-			assign i_req_ready[g] = o_req_valid && o_req_ready && k == g;
+			assign i_req_ready[g] = o_req_valid && o_req_ready && k_ctl == g;
 			assign i_rsp_valid[g] = o_rsp_valid && o_rsp_tag[7:TAG_LO] == g;
 		end
 	endgenerate
@@ -115,9 +147,15 @@ module am_amb_mux #(
 		if (!rst_n) begin
 			lock <= 1'b0;
 			lock_k <= {ID_W{1'b0}};
+			lock_rep <= 5'd0;
+			lock_k_b0_rep <= 5'd0;
+			lock_k_b1_rep <= 5'd0;
 		end else begin
 			lock <= o_req_valid && !o_req_ready;
 			lock_k <= k;
+			lock_rep <= {5{o_req_valid && !o_req_ready}};
+			lock_k_b0_rep <= {5{k[0]}};
+			lock_k_b1_rep <= (ID_W > 1) ? {5{k[(ID_W > 1) ? 1 : 0]}} : 5'd0;
 		end
 	end
 

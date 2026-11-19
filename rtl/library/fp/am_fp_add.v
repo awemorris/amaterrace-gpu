@@ -38,25 +38,44 @@ module am_fp_add #(
 	wire nan_b = eb == 8'hFF && b_in[22:0] != 23'd0;
 	wire inf_a = ea == 8'hFF && i_a[22:0] == 23'd0;
 	wire inf_b = eb == 8'hFF && b_in[22:0] == 23'd0;
-	wire a_big = {ea, ma} >= {eb, mb};
-	/* the exponent difference, larger minus smaller */
-	wire [7:0] dab;
-	wire dab_bo_unused;
-	am_sub #(.W(8)) u_dab (.a(a_big ? ea : eb), .b(a_big ? eb : ea), .bi(1'b0), .d(dab),
-		.bo(dab_bo_unused));
+	/* Parallel exponent differences and mantissa magnitude compare */
+	wire [7:0] dab_ab, dab_ba;
+	wire eb_gt_ea, ea_gt_eb;
+	am_sub #(.W(8)) u_eab (.a(ea), .b(eb), .bi(1'b0), .d(dab_ab), .bo(eb_gt_ea));
+	am_sub #(.W(8)) u_eba (.a(eb), .b(ea), .bi(1'b0), .d(dab_ba), .bo(ea_gt_eb));
 
+	wire e_eq = (ea == eb);
+	wire [5:0] mg_g, mg_e;
+	genvar gmg;
+	generate
+		for (gmg = 0; gmg < 6; gmg = gmg + 1) begin : g_mge
+			wire [3:0] ma4 = ma[4*gmg +: 4];
+			wire [3:0] mb4 = mb[4*gmg +: 4];
+			assign mg_g[gmg] = (ma4 > mb4);
+			assign mg_e[gmg] = (ma4 == mb4);
+		end
+	endgenerate
+	wire m_ge_lo = mg_g[2] || (mg_e[2] && (mg_g[1] || (mg_e[1] && (mg_g[0] || mg_e[0]))));
+	wire m_ge_hi = mg_g[5] || (mg_e[5] && (mg_g[4] || (mg_e[4] && mg_g[3])));
+	wire m_e_hi  = mg_e[5] && mg_e[4] && mg_e[3];
+	wire m_ge    = m_ge_hi || (m_e_hi && m_ge_lo);
+	wire a_big   = ea_gt_eb || (e_eq && m_ge);
+	wire [7:0] dab = eb_gt_ea ? dab_ba : dab_ab;
+
+	wire a_zero = (ea == 8'd0);
+	wire b_zero = (eb == 8'd0);
 	wire v1_w = rst_n && i_valid;
-	wire sp1_w = nan_a || nan_b || (inf_a && inf_b && i_a[31] != b_in[31]) || inf_a || inf_b || (ma == 24'd0 && mb == 24'd0);
+	wire sp1_w = nan_a || nan_b || (inf_a && inf_b && i_a[31] != b_in[31]) || inf_a || inf_b || (a_zero && b_zero);
 	wire [31:0] spv1_w = (nan_a || nan_b || (inf_a && inf_b && i_a[31] != b_in[31])) ? 32'h7FC00000 :
 		inf_a ? {i_a[31], 8'hFF, 23'd0} :
 		inf_b ? {b_in[31], 8'hFF, 23'd0} :
-		(ma == 24'd0 && mb == 24'd0) ? {i_a[31] && b_in[31], 31'd0} : 32'd0;
+		(a_zero && b_zero) ? {i_a[31] && b_in[31], 31'd0} : 32'd0;
 	wire sx1_w = a_big ? i_a[31] : b_in[31];
 	wire sub1_w = i_a[31] != b_in[31];
 	wire [7:0] ex1_w = a_big ? ea : eb;
 	wire [23:0] mx1_w = a_big ? ma : mb;
 	wire [23:0] my1_w = a_big ? mb : ma;
-	wire [7:0] d1_w = a_big ? (mb == 24'd0 ? 8'd255 : dab) : (ma == 24'd0 ? 8'd255 : dab);
+	wire [7:0] d1_w = a_big ? (b_zero ? 8'd255 : dab) : (a_zero ? 8'd255 : dab);
 
 	wire v1;
 	wire sp1, sx1, sub1;
@@ -69,7 +88,17 @@ module am_fp_add #(
 	am_shift #(.W(27), .SW(5), .DIR(1)) u_shr (.a(shi), .amt(d1[4:0]), .left(1'b0), .arith(1'b0),
 		.y(shr));
 	wire d1_ge27 = (d1 >= 8'd27);
-	wire [26:0] stk_mask = ~({27{1'b1}} << d1[4:0]);
+	wire [26:0] stk_mask;
+	genvar gsk;
+	generate
+		for (gsk = 0; gsk < 27; gsk = gsk + 1) begin : g_stkm
+			if (gsk == 0) begin : g_sz
+				assign stk_mask[0] = |d1[4:0];
+			end else begin : g_snz
+				assign stk_mask[gsk] = (d1[4:0] > gsk[4:0]);
+			end
+		end
+	endgenerate
 	wire stk_lo = |(shi & stk_mask);
 	wire stk = d1_ge27 ? (my1 != 24'd0) : stk_lo;
 	wire [26:0] sh = d1_ge27 ? 27'd0 : shr;
@@ -222,7 +251,7 @@ module am_fp_add #(
 	wire [9:0] e;
 	wire e_co_unused;
 	am_add #(.W(10)) u_e (.a(e0_4), .b(10'd0), .ci(m0_ovf), .s(e), .co(e_co_unused));
-	wire unused_m = &{1'b0, m[24:23], e0_co_unused, e_co_unused, m_co_unused, dab_bo_unused, sum_co_unused};
+	wire unused_m = &{1'b0, m[24:23], e0_co_unused, e_co_unused, m_co_unused, sum_co_unused};
 
 	wire o_valid_comb = rst_n && v3;
 	wire [31:0] o_r_comb = sp3 ? spv3 :

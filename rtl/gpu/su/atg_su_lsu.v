@@ -144,6 +144,7 @@ module atg_su_lsu #(
 	(* max_fanout = 12 *) reg [31:0] rimm;
 	wire [DW-1:0] radr, rdat, rcmp, res;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend, pend_a, pend_b, pend_be;
+	(* keep = "true" *) reg [NPHYS-1:0] pend_clr, pend_at_ad, pend_at_a, pend_at_b;
 	(* keep = "true", dont_touch = "true" *) reg [NPHYS-1:0] pend_ll0, pend_ll1, pend_ll2, pend_ll3;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] lhit, lhit_a, lhit_b, lhit_be;
 	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes, cur;
@@ -178,17 +179,20 @@ module atg_su_lsu #(
 	assign x_ready = st == IDLE;
 
 	/* The first pending lane and the lanes in its line. */
-	wire [NPHYS-1:0] pend_rev;
+	wire [NPHYS-1:0] pend_rev, pend_clr_rev;
 	genvar gpr;
 	generate
 		for (gpr = 0; gpr < NPHYS; gpr = gpr + 1) begin : g_pend_rev
-			assign pend_rev[gpr] = pend[NPHYS - 1 - gpr];
+			assign pend_rev[gpr]     = pend[NPHYS - 1 - gpr];
+			assign pend_clr_rev[gpr] = pend_clr[NPHYS - 1 - gpr];
 		end
 	endgenerate
-	wire [LW-1:0] pend_rev_n;
-	wire pend_nz;
-	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_lead (.a(pend_rev), .n(pend_rev_n), .nz(pend_nz));
-	(* max_fanout = 12 *) wire [LW:0] lead = pend_nz ? {1'b0, ~pend_rev_n} : NPHYS[LW:0];
+	wire [LW-1:0] pend_rev_n, pend_clr_rev_n;
+	wire pend_nz, pend_clr_nz;
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_lead     (.a(pend_rev),     .n(pend_rev_n),     .nz(pend_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_lead_clr (.a(pend_clr_rev), .n(pend_clr_rev_n), .nz(pend_clr_nz));
+	(* max_fanout = 12 *) wire [LW:0] lead     = pend_nz     ? {1'b0, ~pend_rev_n}     : NPHYS[LW:0];
+	(* max_fanout = 12 *) wire [LW:0] lead_clr = pend_clr_nz ? {1'b0, ~pend_clr_rev_n} : NPHYS[LW:0];
 	wire [NPHYS-1:0] inl = pend & lhit;
 	wire [NPHYS-1:0] line_eq;
 	wire [NPHYS-1:0] pend_ll0_rev, pend_ll1_rev, pend_ll2_rev, pend_ll3_rev;
@@ -485,6 +489,10 @@ module atg_su_lsu #(
 			pend_a  <= {NPHYS{1'b0}};
 			pend_b  <= {NPHYS{1'b0}};
 			pend_be <= {NPHYS{1'b0}};
+			pend_clr   <= {NPHYS{1'b0}};
+			pend_at_ad <= {NPHYS{1'b0}};
+			pend_at_a  <= {NPHYS{1'b0}};
+			pend_at_b  <= {NPHYS{1'b0}};
 			pend_ll0 <= {NPHYS{1'b0}};
 			pend_ll1 <= {NPHYS{1'b0}};
 			pend_ll2 <= {NPHYS{1'b0}};
@@ -524,6 +532,10 @@ module atg_su_lsu #(
 				pend_a  <= amask;
 				pend_b  <= amask;
 				pend_be <= amask;
+				pend_clr   <= amask;
+				pend_at_ad <= amask;
+				pend_at_a  <= amask;
+				pend_at_b  <= amask;
 				pend_ll0 <= amask;
 				pend_ll1 <= amask;
 				pend_ll2 <= amask;
@@ -533,19 +545,27 @@ module atg_su_lsu #(
 				pend_a  <= pend_a & ~cur;
 				pend_b  <= pend_b & ~cur;
 				pend_be <= pend_be & ~cur;
+				pend_clr   <= pend_clr & ~cur;
+				pend_at_ad <= pend_at_ad & ~cur;
+				pend_at_a  <= pend_at_a & ~cur;
+				pend_at_b  <= pend_at_b & ~cur;
 				pend_ll0 <= pend_ll0 & ~cur;
 				pend_ll1 <= pend_ll1 & ~cur;
 				pend_ll2 <= pend_ll2 & ~cur;
 				pend_ll3 <= pend_ll3 & ~cur;
 			end else if (st == AREQ && at_valid_r && at_ready) begin
-				pend[anext[LW-1:0]]    <= 1'b0;
-				pend_a[anext[LW-1:0]]  <= 1'b0;
-				pend_b[anext[LW-1:0]]  <= 1'b0;
-				pend_be[anext[LW-1:0]] <= 1'b0;
-				pend_ll0[anext[LW-1:0]] <= 1'b0;
-				pend_ll1[anext[LW-1:0]] <= 1'b0;
-				pend_ll2[anext[LW-1:0]] <= 1'b0;
-				pend_ll3[anext[LW-1:0]] <= 1'b0;
+				pend[lead[LW-1:0]]       <= 1'b0;
+				pend_a[lead[LW-1:0]]     <= 1'b0;
+				pend_b[lead[LW-1:0]]     <= 1'b0;
+				pend_be[lead[LW-1:0]]    <= 1'b0;
+				pend_clr[lead_clr[LW-1:0]]   <= 1'b0;
+				pend_at_ad[lead_clr[LW-1:0]] <= 1'b0;
+				pend_at_a[lead_clr[LW-1:0]]  <= 1'b0;
+				pend_at_b[lead_clr[LW-1:0]]  <= 1'b0;
+				pend_ll0[lead_clr[LW-1:0]] <= 1'b0;
+				pend_ll1[lead_clr[LW-1:0]] <= 1'b0;
+				pend_ll2[lead_clr[LW-1:0]] <= 1'b0;
+				pend_ll3[lead_clr[LW-1:0]] <= 1'b0;
 			end
 			if (lsu_idle_ce_a) begin
 				rwr <= op == ATG_LSU_SW;
@@ -618,7 +638,7 @@ module atg_su_lsu #(
 			AREQ: if (!at_valid_r) begin
 				st <= BEAT;
 			end else begin
-				ali <= anext[LW-1:0];
+				ali <= lead[LW-1:0];
 				if (at_ready) begin
 					st         <= AWAIT;
 					at_valid_r <= 1'b0;
@@ -659,59 +679,64 @@ module atg_su_lsu #(
 	assign at_stage = cur_stage;
 	assign dc_inv = inv_q;
 
-	wire [LW-1:0] an_ad_b0, an_ad_b1, an_ad_b2, an_ad_b3;
-	wire [LW-1:0] an_a_b0, an_a_b1, an_a_b2, an_a_b3;
-	wire [LW-1:0] an_b_b0, an_b_b1, an_b_b2, an_b_b3;
-	genvar gan;
+	/* 4-lane group tree for atomic request address and operands (FO <= 32, depth ~11 cmos3) */
+	localparam integer NG_AT = (NPHYS >= 4) ? (NPHYS / 4) : 1;
+	wire [NG_AT-1:0] at_any_ad, at_any_a, at_any_b;
+	wire [NG_AT-1:0] at_win_ad, at_win_a, at_win_b;
+	wire [NG_AT*30-1:0] at_gdat_ad;
+	wire [NG_AT*32-1:0] at_gdat_a, at_gdat_b;
+	genvar gat;
 	generate
-		for (gan = 0; gan < LW; gan = gan + 1) begin : g_an_buf
-`ifdef SYNTH_KINTEX7
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad0 (.I0(anext[gan]), .O(an_ad_b0[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad1 (.I0(anext[gan]), .O(an_ad_b1[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad2 (.I0(anext[gan]), .O(an_ad_b2[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_ad3 (.I0(anext[gan]), .O(an_ad_b3[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a0  (.I0(anext[gan]), .O(an_a_b0[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a1  (.I0(anext[gan]), .O(an_a_b1[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a2  (.I0(anext[gan]), .O(an_a_b2[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_a3  (.I0(anext[gan]), .O(an_a_b3[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b0  (.I0(anext[gan]), .O(an_b_b0[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b1  (.I0(anext[gan]), .O(an_b_b1[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b2  (.I0(anext[gan]), .O(an_b_b2[gan]));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_b3  (.I0(anext[gan]), .O(an_b_b3[gan]));
-`else
-			assign an_ad_b0[gan] = anext[gan];
-			assign an_ad_b1[gan] = anext[gan];
-			assign an_ad_b2[gan] = anext[gan];
-			assign an_ad_b3[gan] = anext[gan];
-			assign an_a_b0[gan]  = anext[gan];
-			assign an_a_b1[gan]  = anext[gan];
-			assign an_a_b2[gan]  = anext[gan];
-			assign an_a_b3[gan]  = anext[gan];
-			assign an_b_b0[gan]  = anext[gan];
-			assign an_b_b1[gan]  = anext[gan];
-			assign an_b_b2[gan]  = anext[gan];
-			assign an_b_b3[gan]  = anext[gan];
-`endif
+		for (gat = 0; gat < NG_AT; gat = gat + 1) begin : g_at_grp
+			localparam integer B = gat * 4;
+			wire [3:0] pad = pend_at_ad[B +: 4];
+			wire [3:0] pa  = pend_at_a[B +: 4];
+			wire [3:0] pb  = pend_at_b[B +: 4];
+			assign at_any_ad[gat] = |pad;
+			assign at_any_a[gat]  = |pa;
+			assign at_any_b[gat]  = |pb;
+			assign at_gdat_ad[gat*30 +: 30] =
+				pad[0] ? radr[(B+0)*32 + 2 +: 30] :
+				pad[1] ? radr[(B+1)*32 + 2 +: 30] :
+				pad[2] ? radr[(B+2)*32 + 2 +: 30] :
+				pad[3] ? radr[(B+3)*32 + 2 +: 30] : 30'd0;
+			assign at_gdat_a[gat*32 +: 32] =
+				pa[0] ? rdat[(B+0)*32 +: 32] :
+				pa[1] ? rdat[(B+1)*32 +: 32] :
+				pa[2] ? rdat[(B+2)*32 +: 32] :
+				pa[3] ? rdat[(B+3)*32 +: 32] : 32'd0;
+			assign at_gdat_b[gat*32 +: 32] =
+				pb[0] ? rcmp[(B+0)*32 +: 32] :
+				pb[1] ? rcmp[(B+1)*32 +: 32] :
+				pb[2] ? rcmp[(B+2)*32 +: 32] :
+				pb[3] ? rcmp[(B+3)*32 +: 32] : 32'd0;
+			if (gat == 0) begin : g_at_first
+				assign at_win_ad[gat] = at_any_ad[0];
+				assign at_win_a[gat]  = at_any_a[0];
+				assign at_win_b[gat]  = at_any_b[0];
+			end else begin : g_at_rest
+				assign at_win_ad[gat] = at_any_ad[gat] && !(|at_any_ad[gat-1:0]);
+				assign at_win_a[gat]  = at_any_a[gat]  && !(|at_any_a[gat-1:0]);
+				assign at_win_b[gat]  = at_any_b[gat]  && !(|at_any_b[gat-1:0]);
+			end
 		end
 	endgenerate
-	assign at_ad_w = {
-		radr[{an_ad_b3, 5'd25} +: 7],
-		radr[{an_ad_b2, 5'd18} +: 7],
-		radr[{an_ad_b1, 5'd10} +: 8],
-		radr[{an_ad_b0, 5'd2}  +: 8]
-	};
-	assign at_a_w = {
-		rdat[{an_a_b3, 5'd24} +: 8],
-		rdat[{an_a_b2, 5'd16} +: 8],
-		rdat[{an_a_b1, 5'd8}  +: 8],
-		rdat[{an_a_b0, 5'd0}  +: 8]
-	};
-	assign at_b_w = {
-		rcmp[{an_b_b3, 5'd24} +: 8],
-		rcmp[{an_b_b2, 5'd16} +: 8],
-		rcmp[{an_b_b1, 5'd8}  +: 8],
-		rcmp[{an_b_b0, 5'd0}  +: 8]
-	};
+	reg [29:0] at_ad_comb;
+	reg [31:0] at_a_comb, at_b_comb;
+	integer iat;
+	always @(*) begin
+		at_ad_comb = 30'd0;
+		at_a_comb  = 32'd0;
+		at_b_comb  = 32'd0;
+		for (iat = 0; iat < NG_AT; iat = iat + 1) begin
+			if (at_win_ad[iat]) at_ad_comb = at_ad_comb | at_gdat_ad[iat*30 +: 30];
+			if (at_win_a[iat])  at_a_comb  = at_a_comb  | at_gdat_a[iat*32 +: 32];
+			if (at_win_b[iat])  at_b_comb  = at_b_comb  | at_gdat_b[iat*32 +: 32];
+		end
+	end
+	assign at_ad_w = at_ad_comb;
+	assign at_a_w  = at_a_comb;
+	assign at_b_w  = at_b_comb;
 	assign at_valid = at_valid_r;
 	assign at_op = rsub;
 	assign at_addr = at_addr_r;
@@ -730,7 +755,7 @@ module atg_su_lsu #(
 	assign l_cls = ATG_CLS_M;
 
 	wire unused_ok = &{1'b0, x_pc, x_info, x_uop, imm, dc_rsp_write, dc_rsp_tag, ratom,
-		unused_ll_nz, (NWARPS != 0)};
+		unused_ll_nz, lead_clr[LW], (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

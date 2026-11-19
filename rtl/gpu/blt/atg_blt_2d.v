@@ -120,6 +120,9 @@ module atg_blt_2d #(
 	reg [2:0] psl;		/* log2 of the pixel's bytes */
 	reg [3:0] m_keep;
 	reg m_burst;
+	(* keep = "true" *) reg [7:0] m_copy_wd_rep;
+	(* keep = "true" *) reg [7:0] m_blend_wd_rep;
+	(* keep = "true" *) reg m_copy_ctl_r;
 `endif
 
 	/* The pixel offset of pixel x in a row (linear or in 4x4 tiles); its bytes are this << psl. */
@@ -219,6 +222,7 @@ module atg_blt_2d #(
 	reg [LA_W-1:0] seg_line;
 	reg [US-1:0] seg_p0;
 	reg [US-1:0] src_off;
+	(* keep = "true" *) reg [8*US-1:0] src_off_rep;
 	reg [LA_W-1:0] src_n0, src_n1;
 	reg n0_slot;
 `ifdef SYNTH_KINTEX7
@@ -478,11 +482,10 @@ module atg_blt_2d #(
 	wire [LA_W-1:0] src_lo = src_base_u[ADDR_W-1:US];
 	wire leg_rem_done = (!(|rem[16:US+1])) && (rem[US:0] <= r_leg_room);
 	wire [US:0] leg_sn = leg_rem_done ? rem[US:0] : r_leg_room;
-`ifdef SYNTH_KINTEX7
 	/* Precompute rem_back_val in S_SA / S_SB so rem carry chain is completely isolated */
 	wire [US:0] rem_bn;
 	wire rem_bn_co;
-	am_sub #(.W(US + 1)) s_rem_bn (.a(rem[US:0]), .b({(US + 1){1'b0}}), .bi(1'b1), .d(rem_bn), .bo(rem_bn_co));
+	am_sub #(.W(US + 1)) s_leg_rem_bn (.a(rem[US:0]), .b({(US + 1){1'b0}}), .bi(1'b1), .d(rem_bn), .bo(rem_bn_co));
 	wire [ADDR_W-1:0] rem_back_val = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, rem_bn, 4'b0000} :
 	                                 (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, rem_bn, 3'b000}  :
 	                                 (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, rem_bn, 2'b00}   :
@@ -504,6 +507,7 @@ module atg_blt_2d #(
 	wire leg_cmp_hi_lt = (rem[US:3] < r_leg_room[US:3]);
 	wire leg_cmp_hi_eq = (rem[US:3] == r_leg_room[US:3]);
 	wire leg_rem_done_lo, leg_rem_done_hi;
+`ifdef SYNTH_KINTEX7
 	LUT4 #(.INIT(16'hF800)) u_lrd_lo (
 		.I0(leg_cmp_lo), .I1(leg_cmp_hi_eq), .I2(leg_cmp_hi_lt), .I3(r_rem_hi_zero),
 		.O(leg_rem_done_lo)
@@ -512,10 +516,14 @@ module atg_blt_2d #(
 		.I0(leg_cmp_lo), .I1(leg_cmp_hi_eq), .I2(leg_cmp_hi_lt), .I3(r_rem_hi_zero),
 		.O(leg_rem_done_hi)
 	);
+`else
+	assign leg_rem_done_lo = r_rem_hi_zero && (leg_cmp_hi_lt || (leg_cmp_hi_eq && leg_cmp_lo));
+	assign leg_rem_done_hi = leg_rem_done_lo;
+`endif
 
 	wire [US:0] room_bn;
 	wire room_bn_co;
-	am_sub #(.W(US + 1)) s_room_bn (.a(r_leg_room), .b({(US + 1){1'b0}}), .bi(1'b1), .d(room_bn), .bo(room_bn_co));
+	am_sub #(.W(US + 1)) s_leg_room_bn (.a(r_leg_room), .b({(US + 1){1'b0}}), .bi(1'b1), .d(room_bn), .bo(room_bn_co));
 	wire [ADDR_W-1:0] room_back_val = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, room_bn, 4'b0000} :
 	                                  (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, room_bn, 3'b000}  :
 	                                  (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, room_bn, 2'b00}   :
@@ -525,16 +533,6 @@ module atg_blt_2d #(
 		leg_rem_done_hi ? r_rem_back_val[ADDR_W-1:16] : room_back_val[ADDR_W-1:16],
 		leg_rem_done_lo ? r_rem_back_val[15:0]        : room_back_val[15:0]
 	};
-`else
-	wire [US:0] leg_back_n;
-	wire leg_bn_co_unused;
-	am_sub #(.W(US + 1)) s_leg_bn (.a(leg_sn), .b({(US + 1){1'b0}}), .bi(1'b1), .d(leg_back_n), .bo(leg_bn_co_unused));
-	wire [ADDR_W-1:0] leg_back_val = (psl == 3'd4) ? {{(ADDR_W - US - 5){1'b0}}, leg_back_n, 4'b0000} :
-	                                 (psl == 3'd3) ? {{(ADDR_W - US - 4){1'b0}}, leg_back_n, 3'b000}  :
-	                                 (psl == 3'd2) ? {{(ADDR_W - US - 3){1'b0}}, leg_back_n, 2'b00}   :
-	                                 (psl == 3'd1) ? {{(ADDR_W - US - 2){1'b0}}, leg_back_n, 1'b0}    :
-	                                                 {{(ADDR_W - US - 1){1'b0}}, leg_back_n};
-`endif
 
 	/*
 	 * =================================================================
@@ -1134,7 +1132,13 @@ module atg_blt_2d #(
 	wire leg_issue = q_free && !fail_raw && leg_req_needed;
 	wire wr_go_ctl = wr_go;
 
+`ifdef SYNTH_KINTEX7
 	wire mc_fsm = m_copy, mc_issue = m_copy, mc_bk0 = m_copy, mc_bk1 = m_copy;
+	wire req_rdy_i = req_ready;
+`else
+	wire mc_fsm = m_copy, mc_issue = m_copy_ctl_r, mc_bk0 = m_copy, mc_bk1 = m_copy;
+	wire req_rdy_i;
+`endif
 
 	/* The copied line: the source window shifted by whole bytes via atg_blt_align. */
 	wire [2*LINE_BITS-1:0] both = {buf1, buf0};
@@ -1142,10 +1146,12 @@ module atg_blt_2d #(
 
 	atg_blt_align #(
 		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
+		.LINE_SHIFT(LINE_SHIFT),
+		.OFF_REPS(8)
 	) leg_align (
 		.in_data(both),
 		.off(src_off),
+		.off_rep(src_off_rep),
 		.out_data(copy_line)
 	);
 
@@ -1172,11 +1178,12 @@ module atg_blt_2d #(
 	endgenerate
 `else
 	localparam NUM_WD_BUFS = LINE_BITS / 16;
+	localparam integer WD_SL_STEP = (NUM_WD_BUFS >= 8) ? (NUM_WD_BUFS / 8) : 1;
 	wire [LINE_BITS-1:0] bl_src;
 	genvar bsi;
 	generate
 		for (bsi = 0; bsi < NUM_WD_BUFS; bsi = bsi + 1) begin : g_bl_src
-			assign bl_src[bsi*16 +: 16] = m_copy ? copy_line[bsi*16 +: 16] : fill_line[bsi*16 +: 16];
+			assign bl_src[bsi*16 +: 16] = m_copy_wd_rep[bsi / WD_SL_STEP] ? copy_line[bsi*16 +: 16] : fill_line[bsi*16 +: 16];
 		end
 	endgenerate
 `endif
@@ -1245,8 +1252,8 @@ module atg_blt_2d #(
 	genvar lwi;
 	generate
 		for (lwi = 0; lwi < NUM_WD_BUFS; lwi = lwi + 1) begin : g_leg_wd
-			assign leg_wdata[lwi*16 +: 16] = m_blend ? bl_out[lwi*16 +: 16] :
-				(m_copy ? copy_line[lwi*16 +: 16] : fill_line[lwi*16 +: 16]);
+			assign leg_wdata[lwi*16 +: 16] = m_blend_wd_rep[lwi / WD_SL_STEP] ? bl_out[lwi*16 +: 16] :
+				(m_copy_wd_rep[lwi / WD_SL_STEP] ? copy_line[lwi*16 +: 16] : fill_line[lwi*16 +: 16]);
 		end
 	endgenerate
 `endif
@@ -1260,7 +1267,7 @@ module atg_blt_2d #(
 		.i_wdata(leg_wdata),
 		.free(q_free), .rd_idle(rd_idle), .wr_idle(wr_idle), .fail(fail_raw),
 		.buf0(buf0), .buf1(buf1), .bufd(bufd),
-		.req_valid(leg_req_valid), .req_ready(req_ready && !m_burst), .req_write(leg_req_write),
+		.req_valid(leg_req_valid), .req_ready(req_rdy_i && !m_burst), .req_write(leg_req_write),
 		.req_line(leg_req_line), .req_be(leg_req_be), .req_wdata(leg_req_wdata), .req_tag(leg_req_tag),
 		.rsp_valid(rsp_valid), .rsp_inhibit(m_burst), .rsp_write(rsp_write), .rsp_tag(rsp_tag),
 		.rsp_rdata(rsp_rdata), .rsp_error(rsp_error)
@@ -1303,7 +1310,15 @@ module atg_blt_2d #(
 	endgenerate
 	wire br_step_en = br_rdy_leaf[146];
 `else
-	wire br_pipe_rdy = !s3_valid || req_ready;
+	(* keep = "true" *) reg [7:0] s3_v_rep;
+	wire [7:0] br_rdy_sl;
+	genvar g_brs;
+	generate
+		for (g_brs = 0; g_brs < 8; g_brs = g_brs + 1) begin : g_br_rdy_sl
+			assign br_rdy_sl[g_brs] = !s3_v_rep[g_brs] || req_rdy_i;
+		end
+	endgenerate
+	wire br_pipe_rdy = !s3_valid || req_rdy_i;
 	wire br_step_en  = br_pipe_rdy;
 `endif
 
@@ -1598,28 +1613,43 @@ module atg_blt_2d #(
 		end
 	endgenerate
 `else
+	localparam integer PP_SL_BITS = LINE_BITS / 8;
 	reg [4:0] s1_raddr0_sim, s1_raddr1_sim;
-	reg [US-1:0] s1_off_sim, s2_off_sim;
+	reg [US-1:0] s1_off_sim;
+	(* keep = "true" *) reg [8*US-1:0] s2_off_rep;
+	wire [LINE_BITS-1:0] pp_rdata0 = pp_ram[s1_raddr0_sim];
+	wire [LINE_BITS-1:0] pp_rdata1 = pp_ram[s1_raddr1_sim];
 	reg [LINE_BITS-1:0] s2_sdata0_sim, s2_sdata1_sim;
 	always @(posedge clk) begin
 		if (br_pipe_rdy) begin
 			s1_raddr0_sim <= {br_bank, r_lo_slot};
 			s1_raddr1_sim <= {br_bank, r_hi_slot};
 			s1_off_sim    <= r_off;
-			s2_sdata0_sim <= pp_ram[s1_raddr0_sim];
-			s2_sdata1_sim <= pp_ram[s1_raddr1_sim];
-			s2_off_sim    <= s1_off_sim;
 		end
 	end
+	genvar g_pps;
+	generate
+		for (g_pps = 0; g_pps < 8; g_pps = g_pps + 1) begin : g_pp_sim
+			always @(posedge clk) begin
+				if (br_rdy_sl[g_pps]) begin
+					s2_sdata0_sim[g_pps*PP_SL_BITS +: PP_SL_BITS] <= pp_rdata0[g_pps*PP_SL_BITS +: PP_SL_BITS];
+					s2_sdata1_sim[g_pps*PP_SL_BITS +: PP_SL_BITS] <= pp_rdata1[g_pps*PP_SL_BITS +: PP_SL_BITS];
+					s2_off_rep[g_pps*US +: US] <= s1_off_sim;
+				end
+			end
+		end
+	endgenerate
 	wire [2*LINE_BITS-1:0] pp_both = {s2_sdata1_sim, s2_sdata0_sim};
 	wire [LINE_BITS-1:0] pp_copy_line;
 
 	atg_blt_align #(
 		.LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT)
+		.LINE_SHIFT(LINE_SHIFT),
+		.OFF_REPS(8)
 	) pp_align (
 		.in_data(pp_both),
-		.off(s2_off_sim),
+		.off(s2_off_rep[US-1:0]),
+		.off_rep(s2_off_rep),
 		.out_data(pp_copy_line)
 	);
 `endif
@@ -1822,7 +1852,7 @@ module atg_blt_2d #(
 	genvar bwi;
 	generate
 		for (bwi = 0; bwi < NUM_WD_BUFS; bwi = bwi + 1) begin : g_bst_wd
-			assign bst_wr_wdata_raw[bwi*16 +: 16] = m_copy ? pp_copy_line[bwi*16 +: 16] : fill_line[bwi*16 +: 16];
+			assign bst_wr_wdata_raw[bwi*16 +: 16] = m_copy_wd_rep[bwi / WD_SL_STEP] ? pp_copy_line[bwi*16 +: 16] : fill_line[bwi*16 +: 16];
 		end
 	endgenerate
 	always @(posedge clk or posedge rst_b2d_high) begin
@@ -1830,30 +1860,42 @@ module atg_blt_2d #(
 			s1_valid <= 1'b0;
 			s2_valid <= 1'b0;
 			s3_valid <= 1'b0;
+			s3_v_rep <= 8'd0;
 			s1_line  <= {LA_W{1'b0}};
 			s2_line  <= {LA_W{1'b0}};
 			s3_line  <= {LA_W{1'b0}};
 			s1_be    <= {LINE_BYTES{1'b0}};
 			s2_be    <= {LINE_BYTES{1'b0}};
 			s3_be    <= {LINE_BYTES{1'b0}};
-			s3_wdata <= {LINE_BITS{1'b0}};
 		end else if (!is_burst_ctl0 || fail_burst || bst_rd_err) begin
 			s1_valid <= 1'b0;
 			s2_valid <= 1'b0;
 			s3_valid <= 1'b0;
+			s3_v_rep <= 8'd0;
 		end else if (br_pipe_rdy) begin
 			s1_valid <= br_active;
 			s2_valid <= s1_valid;
 			s3_valid <= s2_valid;
+			s3_v_rep <= {8{s2_valid}};
 			s1_line  <= bst_wr_line_raw;
 			s2_line  <= s1_line;
 			s3_line  <= s2_line;
 			s1_be    <= bst_wr_be_raw;
 			s2_be    <= s1_be;
 			s3_be    <= s2_be;
-			s3_wdata <= bst_wr_wdata_raw;
 		end
 	end
+	genvar g_s3w;
+	generate
+		for (g_s3w = 0; g_s3w < 8; g_s3w = g_s3w + 1) begin : g_s3w_sl
+			always @(posedge clk or posedge rst_b2d_high) begin
+				if (rst_b2d_high)
+					s3_wdata[g_s3w*PP_SL_BITS +: PP_SL_BITS] <= {PP_SL_BITS{1'b0}};
+				else if (is_burst_ctl0 && !fail_burst && !bst_rd_err && br_rdy_sl[g_s3w])
+					s3_wdata[g_s3w*PP_SL_BITS +: PP_SL_BITS] <= bst_wr_wdata_raw[g_s3w*PP_SL_BITS +: PP_SL_BITS];
+			end
+		end
+	endgenerate
 `endif
 	wire bst_wr_valid = s3_valid;
 	wire [LA_W-1:0] bst_wr_line = s3_line;
@@ -1888,9 +1930,9 @@ module atg_blt_2d #(
 	wire bwv_ctl = bst_wr_valid;
 `endif
 	/* AMB Arbiter: write takes precedence over read to clear buffer space */
-	wire bst_wr_fire = bwv_ctl && req_ready;
+	wire bst_wr_fire = bwv_ctl && req_rdy_i;
 	wire bst_rd_can = bst_rd_need && !bwv_ctl;
-	wire bst_rd_fire = bst_rd_can && bst_can_fill_p && req_ready;
+	wire bst_rd_fire = bst_rd_can && bst_can_fill_p && req_rdy_i;
 	wire bst_req_valid = bwv_ctl || bst_rd_valid;
 	wire bst_req_write = bwv_ctl;
 	wire [LA_W-1:0] bst_req_line = {
@@ -1909,16 +1951,16 @@ module atg_blt_2d #(
 	wire bst_bank_ready_0 = !bank_active[0] || !bank_closed[0];
 	wire bst_bank_ready_1 = !bank_active[1] || !bank_closed[1];
 	wire bst_bank_ready = bw_bank ? bst_bank_ready_1 : bst_bank_ready_0;
-	wire bst_rd_rdy_0 = bst_rd_can && bst_bank_ready_0 && req_ready;
-	wire bst_rd_rdy_1 = bst_rd_can && bst_bank_ready_1 && req_ready;
-	wire bst_rd_rdy   = bst_rd_can && bst_bank_ready && req_ready;
+	wire bst_rd_rdy_0 = bst_rd_can && bst_bank_ready_0 && req_rdy_i;
+	wire bst_rd_rdy_1 = bst_rd_can && bst_bank_ready_1 && req_rdy_i;
+	wire bst_rd_rdy   = bst_rd_can && bst_bank_ready && req_rdy_i;
 	wire p_two_line_cond = !p_two_lines || bw_sub;
 	wire issue_rdy_0 = bst_bank_ready_0 && (!mc_issue || (bst_rd_rdy_0 && p_two_line_cond));
 	wire issue_rdy_1 = bst_bank_ready_1 && (!mc_issue || (bst_rd_rdy_1 && p_two_line_cond));
 	wire issue_fire_0 = p_valid_iss0 && issue_rdy_0;
 	wire issue_fire_1 = p_valid_iss0 && issue_rdy_1;
 
-	wire copy_rd_ready = !mc_issue || (!s3_valid && req_ready && (!p_two_lines || bw_sub));
+	wire copy_rd_ready = !mc_issue || (!s3_valid && req_rdy_i && (!p_two_lines || bw_sub));
 	assign issue_rdy = bst_bank_ready && copy_rd_ready;
 	wire issue_fire = p_valid_iss1 && issue_rdy;
 `ifdef SYNTH_KINTEX7
@@ -2041,14 +2083,14 @@ module atg_blt_2d #(
 	wire ws_sxb0 = walk_step, ws_sxb1 = walk_step;
 `endif
 
-	/* Mux external AMB outputs between burst and legacy port */
+	/* Mux external AMB outputs between burst and legacy port (with outbound am_skid for ASIC) */
+`ifdef SYNTH_KINTEX7
 	assign req_valid = m_burst ? bst_req_valid : leg_req_valid;
 	assign req_write = m_burst ? bst_req_write : leg_req_write;
 	assign req_line  = m_burst ? bst_req_line  : leg_req_line;
 	assign req_be    = m_burst ? bst_req_be    : leg_req_be;
 	assign req_tag   = m_burst ? bst_req_tag   : leg_req_tag;
 
-`ifdef SYNTH_KINTEX7
 	localparam NUM_REQ_BYTE_BUFS = LINE_BYTES;
 	wire [NUM_REQ_BYTE_BUFS-1:0] mb_slice;
 	genvar req_i;
@@ -2059,12 +2101,26 @@ module atg_blt_2d #(
 		end
 	endgenerate
 `else
+	wire mux_req_valid = m_burst ? bst_req_valid : leg_req_valid;
+	wire mux_req_write = m_burst ? bst_req_write : leg_req_write;
+	wire [LA_W-1:0] mux_req_line = m_burst ? bst_req_line : leg_req_line;
+	wire [LINE_BYTES-1:0] mux_req_be = m_burst ? bst_req_be : leg_req_be;
+	wire [7:0] mux_req_tag = m_burst ? bst_req_tag : leg_req_tag;
+	wire [LINE_BITS-1:0] mux_req_wdata;
 	genvar req_i;
 	generate
 		for (req_i = 0; req_i < NUM_WD_BUFS; req_i = req_i + 1) begin : g_req_wd
-			assign req_wdata[req_i*16 +: 16] = m_burst ? bst_req_wdata[req_i*16 +: 16] : leg_req_wdata[req_i*16 +: 16];
+			assign mux_req_wdata[req_i*16 +: 16] = m_burst ? bst_req_wdata[req_i*16 +: 16] : leg_req_wdata[req_i*16 +: 16];
 		end
 	endgenerate
+	localparam integer REQ_SK_W = 1 + LA_W + LINE_BYTES + LINE_BITS + 8;
+	am_skid #(.W(REQ_SK_W)) u_req_skid (
+		.clk(clk), .rst_n(rst_n),
+		.in_valid(mux_req_valid), .in_ready(req_rdy_i),
+		.in_data({mux_req_write, mux_req_line, mux_req_be, mux_req_wdata, mux_req_tag}),
+		.out_valid(req_valid), .out_ready(req_ready),
+		.out_data({req_write, req_line, req_be, req_wdata, req_tag})
+	);
 `endif
 
 	assign busy = r_busy_q;
@@ -2772,6 +2828,11 @@ module atg_blt_2d #(
 			r_mr_px <= 1'b0;
 			r_mr_spx <= 1'b0;
 			r_mr_walk_lo <= 1'b0;
+`ifndef SYNTH_KINTEX7
+			m_copy_wd_rep <= 8'd0;
+			m_blend_wd_rep <= 8'd0;
+			m_copy_ctl_r <= 1'b0;
+`endif
 		end else if (ik_cfg_copy) begin
 			m_copy <= o_op != GHCI_BLT_FILL;
 			m_blend <= (ENABLE_BLEND != 0) && o_blend;
@@ -2779,6 +2840,11 @@ module atg_blt_2d #(
 			r_mr_px <= o_rev;
 			r_mr_spx <= o_rev;
 			r_mr_walk_lo <= o_rev;
+`ifndef SYNTH_KINTEX7
+			m_copy_wd_rep <= {8{o_op != GHCI_BLT_FILL}};
+			m_blend_wd_rep <= {8{(ENABLE_BLEND != 0) && o_blend}};
+			m_copy_ctl_r <= o_op != GHCI_BLT_FILL;
+`endif
 		end
 	end
 
@@ -3315,6 +3381,7 @@ module atg_blt_2d #(
 			src_n1 <= {LA_W{1'b0}};
 			seg_p0 <= {US{1'b0}};
 			src_off <= {US{1'b0}};
+			src_off_rep <= {(8*US){1'b0}};
 			n0_slot <= 1'b0;
 			da <= {ADDR_W{1'b0}};
 			sa <= {ADDR_W{1'b0}};
@@ -3621,6 +3688,7 @@ module atg_blt_2d #(
 				if (sd_ctl) begin
 					seg_p0 <= dlo[US-1:0];
 					src_off <= src_base_u[US-1:0];
+					src_off_rep <= {8{src_base_u[US-1:0]}};
 					n0_slot <= slo[ADDR_W-1:US] != src_lo;
 					rd_first <= 1'b1;
 				end

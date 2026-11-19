@@ -138,9 +138,36 @@ module atg_dc_hdr #(
 	assign co_r_unused[0] = 1'b0;
 	assign co_g_unused[0] = 1'b0;
 	assign co_b_unused[0] = 1'b0;
-	am_add #(.W(22)) u_add_r (.a(csa_r_s), .b({csa_r_c[20:0], 1'b0}), .ci(1'b0), .s(sum_r), .co(co_r_unused[1]));
-	am_add #(.W(22)) u_add_g (.a(csa_g_s), .b({csa_g_c[20:0], 1'b0}), .ci(1'b0), .s(sum_g), .co(co_g_unused[1]));
-	am_add #(.W(22)) u_add_b (.a(csa_b_s), .b({csa_b_c[20:0], 1'b0}), .ci(1'b0), .s(sum_b), .co(co_b_unused[1]));
+	/* Fast 6+6+5+5 carry-select 22-bit add per channel */
+	genvar gc;
+	wire [21:0] csa_s_w [0:2];
+	wire [21:0] csa_c_w [0:2];
+	wire [21:0] sum_ch [0:2];
+	wire [2:0] sum_ch_co;
+	assign csa_s_w[0] = csa_r_s; assign csa_c_w[0] = {csa_r_c[20:0], 1'b0};
+	assign csa_s_w[1] = csa_g_s; assign csa_c_w[1] = {csa_g_c[20:0], 1'b0};
+	assign csa_s_w[2] = csa_b_s; assign csa_c_w[2] = {csa_b_c[20:0], 1'b0};
+	generate
+		for (gc = 0; gc < 3; gc = gc + 1) begin : g_hdr_csa_add
+			wire [5:0] s0, s1_0, s1_1;
+			wire [4:0] s2_0, s2_1, s3_0, s3_1;
+			wire c0, c1_0, c1_1, c2_0, c2_1, c3_0, c3_1;
+			am_add #(.W(6)) u_a0  (.a(csa_s_w[gc][5:0]),   .b(csa_c_w[gc][5:0]),   .ci(1'b0), .s(s0),   .co(c0));
+			am_add #(.W(6)) u_a10 (.a(csa_s_w[gc][11:6]),  .b(csa_c_w[gc][11:6]),  .ci(1'b0), .s(s1_0), .co(c1_0));
+			am_add #(.W(6)) u_a11 (.a(csa_s_w[gc][11:6]),  .b(csa_c_w[gc][11:6]),  .ci(1'b1), .s(s1_1), .co(c1_1));
+			am_add #(.W(5)) u_a20 (.a(csa_s_w[gc][16:12]), .b(csa_c_w[gc][16:12]), .ci(1'b0), .s(s2_0), .co(c2_0));
+			am_add #(.W(5)) u_a21 (.a(csa_s_w[gc][16:12]), .b(csa_c_w[gc][16:12]), .ci(1'b1), .s(s2_1), .co(c2_1));
+			am_add #(.W(5)) u_a30 (.a(csa_s_w[gc][21:17]), .b(csa_c_w[gc][21:17]), .ci(1'b0), .s(s3_0), .co(c3_0));
+			am_add #(.W(5)) u_a31 (.a(csa_s_w[gc][21:17]), .b(csa_c_w[gc][21:17]), .ci(1'b1), .s(s3_1), .co(c3_1));
+			wire c1 = c0 ? c1_1 : c1_0;
+			wire c2 = c1 ? c2_1 : c2_0;
+			assign sum_ch[gc] = {c2 ? s3_1 : s3_0, c1 ? s2_1 : s2_0, c0 ? s1_1 : s1_0, s0};
+			assign sum_ch_co[gc] = c2 ? c3_1 : c3_0;
+		end
+	endgenerate
+	assign sum_r = sum_ch[0]; assign co_r_unused[1] = sum_ch_co[0];
+	assign sum_g = sum_ch[1]; assign co_g_unused[1] = sum_ch_co[1];
+	assign sum_b = sum_ch[2]; assign co_b_unused[1] = sum_ch_co[2];
 
 `ifdef SYNTH_KINTEX7
 	reg [21:0] sum_r_q, sum_g_q, sum_b_q;

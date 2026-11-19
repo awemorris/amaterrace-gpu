@@ -767,8 +767,11 @@ module atg_fmt_cvt (
 	wire [7:0] hexp, hden, e5x;
 
 	am_shift #(.W(10), .SW(4)) u_hf (.a(x3b), .amt(hlz3b_hf), .left(1'b1), .arith(1'b0), .y(fsh));
-	am_add #(.W(8)) u_hexp (.a({3'd0, he3b}), .b(8'd112), .ci(1'b0), .s(hexp), .co(u_hexp_nc));
-	am_sub #(.W(8)) u_hden (.a(8'd112), .b({4'd0, hlz3b_exp}), .bi(1'b0), .d(hden), .bo(u_hden_nc));
+	wire [3:0] hden_lo4;
+	am_sub #(.W(4)) u_hden_lo (.a(4'd0), .b(hlz3b_exp), .bi(1'b0), .d(hden_lo4), .bo(u_hden_nc));
+	assign hexp = {he3b[4], {3{~he3b[4]}}, he3b[3:0]};
+	assign hden = (hlz3b_exp == 4'd0) ? 8'd112 : {4'b0110, hden_lo4};
+	assign u_hexp_nc = 1'b0;
 	am_sub #(.W(8)) u_e5x (.a(e5b3b), .b({4'd0, hlz3b_exp}), .bi(1'b0), .d(e5x), .bo(u_e5x_nc));
 
 	/* f: the bits below the leading one (x << (lz + 1)) */

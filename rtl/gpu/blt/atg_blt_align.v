@@ -23,10 +23,12 @@
 
 module atg_blt_align #(
 	parameter LINE_BYTES = 64,
-	parameter LINE_SHIFT = 6
+	parameter LINE_SHIFT = 6,
+	parameter OFF_REPS = 8
 ) (
 	input wire [2 * LINE_BYTES * 8 - 1:0] in_data,
 	input wire [LINE_SHIFT - 1:0] off,
+	input wire [OFF_REPS * LINE_SHIFT - 1:0] off_rep,
 	output wire [LINE_BYTES * 8 - 1:0] out_data
 );
 	localparam US = LINE_SHIFT;
@@ -73,7 +75,8 @@ module atg_blt_align #(
 	genvar sl0_gen;
 	generate
 		for (sl0_gen = 0; sl0_gen < S0_LEAF_CNT; sl0_gen = sl0_gen + 1) begin : g_s0_leaf_sim
-			assign s0_sel[sl0_gen] = off[1:0];
+			localparam integer R0 = (sl0_gen * OFF_REPS) / S0_LEAF_CNT;
+			assign s0_sel[sl0_gen] = off_rep[R0*LINE_SHIFT +: 2];
 		end
 	endgenerate
 `endif
@@ -100,7 +103,8 @@ module atg_blt_align #(
 	genvar sl1_gen;
 	generate
 		for (sl1_gen = 0; sl1_gen < S1_LEAF_CNT; sl1_gen = sl1_gen + 1) begin : g_s1_leaf_sim
-			assign s1_sel[sl1_gen] = off[3:2];
+			localparam integer R1 = (sl1_gen * OFF_REPS) / S1_LEAF_CNT;
+			assign s1_sel[sl1_gen] = off_rep[R1*LINE_SHIFT + 2 +: 2];
 		end
 	endgenerate
 `endif
@@ -134,11 +138,13 @@ module atg_blt_align #(
 	generate
 		if (LINE_BYTES >= 64) begin : g_s2_sel_64
 			for (sl2_gen = 0; sl2_gen < S2_LEAF_CNT; sl2_gen = sl2_gen + 1) begin : g_s2_leaf_sim
-				assign s2_sel[sl2_gen] = off[5:4];
+				localparam integer R2 = (sl2_gen * OFF_REPS) / S2_LEAF_CNT;
+				assign s2_sel[sl2_gen] = off_rep[R2*LINE_SHIFT + 4 +: 2];
 			end
 		end else begin : g_s2_sel_32
 			for (sl2_gen = 0; sl2_gen < S2_LEAF_CNT; sl2_gen = sl2_gen + 1) begin : g_s2_leaf_sim
-				assign s2_sel[sl2_gen] = {1'b0, off[4]};
+				localparam integer R2 = (sl2_gen * OFF_REPS) / S2_LEAF_CNT;
+				assign s2_sel[sl2_gen] = {1'b0, off_rep[R2*LINE_SHIFT + 4]};
 			end
 		end
 	endgenerate
@@ -205,5 +211,6 @@ module atg_blt_align #(
 		end
 	endgenerate
 
+	wire unused_ok = &{1'b0, off, off_rep};
 endmodule
 `default_nettype wire

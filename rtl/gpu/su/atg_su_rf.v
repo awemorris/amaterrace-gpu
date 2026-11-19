@@ -31,7 +31,8 @@ module atg_su_rf #(
 	parameter WARP_W = 2,	/* log2(NWARPS) */
 	parameter GRP_W = 2,	/* log2(32/NPHYS): the lane-group number of a warp (0 for NPHYS 32 is given as 1 bit) */
 	parameter NREGS = 32,	/* GPRs per thread: 32 or 64 (r0..r62 at most; 63 is rq) */
-	parameter REG_IO = 0	/* 1: register write port and read output (Rule 4 BRAM compliance) */
+	parameter REG_IO = 0,	/* 1: register write port and read output (Rule 4 BRAM compliance) */
+	parameter USE_REN_REP = 0	/* 1: use 8-slice replicated r_en_rep for fanout <= 256 */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -44,6 +45,7 @@ module atg_su_rf #(
 	input wire [NPHYS-1:0] w_lanes,
 	/* Read (from atg_su_opd) */
 	input wire r_en,
+	input wire [7:0] r_en_rep,
 	input wire [WARP_W-1:0] r_warp,
 	input wire [GRP_W-1:0] r_grp,
 	input wire [5:0] r_reg1,
@@ -178,7 +180,7 @@ module atg_su_rf #(
 			wire [A_W-1:0] waddr2 = REG_IO ? wa_r2 : wam;
 			wire [A_W-1:0] ra1_l = ra1;
 			wire [A_W-1:0] ra2_l = ra2;
-			wire r_en_l = r_en;
+			wire r_en_l = USE_REN_REP ? r_en_rep[(l * 8) / NPHYS] : r_en;
 			wire wea = REG_IO ? we_r[l] : (sc_on || (w_en && w_lanes[l]));
 
 			always @(posedge clk) begin

@@ -235,31 +235,58 @@ module atg_cpu_core (
 		endcase
 	end
 
-	/* The data address and JALR target have their own dedicated adder
-	 * (not through the ALU's result mux: timing). */
-	wire [31:0] ea_full;
+	/* The data address and JALR target have their own dedicated fast 4x8b carry-select
+	 * adder (not through the ALU's result mux: timing). */
+	wire [31:0] ea_b = is_st ? imm_s : imm_i;
+	wire [7:0] ea0, ea1_0, ea1_1, ea2_0, ea2_1, ea3_0, ea3_1;
+	wire ea_c0, ea_c1_0, ea_c1_1, ea_c2_0, ea_c2_1, ea_c3_0, ea_c3_1;
+	am_add #(.W(8)) ea_a0   (.a(rs1[7:0]),   .b(ea_b[7:0]),   .ci(1'b0), .s(ea0),   .co(ea_c0));
+	am_add #(.W(8)) ea_a1_0 (.a(rs1[15:8]),  .b(ea_b[15:8]),  .ci(1'b0), .s(ea1_0), .co(ea_c1_0));
+	am_add #(.W(8)) ea_a1_1 (.a(rs1[15:8]),  .b(ea_b[15:8]),  .ci(1'b1), .s(ea1_1), .co(ea_c1_1));
+	am_add #(.W(8)) ea_a2_0 (.a(rs1[23:16]), .b(ea_b[23:16]), .ci(1'b0), .s(ea2_0), .co(ea_c2_0));
+	am_add #(.W(8)) ea_a2_1 (.a(rs1[23:16]), .b(ea_b[23:16]), .ci(1'b1), .s(ea2_1), .co(ea_c2_1));
+	am_add #(.W(8)) ea_a3_0 (.a(rs1[31:24]), .b(ea_b[31:24]), .ci(1'b0), .s(ea3_0), .co(ea_c3_0));
+	am_add #(.W(8)) ea_a3_1 (.a(rs1[31:24]), .b(ea_b[31:24]), .ci(1'b1), .s(ea3_1), .co(ea_c3_1));
+	wire ea_c1 = ea_c0 ? ea_c1_1 : ea_c1_0;
+	wire ea_c2 = ea_c2_0 | (ea_c2_1 & ea_c1_0) | (ea_c2_1 & ea_c1_1 & ea_c0);
+	wire [31:0] ea_full = {
+		ea_c2 ? ea3_1 : ea3_0,
+		ea_c1 ? ea2_1 : ea2_0,
+		ea_c0 ? ea1_1 : ea1_0,
+		ea0
+	};
+	wire ea_co = ea_c2 ? ea_c3_1 : ea_c3_0;
 	wire [1:0] ea;
-	wire ea_co, ea_lo_co;
-
-	am_add #(.W(32)) ea_add (
-		.a(rs1), .b(is_st ? imm_s : imm_i), .ci(1'b0), .s(ea_full), .co(ea_co)
-	);
+	wire ea_lo_co;
 	am_add #(.W(2)) ea_lo_add (
-		.a(rs1[1:0]), .b(is_st ? imm_s[1:0] : imm_i[1:0]), .ci(1'b0), .s(ea), .co(ea_lo_co)
+		.a(rs1[1:0]), .b(ea_b[1:0]), .ci(1'b0), .s(ea), .co(ea_lo_co)
 	);
 
-	/* PC arithmetic. */
-	wire [31:0] pc_imm, link;
+	/* PC arithmetic (fast 4x8b carry-select). */
+	wire [31:0] pc_imm_b = is_jal ? imm_j : is_br ? imm_b : imm_u;
+	wire [7:0] pi0, pi1_0, pi1_1, pi2_0, pi2_1, pi3_0, pi3_1;
+	wire pi_c0, pi_c1_0, pi_c1_1, pi_c2_0, pi_c2_1, pi_c3_0, pi_c3_1;
+	am_add #(.W(8)) pi_a0   (.a(pc_e[7:0]),   .b(pc_imm_b[7:0]),   .ci(1'b0), .s(pi0),   .co(pi_c0));
+	am_add #(.W(8)) pi_a1_0 (.a(pc_e[15:8]),  .b(pc_imm_b[15:8]),  .ci(1'b0), .s(pi1_0), .co(pi_c1_0));
+	am_add #(.W(8)) pi_a1_1 (.a(pc_e[15:8]),  .b(pc_imm_b[15:8]),  .ci(1'b1), .s(pi1_1), .co(pi_c1_1));
+	am_add #(.W(8)) pi_a2_0 (.a(pc_e[23:16]), .b(pc_imm_b[23:16]), .ci(1'b0), .s(pi2_0), .co(pi_c2_0));
+	am_add #(.W(8)) pi_a2_1 (.a(pc_e[23:16]), .b(pc_imm_b[23:16]), .ci(1'b1), .s(pi2_1), .co(pi_c2_1));
+	am_add #(.W(8)) pi_a3_0 (.a(pc_e[31:24]), .b(pc_imm_b[31:24]), .ci(1'b0), .s(pi3_0), .co(pi_c3_0));
+	am_add #(.W(8)) pi_a3_1 (.a(pc_e[31:24]), .b(pc_imm_b[31:24]), .ci(1'b1), .s(pi3_1), .co(pi_c3_1));
+	wire pi_c1 = pi_c0 ? pi_c1_1 : pi_c1_0;
+	wire pi_c2 = pi_c2_0 | (pi_c2_1 & pi_c1_0) | (pi_c2_1 & pi_c1_1 & pi_c0);
+	wire [31:0] pc_imm = {
+		pi_c2 ? pi3_1 : pi3_0,
+		pi_c1 ? pi2_1 : pi2_0,
+		pi_c0 ? pi1_1 : pi1_0,
+		pi0
+	};
+	wire pc_imm_co = pi_c2 ? pi_c3_1 : pi_c3_0;
+	wire [31:0] link;
 	wire [1:0] pc_imm_lo;
-	wire pc_imm_co, pc_imm_lo_co, link_co;
-
-	am_add #(.W(32)) pc_imm_add (
-		.a(pc_e), .b(is_jal ? imm_j : is_br ? imm_b : imm_u), .ci(1'b0), .s(pc_imm),
-		.co(pc_imm_co)
-	);
+	wire pc_imm_lo_co, link_co;
 	am_add #(.W(2)) pc_imm_lo_add (
-		.a(pc_e[1:0]), .b(is_jal ? imm_j[1:0] : is_br ? imm_b[1:0] : imm_u[1:0]), .ci(1'b0),
-		.s(pc_imm_lo), .co(pc_imm_lo_co)
+		.a(pc_e[1:0]), .b(pc_imm_b[1:0]), .ci(1'b0), .s(pc_imm_lo), .co(pc_imm_lo_co)
 	);
 	am_add #(.W(32)) link_add (.a(pc_e), .b(32'd4), .ci(1'b0), .s(link), .co(link_co));
 	wire [31:0] jalr_t = {ea_full[31:1], 1'b0};

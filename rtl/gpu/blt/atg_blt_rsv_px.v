@@ -66,6 +66,7 @@ module atg_blt_rsv_px #(
 	input wire ln_push,
 	input wire [LINE_BYTES*8-1:0] ln_data,
 	output wire [DEPTH_LOG2:0] ln_count,
+	output wire ln_pop,
 
 	output reg wr_valid,
 	input wire wr_ready,
@@ -162,11 +163,20 @@ module atg_blt_rsv_px #(
 	reg [LBITS-1:0] buf0;
 	reg [LBITS-1:0] buf1;
 	reg head;
-	wire [LBITS-1:0] w0 = head ? buf1 : buf0;
-	wire [LBITS-1:0] w1 = head ? buf0 : buf1;
+	(* keep = "true" *) reg [15:0] head_rep;
+	localparam integer HSZ = LBITS / 16;
+	wire [LBITS-1:0] w0, w1;
+	genvar ghs;
+	generate
+		for (ghs = 0; ghs < 16; ghs = ghs + 1) begin : g_head_sl
+			assign w0[ghs*HSZ +: HSZ] = head_rep[ghs] ? buf1[ghs*HSZ +: HSZ] : buf0[ghs*HSZ +: HSZ];
+			assign w1[ghs*HSZ +: HSZ] = head_rep[ghs] ? buf0[ghs*HSZ +: HSZ] : buf1[ghs*HSZ +: HSZ];
+		end
+	endgenerate
 	reg v0;
 	reg v1;
 	reg [LS-1:0] ptr;
+	(* keep = "true" *) reg [8*LS-1:0] ptr_rep;
 
 	/* The group: n pixels at x. */
 	wire [2:0] sh4;	/* log2 of 4 ps, modulo 8 as the 3-bit sum was */
@@ -179,10 +189,20 @@ module atg_blt_rsv_px #(
 	am_shift #(.W(LS + 1), .SW(3)) h_fit (.a(LB_V), .amt(sh4), .left(1'b0), .arith(1'b0), .y(nfit));
 	wire [2:0] nmax = nfit == {(LS + 1){1'b0}} ? 3'd1 : nfit >= 4 ? 3'd4 : nfit[2:0];
 	reg [2:0] sh4_r, nmax_r, psl_r, n_geom_r;
-	/* The pixel's bytes in the row (linear or in 4x4 tiles), its address, the room to the line's end. */
-	am_shift #(.W(ADDR_W), .SW(3)) h_x (.a(tiled ? {{(ADDR_W - 19){1'b0}}, x[16:2], 2'b00, x[1:0]} :
-		{{(ADDR_W - 17){1'b0}}, x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(x_b));
-	am_add #(.W(ADDR_W)) a_da (.a(drow), .b(x_b), .ci(1'b0), .s(daddr), .co(grp_co_unused[1]));
+	/* The pixel's bytes in the row (direct 5-way shift on psl <= 4 + 16+16 carry-select add). */
+	wire [18:0] x_t_in = tiled ? {x[16:2], 2'b00, x[1:0]} : {2'b00, x};
+	wire [22:0] x_t_sh = (psl == 3'd0) ? {4'd0, x_t_in} :
+		(psl == 3'd1) ? {3'd0, x_t_in, 1'b0} :
+		(psl == 3'd2) ? {2'd0, x_t_in, 2'b00} :
+		(psl == 3'd3) ? {1'b0, x_t_in, 3'b000} : {x_t_in, 4'b0000};
+	assign x_b = {{(ADDR_W - 23){1'b0}}, x_t_sh};
+	wire [15:0] da_lo, da_hi0, da_hi1;
+	wire da_c0, da_c10, da_c11;
+	am_add #(.W(16)) a_da_lo  (.a(drow[15:0]),  .b(x_b[15:0]),  .ci(1'b0), .s(da_lo),  .co(da_c0));
+	am_add #(.W(16)) a_da_hi0 (.a(drow[31:16]), .b(x_b[31:16]), .ci(1'b0), .s(da_hi0), .co(da_c10));
+	am_add #(.W(16)) a_da_hi1 (.a(drow[31:16]), .b(x_b[31:16]), .ci(1'b1), .s(da_hi1), .co(da_c11));
+	assign daddr = {da_c0 ? da_hi1 : da_hi0, da_lo};
+	assign grp_co_unused[1] = da_c0 ? da_c11 : da_c10;
 	assign grp_co_unused[2] = 1'b0;
 	am_sub #(.W(3)) s_rt (.a(3'd4), .b({1'b0, x[1:0]}), .bi(1'b0), .d(room_t), .bo(grp_co_unused[3]));
 	wire [2:0] rem_limit = rem_has_high ? 3'd4 : rem[2:0];
@@ -244,30 +264,52 @@ module atg_blt_rsv_px #(
 			n = rem[2:0];
 	end
 
+	wire [6:0] gb_init_k [1:4];
+	wire [7:0] need2_lim_w [1:4];
+	wire [7:0] two_lim_w [1:4];
+	wire [4:0] grp_nb_init_k [1:4];
+	reg  [27:0] gb_r_v;
+	reg  [31:0] need2_lim_v;
+	reg  [31:0] two_lim_v;
+	reg  [3:0]  need2_gt_lb_r;
+	reg  [3:0]  need2_ge_lb_r;
+	reg  [3:0]  two_ge_2lb_r;
+	reg  [19:0] grp_nb_r_v;
 	wire [6:0] gb_k [1:4];
-	wire [7:0] gend_k [1:4];
-	wire [3:0] need2_k, two_used_k;
+	wire [LS-1:0] nptr_k [1:4];
+	wire [3:0] need2_k, shift_ge_k, two_used_k;
 	wire [4:0] grp_nb_k [1:4];
 	wire [LS-1:0] dals_step_k [1:4];
 	wire [2:0] room_l_k [1:4];
 	wire [2:0] room_t_k [1:4];
 	wire [2:0] n_geom_k [1:4];
-	wire [3:0] gend_k_co_unused, dals_k_co_unused;
+	wire [3:0] gend_k_co_unused, dals_k_co_unused, n2l_bo_unused, twl_bo_unused;
 	wire [1:0] x_p_k [1:4];
 	assign x_p_k[1] = (x[1:0] == 2'd0) ? 2'd1 : (x[1:0] == 2'd1) ? 2'd2 : (x[1:0] == 2'd2) ? 2'd3 : 2'd0;
 	assign x_p_k[2] = {~x[1], x[0]};
 	assign x_p_k[3] = (x[1:0] == 2'd0) ? 2'd3 : (x[1:0] == 2'd1) ? 2'd0 : (x[1:0] == 2'd2) ? 2'd1 : 2'd2;
 	assign x_p_k[4] = x[1:0];
 
+	/* verilator lint_off WIDTH */
+	localparam [7:0] LB_8  = LB;
+	localparam [7:0] LB2_8 = 2 * LB;
+	/* verilator lint_on WIDTH */
+
 	genvar gk;
 	generate
 		for (gk = 1; gk <= 4; gk = gk + 1) begin : g_spec_k
-			am_shift #(.W(7), .SW(3)) h_gb_k (.a(gk[6:0]), .amt(sh4_r), .left(1'b1), .arith(1'b0), .y(gb_k[gk]));
-			am_add #(.W(8)) a_gend_k (.a({{(8 - LS){1'b0}}, ptr}), .b({1'b0, gb_k[gk]}), .ci(1'b0), .s(gend_k[gk]), .co(gend_k_co_unused[gk-1]));
-			assign need2_k[gk-1]    = gend_k[gk] > {{(7 - LS){1'b0}}, LB_V};
-			assign two_used_k[gk-1] = gend_k[gk] >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
+			am_shift #(.W(7), .SW(3)) h_gb_k (.a(gk[6:0]), .amt(sh4), .left(1'b1), .arith(1'b0), .y(gb_init_k[gk]));
+			am_sub #(.W(8)) s_n2l (.a(LB_8),  .b({1'b0, gb_init_k[gk]}), .bi(1'b0), .d(need2_lim_w[gk]), .bo(n2l_bo_unused[gk-1]));
+			am_sub #(.W(8)) s_twl (.a(LB2_8), .b({1'b0, gb_init_k[gk]}), .bi(1'b0), .d(two_lim_w[gk]),   .bo(twl_bo_unused[gk-1]));
+			am_shift #(.W(5), .SW(3)) h_nb_k (.a(gk[4:0]), .amt(psl), .left(1'b1), .arith(1'b0), .y(grp_nb_init_k[gk]));
 
-			am_shift #(.W(5), .SW(3)) h_nb_k (.a(gk[4:0]), .amt(psl_r), .left(1'b1), .arith(1'b0), .y(grp_nb_k[gk]));
+			assign gb_k[gk] = gb_r_v[(gk-1)*7 +: 7];
+			assign grp_nb_k[gk] = grp_nb_r_v[(gk-1)*5 +: 5];
+			am_add #(.W(LS)) a_gend_k (.a(ptr), .b(gb_k[gk][LS-1:0]), .ci(1'b0), .s(nptr_k[gk]), .co(gend_k_co_unused[gk-1]));
+			assign need2_k[gk-1]    = need2_gt_lb_r[gk-1] || ({{(8-LS){1'b0}}, ptr} > need2_lim_v[(gk-1)*8 +: 8]);
+			assign shift_ge_k[gk-1] = need2_ge_lb_r[gk-1] || ({{(8-LS){1'b0}}, ptr} >= need2_lim_v[(gk-1)*8 +: 8]);
+			assign two_used_k[gk-1] = two_ge_2lb_r[gk-1]  || ({{(8-LS){1'b0}}, ptr} >= two_lim_v[(gk-1)*8 +: 8]);
+
 			am_add #(.W(LS)) a_dals_k (.a(daddr_ls_lin_r), .b({{(LS-5){1'b0}}, grp_nb_k[gk]}), .ci(1'b0), .s(dals_step_k[gk]), .co(dals_k_co_unused[gk-1]));
 			assign room_l_k[gk] = get_room_l_limit({{(8 - LS){1'b0}}, dals_step_k[gk]}, psl_r);
 			assign room_t_k[gk] = sub4_2b(x_p_k[gk]);
@@ -281,21 +323,35 @@ module atg_blt_rsv_px #(
 	endgenerate
 
 	/* The group's source bytes: 4 n ps, at ptr of the window (selected from parallel k=1..4 paths). */
-	wire [6:0] gb = (n == 3'd1) ? gb_k[1] : (n == 3'd2) ? gb_k[2] : (n == 3'd3) ? gb_k[3] : gb_k[4];
-	wire [7:0] gend = (n == 3'd1) ? gend_k[1] : (n == 3'd2) ? gend_k[2] : (n == 3'd3) ? gend_k[3] : gend_k[4];
+	wire [LS-1:0] nptr_sel = (n == 3'd1) ? nptr_k[1] : (n == 3'd2) ? nptr_k[2] : (n == 3'd3) ? nptr_k[3] : nptr_k[4];
 	wire need2 = (n == 3'd1) ? need2_k[0] : (n == 3'd2) ? need2_k[1] : (n == 3'd3) ? need2_k[2] : need2_k[3];
 	wire [1:0] gb_co_unused = 2'd0;
 
-	wire [1023:0] win;
+	/* Split 512-bit window extraction across 8 x 64-bit shifters with replicated ptr_rep (FO <= 320). */
+	localparam integer WIN_SL_W = LBITS + 64;
+	wire [1023:0] win_padded;
 	generate
-		if (2 * LBITS < 1024) begin : g_pad
-			am_shift #(.W(1024), .SW(LS + 3), .DIR(1)) h_win (.a({{(1024 - 2 * LBITS){1'b0}}, w1, w0}), .amt({ptr, 3'b000}),
-				.left(1'b0), .arith(1'b0), .y(win));
-		end else begin : g_full
-			am_shift #(.W(1024), .SW(LS + 3), .DIR(1)) h_win (.a({w1, w0}), .amt({ptr, 3'b000}), .left(1'b0), .arith(1'b0),
-				.y(win));
+		if (2 * LBITS < 1024) begin : g_wpad_s
+			assign win_padded = {{(1024 - 2 * LBITS){1'b0}}, w1, w0};
+		end else begin : g_wpad_f
+			assign win_padded = {w1, w0};
 		end
 	endgenerate
+	wire [1024+WIN_SL_W-1:0] win_src_ext = {{WIN_SL_W{1'b0}}, win_padded};
+	wire [511:0] win_512;
+	genvar gw_sl;
+	generate
+		for (gw_sl = 0; gw_sl < 8; gw_sl = gw_sl + 1) begin : g_win_sl
+			wire [WIN_SL_W-1:0] sl_out;
+			am_shift #(.W(WIN_SL_W), .SW(LS + 3), .DIR(1)) h_win_sl (
+				.a(win_src_ext[gw_sl*64 +: WIN_SL_W]),
+				.amt({ptr_rep[gw_sl*LS +: LS], 3'b000}),
+				.left(1'b0), .arith(1'b0), .y(sl_out)
+			);
+			assign win_512[gw_sl*64 +: 64] = sl_out[63:0];
+		end
+	endgenerate
+	wire [1023:0] win = {512'd0, win_512};
 
 	wire [127:0] avg, favg;
 	wire slow = fmt == 3'd3 || fmt == 3'd4 || fmt == 3'd5;	/* sRGB, the floats */
@@ -312,15 +368,36 @@ module atg_blt_rsv_px #(
 	(* max_fanout = 16 *) reg [2:0] p_psl;
 	reg p_is_s0;
 
+	wire [191:0] avg_csa_s, avg_csa_c;
 	wire [127:0] s0_val;
 
-	atg_blt_avg av (
+	atg_blt_avg_s1 av_s1 (
 		.fmt(p_fmt),
 		.psl(p_psl),
 		.in_s(p_win),
-		.out_p(),
-		.avg_only(avg),
+		.csa_s_out(avg_csa_s),
+		.csa_c_out(avg_csa_c),
 		.s0_only(s0_val)
+	);
+
+	/* Stage P1: Pipeline register between CSA unpack and final rounding/format pack */
+	reg p1_v;
+	reg [LA_W-1:0] p1_line;
+	reg [LS-1:0] p1_off;
+	reg [4:0] p1_nb;
+	reg [2:0] p1_fmt;
+	reg [2:0] p1_psl;
+	reg p1_is_s0;
+	reg [191:0] p1_csa_s;
+	reg [191:0] p1_csa_c;
+	reg [127:0] p1_s0;
+
+	atg_blt_avg_s2 av_s2 (
+		.fmt(p1_fmt),
+		.psl(p1_psl),
+		.csa_s_in(p1_csa_s),
+		.csa_c_in(p1_csa_c),
+		.avg_only(avg)
 	);
 
 	/* Stage A: the average of the group. */
@@ -328,6 +405,7 @@ module atg_blt_rsv_px #(
 	reg [1:0] a_src;	/* 0: avg, 1: s0, 2: flt */
 	reg [LA_W-1:0] a_line;
 	reg [LS-1:0] a_off;
+	(* keep = "true" *) reg [5*LS-1:0] a_off_rep;
 	reg [4:0] a_nb;		/* bytes */
 	reg [127:0] a_px_avg;
 	reg [127:0] a_px_s0;
@@ -344,8 +422,9 @@ module atg_blt_rsv_px #(
 	wire a_same = b_v && b_line == a_line;
 	wire a_take = a_v && (!b_v || a_same || wr_free);
 	wire a_free = !a_v || !b_v || (b_line == a_line) || wr_free;
-	wire p_free = !p_v || a_free;
-	wire fire_cond = active && v0 && (!need2 || v1) && (slow ? (!p_v && a_free) : p_free) && !a_pend;
+	wire p1_free = !p1_v || a_free;
+	wire p_free = !p_v || p1_free;
+	wire fire_cond = active && v0 && (!need2 || v1) && (slow ? (!p_v && !p1_v && a_free) : p_free) && !a_pend;
 	(* max_fanout = 16 *) wire fire_data = fire_cond;
 	wire fire_ctrl = fire_cond;
 
@@ -377,41 +456,59 @@ module atg_blt_rsv_px #(
 	wire row_end = fire_ctrl && is_last_group;
 
 	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
+	wire shift_ge = (n == 3'd1) ? shift_ge_k[0] : (n == 3'd2) ? shift_ge_k[1] : (n == 3'd3) ? shift_ge_k[2] : shift_ge_k[3];
 	wire two_used = (n == 3'd1) ? two_used_k[0] : (n == 3'd2) ? two_used_k[1] : (n == 3'd3) ? two_used_k[2] : two_used_k[3];
-	wire shift_win = fire_ctrl && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
+	wire shift_win = fire_ctrl && shift_ge && !two_used;
 	wire drop_both = fire_ctrl && (two_used || row_end);
 
 	/* The window after this cycle's group (before a load). */
-	reg [LS-1:0] nptr;
-
-	always @(*) begin
-		nptr = ptr;
-		if (fire_ctrl) begin
-			nptr = gend[LS-1:0];
-		end
-	end
+	wire [LS-1:0] nptr = fire_ctrl ? nptr_sel : ptr;
 
 	wire wr_buf0 = lq_pop && (head == v0);
 	wire wr_buf1 = lq_pop && (head != v0);
 
 	wire may_load = active && lines_left_nz;
 	assign lq_pop = may_load && lq_valid && (!v0 || !v1);
+	assign ln_pop = lq_valid && lq_pop;
 	assign rq_pop = !active && !p_v && !a_pend && rq_valid;
 
-	/* The merge: the group's bytes at their offset of the line. */
-	wire [LBITS-1:0] a_shf;
+	/* The merge: 8B-align (W=88) + 64b-slot placement cuts a_off_rep fanout from ~1090 to <= 150. */
+	localparam integer NSLOT = LB / 8;
+	wire [LBITS-1:0] a_shf_w [0:3];
+	genvar gsw, gss;
+	generate
+		for (gsw = 0; gsw < 4; gsw = gsw + 1) begin : g_shf_w
+			wire [LS-1:0] w_off = a_off_rep[(gsw + 1)*LS +: LS];
+			wire [87:0] al_w;
+			am_shift #(.W(88), .SW(6), .DIR(2)) h_al_w (
+				.a({56'd0, a_px[gsw*32 +: 32]}),
+				.amt({w_off[2:0], 3'b000}),
+				.left(1'b1), .arith(1'b0), .y(al_w)
+			);
+			for (gss = 0; gss < NSLOT; gss = gss + 1) begin : g_slot
+				localparam integer SM1 = (gss > 0) ? (gss - 1) : 0;
+				wire hit0 = (w_off[LS-1:3] == gss[LS-4:0]);
+				wire hit1 = (gss > 0) && (w_off[LS-1:3] == SM1[LS-4:0]);
+				assign a_shf_w[gsw][gss*64 +: 64] =
+					(hit0 ? al_w[63:0] : 64'd0) |
+					(hit1 ? {40'd0, al_w[87:64]} : 64'd0);
+			end
+		end
+	endgenerate
+	wire [LBITS-1:0] a_shf = a_shf_w[0] |
+		{a_shf_w[1][LBITS-33:0], 32'd0} |
+		{a_shf_w[2][LBITS-65:0], 64'd0} |
+		{a_shf_w[3][LBITS-97:0], 96'd0};
 	wire [2*LB-1:0] a_ones;	/* the lowest a_nb bits set (a_nb < 2 LB): 2^a_nb - 1 */
 	wire [LB-1:0] a_be;
 
-	am_shift #(.W(LBITS), .SW(LS + 3)) h_shf (.a({{(LBITS - 128){1'b0}}, a_px}), .amt({a_off, 3'b000}), .left(1'b1),
-		.arith(1'b0), .y(a_shf));
 	genvar ob;
 	generate
 		for (ob = 0; ob < 2 * LB; ob = ob + 1) begin : g_ones
 			assign a_ones[ob] = ob < a_nb;
 		end
 	endgenerate
-	am_shift #(.W(LB), .SW(LS)) h_be (.a(a_ones[LB-1:0]), .amt(a_off), .left(1'b1), .arith(1'b0), .y(a_be));
+	am_shift #(.W(LB), .SW(LS)) h_be (.a(a_ones[LB-1:0]), .amt(a_off_rep[0*LS +: LS]), .left(1'b1), .arith(1'b0), .y(a_be));
 
 	/* The row's counts: the lines left, the next pixel and the pixels left; a group's bytes. */
 	wire [16:0] ll_dec, x_next, rem_next;
@@ -442,7 +539,7 @@ module atg_blt_rsv_px #(
 			a_sh[8 * i +: 8] = a_be[i] ? a_shf[8 * i +: 8] : 8'd0;
 	end
 
-	wire idle_now = !active && !rq_valid && !p_v && !a_v && !a_pend;
+	wire idle_now = !active && !rq_valid && !p_v && !p1_v && !a_v && !a_pend;
 	assign idle = idle_now && !b_v && !wr_valid;
 
 	always @(posedge clk or negedge rst_n) begin
@@ -460,10 +557,19 @@ module atg_blt_rsv_px #(
 			sh4_r <= 3'd2;
 			nmax_r <= 3'd4;
 			psl_r <= 3'd0;
+			gb_r_v <= 28'd0;
+			need2_lim_v <= 32'd0;
+			two_lim_v <= 32'd0;
+			need2_gt_lb_r <= 4'd0;
+			need2_ge_lb_r <= 4'd0;
+			two_ge_2lb_r <= 4'd0;
+			grp_nb_r_v <= 20'd0;
 			head <= 1'b0;
+			head_rep <= 16'd0;
 			v0 <= 1'b0;
 			v1 <= 1'b0;
 			ptr <= {LS{1'b0}};
+			ptr_rep <= {(8*LS){1'b0}};
 			p_v <= 1'b0;
 			p_line <= {LA_W{1'b0}};
 			p_off <= {LS{1'b0}};
@@ -471,11 +577,22 @@ module atg_blt_rsv_px #(
 			p_fmt <= 3'd0;
 			p_psl <= 3'd0;
 			p_is_s0 <= 1'b0;
+			p1_v <= 1'b0;
+			p1_line <= {LA_W{1'b0}};
+			p1_off <= {LS{1'b0}};
+			p1_nb <= 5'd0;
+			p1_fmt <= 3'd0;
+			p1_psl <= 3'd0;
+			p1_is_s0 <= 1'b0;
+			p1_csa_s <= 192'd0;
+			p1_csa_c <= 192'd0;
+			p1_s0 <= 128'd0;
 			a_v <= 1'b0;
 			a_src <= 2'd0;
 			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
 			a_off <= {LS{1'b0}};
+			a_off_rep <= {(5*LS){1'b0}};
 			a_nb <= 5'd0;
 			b_v <= 1'b0;
 			b_line <= {LA_W{1'b0}};
@@ -497,10 +614,19 @@ module atg_blt_rsv_px #(
 			sh4_r <= 3'd2;
 			nmax_r <= 3'd4;
 			psl_r <= 3'd0;
+			gb_r_v <= 28'd0;
+			need2_lim_v <= 32'd0;
+			two_lim_v <= 32'd0;
+			need2_gt_lb_r <= 4'd0;
+			need2_ge_lb_r <= 4'd0;
+			two_ge_2lb_r <= 4'd0;
+			grp_nb_r_v <= 20'd0;
 			head <= 1'b0;
+			head_rep <= 16'd0;
 			v0 <= 1'b0;
 			v1 <= 1'b0;
 			ptr <= {LS{1'b0}};
+			ptr_rep <= {(8*LS){1'b0}};
 			p_v <= 1'b0;
 			p_line <= {LA_W{1'b0}};
 			p_off <= {LS{1'b0}};
@@ -508,11 +634,22 @@ module atg_blt_rsv_px #(
 			p_fmt <= 3'd0;
 			p_psl <= 3'd0;
 			p_is_s0 <= 1'b0;
+			p1_v <= 1'b0;
+			p1_line <= {LA_W{1'b0}};
+			p1_off <= {LS{1'b0}};
+			p1_nb <= 5'd0;
+			p1_fmt <= 3'd0;
+			p1_psl <= 3'd0;
+			p1_is_s0 <= 1'b0;
+			p1_csa_s <= 192'd0;
+			p1_csa_c <= 192'd0;
+			p1_s0 <= 128'd0;
 			a_v <= 1'b0;
 			a_src <= 2'd0;
 			a_pend <= 1'b0;
 			a_line <= {LA_W{1'b0}};
 			a_off <= {LS{1'b0}};
+			a_off_rep <= {(5*LS){1'b0}};
 			a_nb <= 5'd0;
 			b_v <= 1'b0;
 			b_line <= {LA_W{1'b0}};
@@ -536,10 +673,22 @@ module atg_blt_rsv_px #(
 				sh4_r <= sh4;
 				nmax_r <= nmax;
 				psl_r <= psl;
+				gb_r_v <= {gb_init_k[4], gb_init_k[3], gb_init_k[2], gb_init_k[1]};
+				need2_lim_v <= {need2_lim_w[4], need2_lim_w[3], need2_lim_w[2], need2_lim_w[1]};
+				two_lim_v   <= {two_lim_w[4], two_lim_w[3], two_lim_w[2], two_lim_w[1]};
+				need2_gt_lb_r <= {({1'b0, gb_init_k[4]} > LB_8), ({1'b0, gb_init_k[3]} > LB_8),
+					({1'b0, gb_init_k[2]} > LB_8), ({1'b0, gb_init_k[1]} > LB_8)};
+				need2_ge_lb_r <= {({1'b0, gb_init_k[4]} >= LB_8), ({1'b0, gb_init_k[3]} >= LB_8),
+					({1'b0, gb_init_k[2]} >= LB_8), ({1'b0, gb_init_k[1]} >= LB_8)};
+				two_ge_2lb_r  <= {({1'b0, gb_init_k[4]} >= LB2_8), ({1'b0, gb_init_k[3]} >= LB2_8),
+					({1'b0, gb_init_k[2]} >= LB2_8), ({1'b0, gb_init_k[1]} >= LB2_8)};
+				grp_nb_r_v <= {grp_nb_init_k[4], grp_nb_init_k[3], grp_nb_init_k[2], grp_nb_init_k[1]};
 				ptr <= d_off;
+				ptr_rep <= {8{d_off}};
 				v0 <= 1'b0;
 				v1 <= 1'b0;
 				head <= 1'b0;
+				head_rep <= 16'd0;
 				p_v <= 1'b0;
 				p_fmt <= fmt;
 				p_psl <= psl;
@@ -547,16 +696,19 @@ module atg_blt_rsv_px #(
 			end else begin
 				/* The window: load into ping-pong buffers */
 				ptr <= nptr;
+				ptr_rep <= {8{nptr}};
 				if (wr_buf0)
 					buf0 <= lq_data;
 				if (wr_buf1)
 					buf1 <= lq_data;
 				if (drop_both) begin
 					head <= 1'b0;
+					head_rep <= 16'd0;
 					v0 <= 1'b0;
 					v1 <= 1'b0;
 				end else if (shift_win) begin
 					head <= ~head;
+					head_rep <= {16{~head}};
 					v0 <= v1 | lq_pop;
 					v1 <= 1'b0;
 				end else if (lq_pop) begin
@@ -619,19 +771,36 @@ module atg_blt_rsv_px #(
 			end
 			if (fire_ctrl && !slow) begin
 				p_v <= 1'b1;
-			end else if (a_free) begin
+			end else if (p1_free) begin
 				p_v <= 1'b0;
 			end
 
+			/* Stage P1. */
+			if (p_v && p1_free) begin
+				p1_v <= 1'b1;
+				p1_line <= p_line;
+				p1_off <= p_off;
+				p1_nb <= p_nb;
+				p1_fmt <= p_fmt;
+				p1_psl <= p_psl;
+				p1_is_s0 <= p_is_s0;
+				p1_csa_s <= avg_csa_s;
+				p1_csa_c <= avg_csa_c;
+				p1_s0 <= s0_val;
+			end else if (a_free) begin
+				p1_v <= 1'b0;
+			end
+
 			/* Stage A. */
-			if (p_v && a_free) begin
+			if (p1_v && a_free) begin
 				a_v <= 1'b1;
-				a_line <= p_line;
-				a_off <= p_off;
-				a_nb <= p_nb;
-				if (p_is_s0) begin
+				a_line <= p1_line;
+				a_off <= p1_off;
+				a_off_rep <= {5{p1_off}};
+				a_nb <= p1_nb;
+				if (p1_is_s0) begin
 					a_src <= 2'd1;
-					a_px_s0 <= s0_val;
+					a_px_s0 <= p1_s0;
 				end else begin
 					a_src <= 2'd0;
 					a_px_avg <= avg;
@@ -642,6 +811,7 @@ module atg_blt_rsv_px #(
 				a_pend <= 1'b0;
 				a_line <= p_line;
 				a_off <= p_off;
+				a_off_rep <= {5{p_off}};
 				a_nb <= p_nb;
 				a_px_flt <= favg;
 			end else if (a_take) begin
@@ -662,8 +832,10 @@ module atg_blt_rsv_px #(
 `endif
 
 	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB],
-		grp_co_unused, gb_co_unused, row_co_unused, dals_init_co,
-		lncnt_co_unused, gend_k_co_unused, dals_k_co_unused, rem_limit, room_t, room_l_limit_r};
+		a_shf_w[1][LBITS-1:LBITS-32], a_shf_w[2][LBITS-1:LBITS-64], a_shf_w[3][LBITS-1:LBITS-96],
+		grp_co_unused, gb_co_unused, row_co_unused, dals_init_co, n2l_bo_unused, twl_bo_unused,
+		lncnt_co_unused, gend_k_co_unused, dals_k_co_unused, rem_limit, room_t, room_l_limit_r,
+		a_off, sh4_r};
 endmodule
 
 `default_nettype wire

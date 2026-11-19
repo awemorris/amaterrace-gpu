@@ -8,7 +8,7 @@
 # `include/atg_config.vh` is generated automatically from `config.mk`.
 # ==============================================================================
 
-# Target Board Preset: kc705, basys3, arty_a7, minimal_sim
+# Target Board Preset: kc705, zcu106, minimal_sim
 TARGET_PRESET            ?= kc705
 
 # ------------------------------------------------------------------------------

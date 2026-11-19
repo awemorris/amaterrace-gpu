@@ -163,6 +163,8 @@ module atg_cp_ring #(
 	localparam [1:0] PF_IDLE = 2'd0;
 	localparam [1:0] PF_REQ  = 2'd1;
 	localparam [1:0] PF_RSP  = 2'd2;
+	localparam [1:0] PF_WR   = 2'd3;
+	localparam integer NSL   = LINE_BYTES / 4;
 
 	/*
 	 * 3 Independent Hardware Queues
@@ -284,14 +286,30 @@ module atg_cp_ring #(
 		end
 	end
 `else
-	wire [31:0] wdata_a = hcr_wdata;
-	wire [31:0] wdata_b = hcr_wdata;
-	wire [31:0] wdata_c = hcr_wdata;
-	wire [31:0] wdata_d = hcr_wdata;
-	wire [8:0]  wdata_d1 = hcr_wdata[8:0];
-	wire [31:0] wmask_a = hcr_wmask;
-	wire [31:0] wmask_b = hcr_wmask;
-	wire [31:0] wmask_c = hcr_wmask;
+	(* keep = "true" *) reg [31:0] wdata_a, wdata_b, wdata_c, wdata_d;
+	(* keep = "true" *) reg [8:0]  wdata_d1;
+	(* keep = "true" *) reg [31:0] wmask_a, wmask_b, wmask_c;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			wdata_a  <= 32'd0;
+			wdata_b  <= 32'd0;
+			wdata_c  <= 32'd0;
+			wdata_d  <= 32'd0;
+			wdata_d1 <= 9'd0;
+			wmask_a  <= 32'd0;
+			wmask_b  <= 32'd0;
+			wmask_c  <= 32'd0;
+		end else begin
+			wdata_a  <= hcr_wdata;
+			wdata_b  <= hcr_wdata;
+			wdata_c  <= hcr_wdata;
+			wdata_d  <= hcr_wdata;
+			wdata_d1 <= hcr_wdata[8:0];
+			wmask_a  <= hcr_wmask;
+			wmask_b  <= hcr_wmask;
+			wmask_c  <= hcr_wmask;
+		end
+	end
 `endif
 	reg [7:0] sema [0:7];
 	reg [2:0] queue_sema_id [0:2];
@@ -659,10 +677,44 @@ module atg_cp_ring #(
 	wire hit_n = hit_n_r;
 	wire hit = hit_n_r;
 `else
-	wire hit_comb = buf_valid[want_idx] && (buf_tag[want_idx] == want_line);
+	(* keep = "true" *) reg [16*WS-1:0] pa_word_rep;
+	(* keep = "true" *) reg [4*3-1:0]   pa_idx_rep;
+	reg [LINE_BYTES*8-1:0] rsp_rdata_r;
+	always @(posedge clk) begin
+		rsp_rdata_r <= rsp_rdata;
+	end
+	(* keep = "true" *) reg [8*NSL-1:0] buf_sl_we_r;
+	reg [2:0] pf_wr_idx_r, dm_wr_idx_r;
+	reg [LA_W-1:0] pf_wr_line_r, dm_wr_line_r;
+	reg dm_wr_pend, dm_err_pend;
+
+	wire [7:0] want_tag_hit;
+	wire [31:0] want_line_w [0:7];
+	genvar g_wc, g_sl, g_by;
+	generate
+		for (g_wc = 0; g_wc < 8; g_wc = g_wc + 1) begin : g_want_cmp
+			for (g_sl = 0; g_sl < NSL; g_sl = g_sl + 1) begin : g_buf_sl_w
+				always @(posedge clk) begin
+					if (buf_sl_we_r[g_wc*NSL + g_sl])
+						buf_data[g_wc][g_sl*32 +: 32] <= rsp_rdata_r[g_sl*32 +: 32];
+				end
+			end
+			assign want_tag_hit[g_wc] = buf_valid[g_wc] && (buf_tag[g_wc] == want_line);
+			wire [31:0] wl_lo = buf_data[g_wc][{pa_word_rep[(g_wc*2 + 0)*WS +: WS], 5'd0} +: 32];
+			wire [31:0] wl_hi = buf_data[g_wc][{pa_word_rep[(g_wc*2 + 1)*WS +: WS], 5'd0} +: 32];
+			assign want_line_w[g_wc] = {wl_hi[31:16], wl_lo[15:0]};
+		end
+	endgenerate
+	wire hit_comb = want_tag_hit[want_idx];
 	wire hit_n    = hit_comb;
 	wire hit      = hit_comb;
-	wire [31:0] want_data = buf_data[want_idx][{want_word, 5'd0} +: 32];
+	wire [31:0] want_data;
+	generate
+		for (g_by = 0; g_by < 4; g_by = g_by + 1) begin : g_wdata_by
+			wire [2:0] bidx = pa_idx_rep[g_by*3 +: 3];
+			assign want_data[g_by*8 +: 8] = want_line_w[bidx][g_by*8 +: 8];
+		end
+	endgenerate
 `endif
 
 `ifdef SYNTH_KINTEX7
@@ -702,18 +754,24 @@ module atg_cp_ring #(
 	end
 	wire [2:0] doorbell = doorbell_r;
 `else
-	wire hcr_we_cfg  = hcr_we;
-	wire hcr_we_db   = hcr_we;
-	wire hcr_we_dma  = hcr_we;
-	wire hcr_we_sync = hcr_we;
-	wire [9:0] widx_a = hcr_widx;
-	wire [9:0] widx_b = hcr_widx;
-
-	/* Doorbells for the 3 queues */
-	wire [2:0] doorbell;
-	assign doorbell[0] = hcr_we_db && (widx_b == I_WPTR0);
-	assign doorbell[1] = 1'b0;
-	assign doorbell[2] = 1'b0;
+	(* keep = "true" *) reg hcr_we_cfg;
+	(* keep = "true" *) reg [9:0] widx_a, widx_b;
+	(* keep = "true" *) reg [2:0] doorbell;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			hcr_we_cfg <= 1'b0;
+			widx_a     <= 10'd0;
+			widx_b     <= 10'd0;
+			doorbell   <= 3'd0;
+		end else begin
+			hcr_we_cfg <= hcr_we && (hcr_widx[9:6] == 4'd0);
+			widx_a     <= hcr_widx;
+			widx_b     <= hcr_widx;
+			doorbell[0] <= hcr_we && (hcr_widx[9:6] == 4'd0) && (hcr_widx[5:0] == I_WPTR0[5:0]);
+			doorbell[1] <= 1'b0;
+			doorbell[2] <= 1'b0;
+		end
+	end
 `endif
 
 	wire [21:0] wptr_new0 = ((wptr[0] & ~wmask_c[21:0]) | (wdata_c[21:0] & wmask_c[21:0])) & mask[0];
@@ -819,12 +877,24 @@ module atg_cp_ring #(
 	wire rem_hi8_nz  = |rem_words_r[22:8];
 	wire av_hi_nz    = |avail_check[21:16];
 	wire av_hi8_nz   = |avail_check[21:8];
-	wire h_bad_ghci_w  = !rem_hi8_nz && ({1'b0, ghci_n} > {1'b0, rem_words_r[7:0]});
-	wire h_bad_c2_w    = !rem_hi_nz  && (hdr_data[15:0] > rem_words_r[15:0]);
-	wire h_bad_lo_w    = !rem_hi8_nz && (hdr_data[7:0] > rem_words_r[7:0]);
-	wire h_bad_ghci_av = !av_hi8_nz  && ({1'b0, ghci_n} >= {1'b0, avail_check[7:0]});
-	wire h_bad_c2_av   = !av_hi_nz   && (hdr_data[15:0] >= avail_check[15:0]);
-	wire h_bad_lo_av   = !av_hi8_nz  && (hdr_data[7:0] >= avail_check[7:0]);
+	wire [8:0] rem_lo8_p1;
+	wire rem_lo8_p1_co_unused;
+	am_add #(.W(9)) u_rem_lo8_p1 (
+		.a({1'b0, rem_words_r[7:0]}), .b(9'd1), .ci(1'b0), .s(rem_lo8_p1), .co(rem_lo8_p1_co_unused)
+	);
+	wire rem_hi_b_gt = (hdr_data[15:8] > rem_words_r[15:8]);
+	wire rem_hi_b_eq = (hdr_data[15:8] == rem_words_r[15:8]);
+	wire rem_lo_b_gt = (hdr_data[7:0] > rem_words_r[7:0]);
+	wire av_hi_b_gt  = (hdr_data[15:8] > avail_check[15:8]);
+	wire av_hi_b_eq  = (hdr_data[15:8] == avail_check[15:8]);
+	wire av_lo_b_gt  = (hdr_data[7:0] > avail_check[7:0]);
+	wire av_lo_b_ge  = (hdr_data[7:0] >= avail_check[7:0]);
+	wire h_bad_ghci_w  = !rem_hi8_nz && ({1'b0, hdr_data[15:8]} > rem_lo8_p1);
+	wire h_bad_c2_w    = !rem_hi_nz  && (rem_hi_b_gt || (rem_hi_b_eq && rem_lo_b_gt));
+	wire h_bad_lo_w    = !rem_hi8_nz && rem_lo_b_gt;
+	wire h_bad_ghci_av = !av_hi8_nz  && (hdr_data[15:8] > avail_check[7:0]);
+	wire h_bad_c2_av   = !av_hi_nz   && (av_hi_b_gt || (av_hi_b_eq && av_lo_b_ge));
+	wire h_bad_lo_av   = !av_hi8_nz  && av_lo_b_ge;
 	wire h_novf_words  = rem_words_bo_r ||
 		(is_ghci ? h_bad_ghci_w : (hdr_data[31] ? h_bad_c2_w : h_bad_lo_w));
 	wire h_bad_avail_c = is_ghci ? h_bad_ghci_av : (hdr_data[31] ? h_bad_c2_av : h_bad_lo_av);
@@ -1392,12 +1462,12 @@ module atg_cp_ring #(
 `else
 			if (hcr_we_cfg) begin
 				if (open) begin
-					if (hcr_widx == I_BASE0_LO || hcr_widx == I_BASE0)
-						base[0][31:0] <= ((base[0][31:0] & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) & 32'hFFFFFFE0;
-					if (hcr_widx == I_BASE0_HI)
-						base[0][63:32] <= (base[0][63:32] & ~hcr_wmask) | (hcr_wdata & hcr_wmask);
-					if (hcr_widx == I_SIZE0 && hcr_wmask[0] && (decode_ring_size(hcr_wdata) != 5'd0))
-						size[0] <= decode_ring_size(hcr_wdata);
+					if (widx_a == I_BASE0_LO || widx_a == I_BASE0)
+						base[0][31:0] <= ((base[0][31:0] & ~wmask_a) | (wdata_a & wmask_a)) & 32'hFFFFFFE0;
+					if (widx_a == I_BASE0_HI)
+						base[0][63:32] <= (base[0][63:32] & ~wmask_a) | (wdata_a & wmask_a);
+					if (widx_b == I_SIZE0 && wmask_c[0] && (decode_ring_size(wdata_c) != 5'd0))
+						size[0] <= decode_ring_size(wdata_c);
 				end
 			end
 `endif
@@ -1455,9 +1525,17 @@ module atg_cp_ring #(
 			h_class_r <= 2'd0;
 `ifndef SYNTH_KINTEX7
 			buf_valid <= 8'd0;
+			buf_sl_we_r <= {(8*NSL){1'b0}};
+			pa_word_rep <= {(16*WS){1'b0}};
+			pa_idx_rep  <= {(4*3){1'b0}};
+			pf_wr_idx_r <= 3'd0;
+			pf_wr_line_r <= {LA_W{1'b0}};
+			dm_wr_idx_r <= 3'd0;
+			dm_wr_line_r <= {LA_W{1'b0}};
+			dm_wr_pend  <= 1'b0;
+			dm_err_pend <= 1'b0;
 			for (bi = 0; bi < 8; bi = bi + 1) begin
 				buf_tag[bi]  <= {LA_W{1'b0}};
-				buf_data[bi] <= {(LINE_BYTES * 8){1'b0}};
 			end
 `endif
 			pf_st     <= PF_IDLE;
@@ -1488,6 +1566,9 @@ module atg_cp_ring #(
 			f_pulse       <= 1'b0;
 			ret_pulse     <= 1'b0;
 			preempt_pulse <= 1'b0;
+`ifndef SYNTH_KINTEX7
+			buf_sl_we_r   <= {(8*NSL){1'b0}};
+`endif
 `ifdef SYNTH_KINTEX7
 			cur_tag_r[6:0]       <= buf_tag[widx_tag0][6:0];
 			cur_tag_r[13:7]      <= buf_tag[widx_tag1][13:7];
@@ -1619,15 +1700,24 @@ module atg_cp_ring #(
 				end
 `else
 				if (rsp_valid && (rsp_tag == 8'd1)) begin
-					buf_data[pf_idx] <= rsp_rdata;
-					if (!rsp_error) begin
-						buf_tag[pf_idx]   <= pf_line;
-						buf_valid[pf_idx] <= 1'b1;
+					if (rsp_error) begin
+						pf_st <= PF_IDLE;
+					end else begin
+						buf_sl_we_r[pf_idx*NSL +: NSL] <= {NSL{1'b1}};
+						pf_wr_idx_r  <= pf_idx;
+						pf_wr_line_r <= pf_line;
+						pf_st        <= PF_WR;
 					end
-					pf_st <= PF_IDLE;
 				end
 `endif
 			end
+`ifndef SYNTH_KINTEX7
+			PF_WR: begin
+				buf_tag[pf_wr_idx_r]   <= pf_wr_line_r;
+				buf_valid[pf_wr_idx_r] <= 1'b1;
+				pf_st                  <= PF_IDLE;
+			end
+`endif
 			default: pf_st <= PF_IDLE;
 			endcase
 
@@ -1682,10 +1772,12 @@ module atg_cp_ring #(
 					end
 `else
 					if (has_work[active_qid]) begin
-						cur       <= rptr_act;
-						pa        <= pa_hdr;
-						step_pend <= 1'b0;
-						st        <= R_HDR;
+						cur         <= rptr_act;
+						pa          <= pa_hdr;
+						pa_word_rep <= {16{pa_hdr[LINE_SHIFT-1:2]}};
+						pa_idx_rep  <= {4{pa_hdr[LINE_SHIFT +: 3]}};
+						step_pend   <= 1'b0;
+						st          <= R_HDR;
 					end else if (|has_work) begin
 						/* Arbiter switches to next active queue */
 						active_qid <= next_qid;
@@ -1769,8 +1861,10 @@ module atg_cp_ring #(
 						st <= R_ADV;
 `ifndef SYNTH_KINTEX7
 					end else begin
-						k  <= k_n;
-						pa <= pa_4;
+						k           <= k_n;
+						pa          <= pa_4;
+						pa_word_rep <= {16{pa_4[LINE_SHIFT-1:2]}};
+						pa_idx_rep  <= {4{pa_4[LINE_SHIFT +: 3]}};
 `endif
 					end
 				end
@@ -1829,17 +1923,28 @@ module atg_cp_ring #(
 					end
 				end
 `else
-				if (rsp_valid && (rsp_tag == 8'd0)) begin
-					buf_data[want_idx] <= rsp_rdata;
-					if (rsp_error) begin
-						f_pulse <= 1'b1;
-						f_kind  <= GHCI_FAULT_KIND_AXI_ERROR;
-						f_addr  <= want_addr[31:0];
-						st      <= R_FAULT;
+				if (dm_wr_pend) begin
+					dm_wr_pend <= 1'b0;
+					if (dm_err_pend) begin
+						dm_err_pend <= 1'b0;
+						f_pulse     <= 1'b1;
+						f_kind      <= GHCI_FAULT_KIND_AXI_ERROR;
+						f_addr      <= want_addr[31:0];
+						st          <= R_FAULT;
 					end else begin
-						buf_valid[want_idx] <= 1'b1;
-						buf_tag[want_idx]   <= want_line;
+						buf_valid[dm_wr_idx_r] <= 1'b1;
+						buf_tag[dm_wr_idx_r]   <= dm_wr_line_r;
 						st <= ret_n ? R_N : R_HDR;
+					end
+				end else if (rsp_valid && (rsp_tag == 8'd0)) begin
+					dm_wr_pend <= 1'b1;
+					if (rsp_error) begin
+						dm_err_pend <= 1'b1;
+					end else begin
+						dm_err_pend <= 1'b0;
+						dm_wr_idx_r <= want_idx;
+						dm_wr_line_r <= want_line;
+						buf_sl_we_r[want_idx*NSL +: NSL] <= {NSL{1'b1}};
 					end
 				end
 `endif
@@ -1933,8 +2038,8 @@ module atg_cp_ring #(
 		(hcr_ridx == I_WPTR0) ? {10'd0, wptr[0]} :
 		(hcr_ridx == I_RPTR0) ? {10'd0, rptr[0]} : 32'd0;
 
-	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co,
-		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo,
+	wire unused_ok = &{1'b0, rsp_write, rsp_tag[7:2], h_end[18], avail_bo, h_end_co, p_end_co, pa_4_co, want_word,
+		pa_hdr_co, k_co, unused_nl_co, sema_co, unused_dr_co, unused_ds_co, dma_size, ghci_n_bo, rem_lo8_p1_co_unused,
 		base_act, rem_words_bo, rem_words_bo_r, rem_words_s[18], hit, next_hit,
 		h_bad_r, h_bad_words_r, h_bad_avail_r, h_bad,
 		base[1], base[2], size[1], size[2], wptr[1], wptr[2], rptr[1], rptr[2],

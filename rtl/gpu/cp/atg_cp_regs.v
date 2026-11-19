@@ -129,45 +129,37 @@ module atg_cp_regs #(
 	localparam [9:0] I_WINDOW_CTRL = A_WINDOW_CTRL[11:2];
 	localparam [0:0] HAS_WINDOW = XCAP_MASK[7] && WINDOW_BYTES != 32'd0;
 
-	function [9:0] hcr_reg_widx;
-		input [16:0] addr;
-		case (addr)
-		GHCI_REG_CTRL:          hcr_reg_widx = HCR_IDX_CTRL;
-		GHCI_REG_FAULT_INFO:    hcr_reg_widx = HCR_IDX_FAULT_INFO;
-		GHCI_REG_RING_BASE_LO:  hcr_reg_widx = HCR_IDX_RING_BASE_LO;
-		GHCI_REG_RING_BASE_HI:  hcr_reg_widx = HCR_IDX_RING_BASE_HI;
-		GHCI_REG_RING_SIZE:     hcr_reg_widx = HCR_IDX_RING_SIZE;
-		GHCI_REG_RING_WPTR:     hcr_reg_widx = HCR_IDX_RING_WPTR;
-		GHCI_REG_IRQ_STATUS:    hcr_reg_widx = HCR_IDX_IRQ_STATUS;
-		GHCI_REG_IRQ_ENABLE:    hcr_reg_widx = HCR_IDX_IRQ_ENABLE;
-		GHCI_REG_IRQ_SET:       hcr_reg_widx = HCR_IDX_IRQ_SET;
-		GHCI_REG_SCRATCH:       hcr_reg_widx = HCR_IDX_SCRATCH;
-		GHCI_REG_WDT_CYCLES:    hcr_reg_widx = HCR_IDX_WDT_CYCLES;
-		GHCI_REG_CP_HEAP_BASE:  hcr_reg_widx = HCR_IDX_CP_HEAP_BASE;
-		GHCI_REG_CP_HEAP_LIMIT: hcr_reg_widx = HCR_IDX_CP_HEAP_LIMIT;
-		GHCI_LEGACY_FENCE_LAST:    hcr_reg_widx = HCR_IDX_FENCE_LAST;
-		default:                hcr_reg_widx = (addr >= 17'h00140 && addr <= 17'h003FF) ? addr[11:2] : HCR_IDX_INVALID;
+	wire waddr_page0 = (reg_waddr[16:10] == 7'd0);
+	wire waddr_in_win = waddr_page0 && (reg_waddr[9] || (reg_waddr[8] && (|reg_waddr[7:6])));
+
+	function [9:0] hcr_reg_widx_page0;
+		input [9:0] addr10;
+		case (addr10)
+		GHCI_REG_CTRL[9:0]:          hcr_reg_widx_page0 = HCR_IDX_CTRL;
+		GHCI_REG_FAULT_INFO[9:0]:    hcr_reg_widx_page0 = HCR_IDX_FAULT_INFO;
+		GHCI_REG_RING_BASE_LO[9:0]:  hcr_reg_widx_page0 = HCR_IDX_RING_BASE_LO;
+		GHCI_REG_RING_BASE_HI[9:0]:  hcr_reg_widx_page0 = HCR_IDX_RING_BASE_HI;
+		GHCI_REG_RING_SIZE[9:0]:     hcr_reg_widx_page0 = HCR_IDX_RING_SIZE;
+		GHCI_REG_RING_WPTR[9:0]:     hcr_reg_widx_page0 = HCR_IDX_RING_WPTR;
+		GHCI_REG_IRQ_STATUS[9:0]:    hcr_reg_widx_page0 = HCR_IDX_IRQ_STATUS;
+		GHCI_REG_IRQ_ENABLE[9:0]:    hcr_reg_widx_page0 = HCR_IDX_IRQ_ENABLE;
+		GHCI_REG_IRQ_SET[9:0]:       hcr_reg_widx_page0 = HCR_IDX_IRQ_SET;
+		GHCI_REG_SCRATCH[9:0]:       hcr_reg_widx_page0 = HCR_IDX_SCRATCH;
+		GHCI_REG_WDT_CYCLES[9:0]:    hcr_reg_widx_page0 = HCR_IDX_WDT_CYCLES;
+		GHCI_REG_CP_HEAP_BASE[9:0]:  hcr_reg_widx_page0 = HCR_IDX_CP_HEAP_BASE;
+		GHCI_REG_CP_HEAP_LIMIT[9:0]: hcr_reg_widx_page0 = HCR_IDX_CP_HEAP_LIMIT;
+		GHCI_LEGACY_FENCE_LAST[9:0]: hcr_reg_widx_page0 = HCR_IDX_FENCE_LAST;
+		default:                     hcr_reg_widx_page0 = HCR_IDX_INVALID;
 		endcase
 	endfunction
 
-	wire hcr_we_ok = (reg_waddr == GHCI_REG_CTRL) ||
-	                  (reg_waddr == GHCI_REG_FAULT_INFO) ||
-	                  (reg_waddr == GHCI_REG_IRQ_STATUS) ||
-	                  (reg_waddr == GHCI_REG_IRQ_ENABLE) ||
-	                  (reg_waddr == GHCI_REG_IRQ_SET) ||
-	                  (reg_waddr == GHCI_REG_RING_BASE_LO) ||
-	                  (reg_waddr == GHCI_REG_RING_BASE_HI) ||
-	                  (reg_waddr == GHCI_REG_RING_SIZE) ||
-	                  (reg_waddr == GHCI_REG_RING_WPTR) ||
-	                  (reg_waddr == GHCI_REG_WDT_CYCLES) ||
-	                  (reg_waddr == GHCI_REG_CP_HEAP_BASE) ||
-	                  (reg_waddr == GHCI_REG_CP_HEAP_LIMIT) ||
-	                  (reg_waddr == GHCI_LEGACY_FENCE_LAST) ||
-	                  (reg_waddr >= 17'h00140 && reg_waddr <= 17'h003FF);
+	wire [9:0] widx_named = waddr_page0 ? hcr_reg_widx_page0(reg_waddr[9:0]) : HCR_IDX_INVALID;
+	wire hcr_we_ok = waddr_in_win || ((widx_named != HCR_IDX_INVALID) && (widx_named != HCR_IDX_SCRATCH));
 
 	/* Writes. */
 	assign hcr_we = reg_wr && hcr_we_ok;
-	assign hcr_widx = hcr_reg_widx(reg_waddr);
+	assign hcr_widx = (widx_named != HCR_IDX_INVALID) ? widx_named :
+		(waddr_in_win ? {2'b00, reg_waddr[9:2]} : HCR_IDX_INVALID);
 	assign hcr_wdata = reg_wdata;
 `ifdef SYNTH_KINTEX7
 	(* keep = "true", dont_touch = "true" *) wire regs_rst_high;
@@ -608,9 +600,9 @@ module atg_cp_regs #(
 		end
 	endgenerate
 `else
-	assign reg_rdata = rd_state_q ? state_rdata :
-		rd_hcr_q ? (own | ctl_rdata | irq_rdata | ring_rdata | fence_rdata | dbg_rdata | x_rdata) :
-		32'd0;
+	wire [31:0] hcr_non_x_rdata = (own | ctl_rdata) | ((irq_rdata | ring_rdata) | (fence_rdata | dbg_rdata));
+	wire [31:0] hcr_rdata_w = rd_hcr_q ? (hcr_non_x_rdata | x_rdata) : 32'd0;
+	assign reg_rdata = rd_state_q ? state_rdata : hcr_rdata_w;
 `endif
 
 	wire unused_ok = &{1'b0, reg_waddr[1:0], reg_raddr[1:0], inc_co, raddr_q[1:0],

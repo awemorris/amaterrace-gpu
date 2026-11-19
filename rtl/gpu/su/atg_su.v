@@ -518,6 +518,7 @@ module atg_su #(
 	wire [15:0] wc_pc;
 	wire [WARP_W-1:0] q_warp;
 	wire [WARP_W-1:0] a_q_warp;
+	wire [WARP_W*4-1:0] a_q_warp_rep;
 	wire [159:0] q_info;
 	wire [31:0] q_exec, q_killed;
 	wire init_valid;
@@ -541,6 +542,7 @@ module atg_su #(
 	wire [DW-1:0] w_data;
 	wire [NPHYS-1:0] w_lanes;
 	wire r_en;
+	wire [7:0] r_en_rep;
 	wire [WARP_W-1:0] r_warp;
 	wire [GRP_W-1:0] r_grp;
 	wire [11:0] r_regs;
@@ -581,36 +583,42 @@ module atg_su #(
 	wire x_end;
 	/* Short results. */
 	wire alu_s_valid;
+	wire [7:0] alu_s_valid_rep;
 	wire [WARP_W-1:0] alu_s_warp;
 	wire [GRP_W-1:0] alu_s_grp;
 	wire [6:0] alu_s_rd;
 	wire [DW-1:0] alu_s_data;
 	wire [NPHYS-1:0] alu_s_lanes;
 	wire fpu_s_valid;
+	wire [7:0] fpu_s_valid_rep;
 	wire [WARP_W-1:0] fpu_s_warp;
 	wire [GRP_W-1:0] fpu_s_grp;
 	wire [6:0] fpu_s_rd;
 	wire [DW-1:0] fpu_s_data;
 	wire [NPHYS-1:0] fpu_s_lanes;
 	wire pk_s_valid;
+	wire [7:0] pk_s_valid_rep;
 	wire [WARP_W-1:0] pk_s_warp;
 	wire [GRP_W-1:0] pk_s_grp;
 	wire [6:0] pk_s_rd;
 	wire [DW-1:0] pk_s_data;
 	wire [NPHYS-1:0] pk_s_lanes;
 	wire lane_s_valid;
+	wire [7:0] lane_s_valid_rep;
 	wire [WARP_W-1:0] lane_s_warp;
 	wire [GRP_W-1:0] lane_s_grp;
 	wire [6:0] lane_s_rd;
 	wire [DW-1:0] lane_s_data;
 	wire [NPHYS-1:0] lane_s_lanes;
 	wire lda_s_valid;
+	wire [7:0] lda_s_valid_rep;
 	wire [WARP_W-1:0] lda_s_warp;
 	wire [GRP_W-1:0] lda_s_grp;
 	wire [6:0] lda_s_rd;
 	wire [DW-1:0] lda_s_data;
 	wire [NPHYS-1:0] lda_s_lanes;
 	wire exec_s_valid;
+	wire [7:0] exec_s_valid_rep;
 	wire [WARP_W-1:0] exec_s_warp;
 	wire [GRP_W-1:0] exec_s_grp;
 	wire [6:0] exec_s_rd;
@@ -715,7 +723,7 @@ module atg_su #(
 
 	atg_su_sched #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .NSU(NSU), .SU_INDEX(SU_INDEX),
-		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1)
+		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1), .USE_QW_REP(1)
 	) sched (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick), .cs_mesh(cs_mesh), .cs_is_mesh_act(cs_is_mesh_act),
@@ -726,7 +734,7 @@ module atg_su #(
 		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake | r_wake),
 		.warp_ready(warp_ready),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
-		.q_warp(a_q_warp), .q_info(q_info),
+		.q_warp(a_q_warp), .q_warp_rep(a_q_warp_rep), .q_info(q_info),
 		.init_valid(init_valid), .init_warp(init_warp), .init_mask(init_mask),
 		.pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp), .busy(sched_busy)
 	);
@@ -815,13 +823,13 @@ module atg_su #(
 	);
 
 	atg_su_rf #(
-		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .NREGS(NREGS), .REG_IO(1)
+		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .NREGS(NREGS), .REG_IO(1), .USE_REN_REP(1)
 	) rf (
 		.scrub(scrub_rf), .scrub_busy(scb_rf),
 		.clk(clk), .rst_n(rst_n),
 		.w_en(w_en), .w_warp(w_warp), .w_grp(w_grp), .w_reg(w_reg), .w_data(w_data),
 		.w_lanes(w_lanes),
-		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_reg1(r_regs[5:0]), .r_reg2(r_regs[11:6]),
+		.r_en(r_en), .r_en_rep(r_en_rep), .r_warp(r_warp), .r_grp(r_grp), .r_reg1(r_regs[5:0]), .r_reg2(r_regs[11:6]),
 		.r_data1(r_data1), .r_data2(r_data2)
 	);
 
@@ -851,6 +859,7 @@ module atg_su #(
 	wire [GRP_W-1:0] alu_fwd_ex3_grp;
 	wire [6:0] alu_fwd_ex3_rd;
 	wire [UOP_W-1:0] x_uop_pt_ded;
+	wire [2*UOP_W-1:0] x_uop_rep;
 
 	atg_su_opd #(
 		.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
@@ -859,13 +868,13 @@ module atg_su #(
 		.clk(clk), .rst_n(rst_n),
 		.i_valid(i_valid), .i_ready(i_ready), .i_warp(i_warp), .i_pc(i_pc), .i_uop(i_uop),
 		.i_sbe(i_sbe),
-		.r_en(r_en), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
+		.r_en(r_en), .r_en_rep(r_en_rep), .r_warp(r_warp), .r_grp(r_grp), .r_regs(r_regs),
 		.r_data({r_data2, r_data1}),
 		.cr_en(cr_en), .cr_idx(cr_idx), .cr_data(cr_data),
-		.a_q_warp(a_q_warp), .q_warp(q_warp), .q_info(q_info), .q_exec(q_exec), .q_killed(q_killed),
+		.a_q_warp(a_q_warp), .a_q_warp_rep(a_q_warp_rep), .q_warp(q_warp), .q_info(q_info), .q_exec(q_exec), .q_killed(q_killed),
 		.rq_pop(rq_pop), .rq_data(rq_pop_data),
 		.x_valid(x_valid), .x_warp(x_warp), .x_grp(x_grp), .x_last(x_last), .x_sbe(x_sbe),
-		.x_pc(x_pc), .x_uop(x_uop), .x_uop_pt(x_uop_pt_ded), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
+		.x_pc(x_pc), .x_uop(x_uop), .x_uop_pt(x_uop_pt_ded), .x_uop_rep(x_uop_rep), .x_a(x_a), .x_b(x_b), .x_c(x_c), .x_mask(x_mask),
 		.x_info(x_info),
 		.unit_ready(unit_ready),
 		.fwd_alu_ex3_valid(alu_fwd_ex3_valid), .fwd_alu_ex3_warp(alu_fwd_ex3_warp), .fwd_alu_ex3_grp(alu_fwd_ex3_grp),
@@ -899,7 +908,10 @@ module atg_su #(
 			assign x_b_grp[g_grp*DW +: DW] = x_b;
 			assign x_c_grp[g_grp*DW +: DW] = x_c;
 			assign x_mask_grp[g_grp*NPHYS*2 +: NPHYS*2] = x_mask;
-			assign x_uop_grp[g_grp*UOP_W +: UOP_W] = x_uop;
+			assign x_uop_grp[g_grp*UOP_W +: UOP_W] =
+				(g_grp == 1 || g_grp == 2 || g_grp == 4) ? x_uop_rep[0 +: UOP_W] :
+				(g_grp == 3 || (g_grp >= 6 && g_grp <= 12)) ? x_uop_rep[UOP_W +: UOP_W] :
+				x_uop;
 			assign x_valid_grp[g_grp] = x_valid;
 			assign x_last_grp[g_grp]  = x_last;
 			assign x_warp_grp[g_grp*WARP_W +: WARP_W] = x_warp;
@@ -1024,7 +1036,7 @@ module atg_su #(
 		.x_valid(x_valid_alu), .x_warp(x_warp_alu), .x_grp(x_grp_alu), .x_last(x_last_alu), .x_sbe(x_sbe_alu),
 		.x_pc(x_pc), .x_uop(x_uop_alu), .x_a(x_a_alu), .x_b(x_b_alu), .x_c(x_c_alu), .x_mask(x_mask_alu),
 		.x_info(x_info), .x_ready(alu_ready),
-		.s_valid(alu_s_valid), .s_warp(alu_s_warp), .s_grp(alu_s_grp), .s_rd(alu_s_rd),
+		.s_valid(alu_s_valid), .s_valid_rep(alu_s_valid_rep), .s_warp(alu_s_warp), .s_grp(alu_s_grp), .s_rd(alu_s_rd),
 		.s_data(alu_s_data), .s_lanes(alu_s_lanes),
 		.fwd_ex3_valid(alu_fwd_ex3_valid), .fwd_ex3_warp(alu_fwd_ex3_warp), .fwd_ex3_grp(alu_fwd_ex3_grp),
 		.fwd_ex3_rd(alu_fwd_ex3_rd),
@@ -1040,7 +1052,7 @@ module atg_su #(
 		.x_valid(x_valid_fpu), .x_warp(x_warp_fpu), .x_grp(x_grp_fpu), .x_last(x_last_fpu), .x_sbe(x_sbe_fpu),
 		.x_pc(x_pc), .x_uop(x_uop_fpu), .x_a(x_a_fpu), .x_b(x_b_fpu), .x_c(x_c_fpu), .x_mask(x_mask_fpu),
 		.x_info(x_info), .x_ready(fpu_ready),
-		.s_valid(fpu_s_valid), .s_warp(fpu_s_warp), .s_grp(fpu_s_grp), .s_rd(fpu_s_rd),
+		.s_valid(fpu_s_valid), .s_valid_rep(fpu_s_valid_rep), .s_warp(fpu_s_warp), .s_grp(fpu_s_grp), .s_rd(fpu_s_rd),
 		.s_data(fpu_s_data), .s_lanes(fpu_s_lanes),
 		.fwd_ex4_valid(fpu_fwd_ex4_valid), .fwd_ex4_warp(fpu_fwd_ex4_warp), .fwd_ex4_grp(fpu_fwd_ex4_grp),
 		.fwd_ex4_rd(fpu_fwd_ex4_rd), .fwd_ex4_data(fpu_fwd_ex4_data), .fwd_ex4_lanes(fpu_fwd_ex4_lanes),
@@ -1054,7 +1066,7 @@ module atg_su #(
 		.x_valid(x_valid_pk), .x_warp(x_warp_pk), .x_grp(x_grp_pk), .x_last(x_last_pk), .x_sbe(x_sbe_pk),
 		.x_pc(x_pc), .x_uop(x_uop_pk), .x_a(x_a_pk), .x_b(x_b_pk), .x_c(x_c_pk), .x_mask(x_mask_pk),
 		.x_info(x_info), .x_ready(pk_ready),
-		.s_valid(pk_s_valid), .s_warp(pk_s_warp), .s_grp(pk_s_grp), .s_rd(pk_s_rd),
+		.s_valid(pk_s_valid), .s_valid_rep(pk_s_valid_rep), .s_warp(pk_s_warp), .s_grp(pk_s_grp), .s_rd(pk_s_rd),
 		.s_data(pk_s_data), .s_lanes(pk_s_lanes)
 	);
 
@@ -1063,7 +1075,7 @@ module atg_su #(
 		.x_valid(x_valid_lane), .x_warp(x_warp_lane), .x_grp(x_grp_lane), .x_last(x_last_lane), .x_sbe(x_sbe_lane),
 		.x_pc(x_pc), .x_uop(x_uop_lane), .x_a(x_a_lane), .x_b(x_b_lane), .x_c(x_c_lane), .x_mask(x_mask_lane),
 		.x_info(x_info), .x_ready(lane_ready), .sg_emit_done(lane_sg_emit_done),
-		.s_valid(lane_s_valid), .s_warp(lane_s_warp), .s_grp(lane_s_grp), .s_rd(lane_s_rd),
+		.s_valid(lane_s_valid), .s_valid_rep(lane_s_valid_rep), .s_warp(lane_s_warp), .s_grp(lane_s_grp), .s_rd(lane_s_rd),
 		.s_data(lane_s_data), .s_lanes(lane_s_lanes)
 	);
 
@@ -1073,7 +1085,7 @@ module atg_su #(
 		.x_valid(x_valid_lda), .x_warp(x_warp_lda), .x_grp(x_grp_lda), .x_last(x_last_lda), .x_sbe(x_sbe_lda),
 		.x_pc(x_pc), .x_uop(x_uop_lda), .x_a(x_a_lda), .x_b(x_b_lda), .x_c(x_c_lda), .x_mask(x_mask_lda),
 		.x_info(x_info), .x_ready(lda_ready),
-		.s_valid(lda_s_valid), .s_warp(lda_s_warp), .s_grp(lda_s_grp), .s_rd(lda_s_rd),
+		.s_valid(lda_s_valid), .s_valid_rep(lda_s_valid_rep), .s_warp(lda_s_warp), .s_grp(lda_s_grp), .s_rd(lda_s_rd),
 		.s_data(lda_s_data), .s_lanes(lda_s_lanes),
 		.pw_we(fl_pw_we), .pw_warp(fl_slot_rf), .pw_addr(fl_pw_addr), .pw_data(fl_pw_data)
 	);
@@ -1083,7 +1095,7 @@ module atg_su #(
 		.x_valid(x_valid_exec), .x_warp(x_warp_exec), .x_grp(x_grp_exec), .x_last(x_last_exec), .x_sbe(x_sbe_exec),
 		.x_pc(x_pc), .x_uop(x_uop_exec), .x_a(x_a_exec), .x_b(x_b_exec), .x_c(x_c_exec), .x_mask(x_mask_exec),
 		.x_info(x_info), .x_ready(exec_ready),
-		.s_valid(exec_s_valid), .s_warp(exec_s_warp), .s_grp(exec_s_grp), .s_rd(exec_s_rd),
+		.s_valid(exec_s_valid), .s_valid_rep(exec_s_valid_rep), .s_warp(exec_s_warp), .s_grp(exec_s_grp), .s_rd(exec_s_rd),
 		.s_data(exec_s_data), .s_lanes(exec_s_lanes),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
 		.q_warp(q_warp), .q_exec(q_exec), .q_killed(q_killed),
@@ -1245,9 +1257,10 @@ module atg_su #(
 	);
 
 	atg_su_wb #(.NPHYS(NPHYS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .NS(6), .NL(6),
-		.SHORT_LAT(SHORT_LAT), .REG_LONG(1)) wb (
+		.SHORT_LAT(SHORT_LAT), .REG_LONG(1), .USE_SV_REP(1)) wb (
 		.clk(clk), .rst_n(rst_n),
 		.s_valid({exec_s_valid, lda_s_valid, lane_s_valid, pk_s_valid, fpu_s_valid, alu_s_valid}),
+		.s_valid_rep({exec_s_valid_rep, lda_s_valid_rep, lane_s_valid_rep, pk_s_valid_rep, fpu_s_valid_rep, alu_s_valid_rep}),
 		.s_warp({exec_s_warp, lda_s_warp, lane_s_warp, pk_s_warp, fpu_s_warp, alu_s_warp}),
 		.s_grp({exec_s_grp, lda_s_grp, lane_s_grp, pk_s_grp, fpu_s_grp, alu_s_grp}),
 		.s_rd({exec_s_rd, lda_s_rd, lane_s_rd, pk_s_rd, fpu_s_rd, alu_s_rd}),

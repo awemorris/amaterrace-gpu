@@ -68,6 +68,7 @@ module atg_su_fpu #(
 	output wire x_ready,
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -226,6 +227,7 @@ module atg_su_fpu #(
 
 	/* Pipeline control registers for Stages 1 to 6 */
 	(* shreg_extract = "no", max_fanout = 12 *) reg s1_valid, s2_valid, s3_valid, s4_valid, s5_valid, s6_valid;
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] s6_valid_rep;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [WARP_W-1:0] s1_warp, s2_warp, s3_warp, s4_warp, s5_warp, s6_warp;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [GRP_W-1:0]  s1_grp,  s2_grp,  s3_grp,  s4_grp,  s5_grp,  s6_grp;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [6:0]        s1_rd,   s2_rd,   s3_rd,   s4_rd,   s5_rd,   s6_rd;
@@ -234,6 +236,7 @@ module atg_su_fpu #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			s1_valid <= 1'b0; s2_valid <= 1'b0; s3_valid <= 1'b0; s4_valid <= 1'b0; s5_valid <= 1'b0; s6_valid <= 1'b0;
+			s6_valid_rep <= 8'd0;
 			s1_warp  <= 0;    s2_warp  <= 0;    s3_warp  <= 0;    s4_warp  <= 0;    s5_warp  <= 0;    s6_warp  <= 0;
 			s1_grp   <= 0;    s2_grp   <= 0;    s3_grp   <= 0;    s4_grp   <= 0;    s5_grp   <= 0;    s6_grp   <= 0;
 			s1_rd    <= 0;    s2_rd    <= 0;    s3_rd    <= 0;    s4_rd    <= 0;    s5_rd    <= 0;    s6_rd    <= 0;
@@ -250,6 +253,7 @@ module atg_su_fpu #(
 			s4_valid <= s3_valid; s4_warp <= s3_warp; s4_grp <= s3_grp; s4_rd <= s3_rd; s4_mask  <= s3_mask;
 			s5_valid <= s4_valid; s5_warp <= s4_warp; s5_grp <= s4_grp; s5_rd <= s4_rd; s5_mask  <= s4_mask;
 			s6_valid <= s5_valid; s6_warp <= s5_warp; s6_grp <= s5_grp; s6_rd <= s5_rd; s6_lanes <= s5_mask;
+			s6_valid_rep <= {8{s5_valid}};
 		end
 	end
 
@@ -398,6 +402,7 @@ module atg_su_fpu #(
 	end
 
 	assign s_valid = s6_valid;
+	assign s_valid_rep = s6_valid_rep;
 	assign s_warp  = s6_warp;
 	assign s_grp   = s6_grp;
 	assign s_rd    = s6_rd;

@@ -58,7 +58,7 @@ module atg_su_wb_tb;
 	always #5 clk = !clk;
 
 	atg_su_wb #(.NPHYS(NPHYS), .NS(NS), .NL(NL)) dut (
-		.clk(clk), .rst_n(rst_n), .s_valid(s_valid), .s_warp(s_warp), .s_grp(s_grp),
+		.clk(clk), .rst_n(rst_n), .s_valid(s_valid), .s_valid_rep({(NS*8){1'b0}}), .s_warp(s_warp), .s_grp(s_grp),
 		.s_rd(s_rd), .s_data(s_data), .s_lanes(s_lanes), .l_valid(l_valid),
 		.l_ready(l_ready), .l_warp(l_warp), .l_grp(l_grp), .l_rd(l_rd), .l_data(l_data),
 		.l_lanes(l_lanes), .l_wr(l_wr), .l_last(l_last), .l_sbe(l_sbe), .l_cls(l_cls),

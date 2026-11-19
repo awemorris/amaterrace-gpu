@@ -89,21 +89,35 @@ module atg_dc_tmds (
 		wire [7:0] d_a = rgb_a[8*c +: 8];
 		wire [7:0] d_b = rgb_b[8*c +: 8];
 		wire [3:0] d1;
-		wire d1_co_unused;
+		/* xnor_ iff d1 > 4 or (d1 == 4 && !d[0]), which is algebraically
+		 * identical to (ones3(d_a[3:1]) + ones4(d_a[7:4]) >= 4). */
+		wire [1:0] d_c0_3 = {
+			(d_a[1] & d_a[2]) | (d_a[1] & d_a[3]) | (d_a[2] & d_a[3]),
+			d_a[1] ^ d_a[2] ^ d_a[3]
+		};
+		wire [2:0] d_c1 = ones4(d_a[7:4]);
+		wire d1_co_unused = (d_c0_3 == 2'd0) && (d_c1 == 3'd0);
+		assign d1 = {1'b0, d_c1};
+		wire xnor_ = (d_c1 >= 3'd4) ||
+			(d_c1 == 3'd3 && d_c0_3 >= 2'd1) ||
+			(d_c1 == 3'd2 && d_c0_3 >= 2'd2) ||
+			(d_c1 == 3'd1 && d_c0_3 == 2'd3);
 
-		am_add #(.W(4)) a_d1 (.a({1'b0, ones4(d_a[3:0])}), .b({1'b0, ones4(d_a[7:4])}), .ci(1'b0),
-			.s(d1), .co(d1_co_unused));
-		wire xnor_ = d1 > 4'd4 || (d1 == 4'd4 && !d_a[0]);
-
+		/* Balanced <= 3-level XOR trees for qm_xor[7:0] */
+		wire px_01 = d_b[0] ^ d_b[1];
+		wire px_23 = d_b[2] ^ d_b[3];
+		wire px_45 = d_b[4] ^ d_b[5];
+		wire px_67 = d_b[6] ^ d_b[7];
+		wire px_03 = px_01 ^ px_23;
 		wire [7:0] qm_xor;
 		assign qm_xor[0] = d_b[0];
-		assign qm_xor[1] = d_b[0] ^ d_b[1];
-		assign qm_xor[2] = ^d_b[2:0];
-		assign qm_xor[3] = ^d_b[3:0];
-		assign qm_xor[4] = ^d_b[4:0];
-		assign qm_xor[5] = ^d_b[5:0];
-		assign qm_xor[6] = ^d_b[6:0];
-		assign qm_xor[7] = ^d_b[7:0];
+		assign qm_xor[1] = px_01;
+		assign qm_xor[2] = px_01 ^ d_b[2];
+		assign qm_xor[3] = px_03;
+		assign qm_xor[4] = px_03 ^ d_b[4];
+		assign qm_xor[5] = px_03 ^ px_45;
+		assign qm_xor[6] = px_03 ^ px_45 ^ d_b[6];
+		assign qm_xor[7] = px_03 ^ (px_45 ^ px_67);
 
 		wire [8:0] next_qm = {
 			!xnor_,
@@ -200,7 +214,7 @@ module atg_dc_tmds (
 			end
 		end
 
-		wire unused_ok = &{1'b0, d1_co_unused, n1_co_unused, dh_unused, cnt_next_co_unused};
+		wire unused_ok = &{1'b0, d1, d1_co_unused, n1_co_unused, dh_unused, cnt_next_co_unused};
 	end
 	endgenerate
 endmodule

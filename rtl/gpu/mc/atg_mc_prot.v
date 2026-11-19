@@ -361,13 +361,17 @@ module atg_mc_prot #(
 
 `ifdef MUT_PROT_RECHECK
 	wire chg = 1'b0;
+	wire chg_rev = 1'b0;
 `else
-	wire chg = fill_raw || inv_valid || gw_valid;
+	wire chg_rev = inv_valid || gw_valid;
+	wire chg = fill_raw || chg_rev;
 `endif
 
 	wire x_valid = P && !chg && j2_v;
-	wire x_axi = x_valid && !(j2_src_p && j2_p_err) && s_ok;
-	wire x_bad = x_valid && (j2_src_p && j2_p_err || s_refuse);
+	/* fill_raw only inserts new PLB grants and never revokes an already-checked hit/refuse in j2 */
+	wire x_rev_ok = P && !chg_rev && j2_v;
+	wire x_axi = x_rev_ok && !(j2_src_p && j2_p_err) && s_ok;
+	wire x_bad = x_rev_ok && (j2_src_p && j2_p_err || s_refuse);
 	wire x_walk = x_valid && j2_src_p && !j2_p_err && s_miss;
 	wire j_to_p = x_valid && !j2_src_p && s_miss && !p_v;
 
@@ -441,7 +445,7 @@ module atg_mc_prot #(
 		end else if (flush || !P) begin
 			j2_v <= 1'b0;
 		end else begin
-			if (j2_v && chg) begin
+			if (j2_v && (chg_rev || (fill_raw && !(s_ok || s_refuse)))) begin
 				j2_v <= 1'b0;
 			end else if (j1_advance) begin
 				j2_v <= 1'b1;

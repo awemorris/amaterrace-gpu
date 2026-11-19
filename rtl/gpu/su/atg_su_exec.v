@@ -45,6 +45,7 @@ module atg_su_exec #(
 	output wire x_ready,
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -140,6 +141,7 @@ module atg_su_exec #(
 	am_add #(.W(16)) u_pc_tgt (.a(x_pc), .b(imm[15:0]), .ci(1'b0), .s(pc_tgt), .co(pc_co_unused[1]));
 
 	(* max_fanout = 12 *) reg [SHORT_LAT-1:0] pipe_v;
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] pipe_v_rep;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [EW-2:0] pipe_d [0:SHORT_LAT-1];
 	(* max_fanout = 12 *) reg wc_v;
 	(* max_fanout = 12 *) reg [WARP_W-1:0] wc_w;
@@ -166,6 +168,7 @@ module atg_su_exec #(
 			wc_pc_p1 <= 16'd0;
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe_v[k] <= 1'b0;
+			pipe_v_rep <= 8'd0;
 		end else begin
 			wc_v <= wc_ce_ctrl;
 			if (wc_ce_ctrl) begin
@@ -180,6 +183,7 @@ module atg_su_exec #(
 			pipe_v[0] <= s_in;
 			for (k = 1; k < SHORT_LAT; k = k + 1)
 				pipe_v[k] <= pipe_v[k-1];
+			pipe_v_rep <= (SHORT_LAT > 1) ? {8{pipe_v[SHORT_LAT-2]}} : {8{s_in}};
 			if (wc_ce_tgt)
 				wc_pc_tgt <= pc_tgt;
 			if (wc_ce_p1)
@@ -312,6 +316,7 @@ module atg_su_exec #(
 
 	wire [EW-2:0] o = pipe_d[SHORT_LAT-1];
 	assign s_valid = pipe_v[SHORT_LAT-1];
+	assign s_valid_rep = pipe_v_rep;
 	assign s_warp = o[EW-2 -: WARP_W];
 	assign s_grp = o[EW-2-WARP_W -: GRP_W];
 	assign s_rd = o[EW-2-WARP_W-GRP_W -: 7];

@@ -64,7 +64,7 @@ module atg_cp_ctl_tb;
 		.mc_fault_write(mc_fault_write),
 		.src_fault(src_fault), .src_kind(src_kind), .src_addr(src_addr), .src_tag(src_tag),
 		.src_stage(src_stage),
-		.run(run), .halt(halt), .ctrl_irq_global(ctrl_irq_global), .quiesce(quiesce), .mc_flush(mc_flush),
+		.run(run), .halt(halt), .ctrl_irq_global(ctrl_irq_global), .quiesce(quiesce), .mc_flush(mc_flush), .mc_flush_rep(),
 		.core_rst_n(core_rst_n), .open(open), .cp_state(cp_state), .lc_state(lc_state), .host_kick(host_kick),
 		.step(step), .ev_halted(ev_halted), .ev_fault(ev_fault), .ev_wdt(ev_wdt),
 		.aperture_base(ap_base), .aperture_limit(ap_limit)
@@ -96,7 +96,7 @@ module atg_cp_ctl_tb;
 		.mc_fault_write(1'b0),
 		.src_fault(8'd0), .src_kind(32'd0), .src_addr(256'd0), .src_tag(64'd0),
 		.src_stage(32'd0),
-		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(),
+		.run(), .halt(), .ctrl_irq_global(), .quiesce(), .mc_flush(), .mc_flush_rep(),
 		.core_rst_n(), .open(), .cp_state(), .lc_state(), .host_kick(),
 		.step(), .ev_halted(), .ev_fault(), .ev_wdt(),
 		.aperture_base(), .aperture_limit()

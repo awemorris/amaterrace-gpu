@@ -174,6 +174,7 @@ module atg_blt_rsv #(
 
 	reg [2:0] state;
 	reg fail;
+	(* keep = "true" *) reg fail_px_r, fail_q_r;
 
 	reg [16:0] x0, y0, x1, y1;
 	wire empty = x1 <= x0 || y1 <= y0;
@@ -187,7 +188,7 @@ module atg_blt_rsv #(
 
 	/* S_RCALC: the row's source byte range and lines. */
 	wire [2:0] sh4;	/* log2 of 4 ps, modulo 8 as the 3-bit sum was */
-	wire [ADDR_W-1:0] sx_b, w_b, r_first, r_end, r_last;
+	wire [ADDR_W-1:0] sx_b, w_b, w_bm1, r_first, r_last;
 	wire [LA_W-1:0] r_span, r_nl;
 	wire [5:0] rc_co_unused;
 
@@ -197,10 +198,10 @@ module atg_blt_rsv #(
 	am_shift #(.W(ADDR_W), .SW(3)) h_w (.a({{(ADDR_W - 17){1'b0}}, width}), .amt(sh4), .left(1'b1), .arith(1'b0),
 		.y(w_b));
 	am_add #(.W(ADDR_W)) a_first (.a(src_row), .b(sx_b), .ci(1'b0), .s(r_first), .co(rc_co_unused[1]));
-	reg [ADDR_W-1:0] r_first_r;
+	reg [ADDR_W-1:0] r_first_r, w_bm1_r;
 	reg [ADDR_W-1:0] r_last_r;
-	am_add #(.W(ADDR_W)) a_end (.a(r_first_r), .b(w_b), .ci(1'b0), .s(r_end), .co(rc_co_unused[2]));
-	am_sub #(.W(ADDR_W)) s_last (.a(r_end), .b({ADDR_W{1'b0}}), .bi(1'b1), .d(r_last), .bo(rc_co_unused[3]));
+	am_sub #(.W(ADDR_W)) s_wbm1 (.a(w_b), .b({ADDR_W{1'b0}}), .bi(1'b1), .d(w_bm1), .bo(rc_co_unused[2]));
+	am_add #(.W(ADDR_W)) a_last (.a(r_first_r), .b(w_bm1_r), .ci(1'b0), .s(r_last), .co(rc_co_unused[3]));
 	am_sub #(.W(LA_W)) s_span (.a(r_last_r[ADDR_W-1:LS]), .b(r_first_r[ADDR_W-1:LS]), .bi(1'b0), .d(r_span),
 		.bo(rc_co_unused[4]));
 	am_add #(.W(LA_W)) a_nl (.a(r_span), .b({LA_W{1'b0}}), .ci(1'b1), .s(r_nl), .co(rc_co_unused[5]));
@@ -244,6 +245,7 @@ module atg_blt_rsv #(
 	/* The pixel path. */
 	wire px_rd_ready;
 	wire [DEPTH_LOG2:0] ln_count;
+	wire px_ln_pop;
 	wire px_wr_valid;
 	wire px_wr_ready;
 	wire [LA_W-1:0] px_wr_line;
@@ -262,16 +264,17 @@ module atg_blt_rsv #(
 	) px (
 		.clk(clk),
 		.rst_n(rst_n),
-		.stop(fail),
+		.stop(fail_px_r),
 		.psl(psl),
 		.fmt(m_fmt),
 		.tiled(m_tiled),
 		.rd_valid(desc_pend),
 		.rd_ready(px_rd_ready),
 		.rd_data(desc),
-		.ln_push(rsp_rd && !rsp_error && !fail),
+		.ln_push(rsp_rd && !rsp_error && !fail_px_r),
 		.ln_data(rsp_rdata),
 		.ln_count(ln_count),
+		.ln_pop(px_ln_pop),
 		.wr_valid(px_wr_valid),
 		.wr_ready(px_wr_ready),
 		.wr_line(px_wr_line),
@@ -286,6 +289,7 @@ module atg_blt_rsv #(
 	reg [LINE_BYTES-1:0] q_be;
 	reg [LBITS-1:0] q_wdata;
 	reg [DEPTH_LOG2:0] rd_out;
+	reg [DEPTH_LOG2+1:0] held_r;
 	reg [7:0] wr_out;
 
 	assign req_valid = q_valid;
@@ -296,9 +300,10 @@ module atg_blt_rsv #(
 	assign req_tag = {7'd0, q_write};
 
 	wire q_fire = q_valid && req_ready;
-	wire q_open = (!q_valid || q_fire) && !fail;
+	wire q_open = (!q_valid || q_fire) && !fail_q_r;
 	assign px_wr_ready = q_open && px_wr_valid;
-	wire [DEPTH_LOG2+1:0] held;
+	wire [DEPTH_LOG2+1:0] held_p1, held_m1, held_next;
+	wire [1:0] held_co_unused;
 	wire [DEPTH_LOG2:0] rd_up, rd_next;
 	wire [7:0] wr_up, wr_next;
 	wire [LA_W-1:0] rd_line_inc;
@@ -306,9 +311,12 @@ module atg_blt_rsv #(
 	wire [1:0] ydl_inc;
 	wire [12:0] q_co_unused;
 
-	/* The reads held (in flight, in the line FIFO, queued), and the counts' next values. */
-	am_add #(.W(DEPTH_LOG2 + 2)) a_held (.a({1'b0, rd_out}), .b({1'b0, ln_count}), .ci(q_valid && !q_write), .s(held),
-		.co(q_co_unused[0]));
+	/* Track held reads (+rd_take - px_ln_pop) with local FF to decouple lq.rp -> rsv FSM. */
+	am_add #(.W(DEPTH_LOG2 + 2)) a_held_p1 (.a(held_r), .b({{(DEPTH_LOG2+1){1'b0}}, 1'b1}), .ci(1'b0),
+		.s(held_p1), .co(held_co_unused[0]));
+	am_sub #(.W(DEPTH_LOG2 + 2)) s_held_m1 (.a(held_r), .b({{(DEPTH_LOG2+1){1'b0}}, 1'b1}), .bi(1'b0),
+		.d(held_m1), .bo(held_co_unused[1]));
+	assign q_co_unused[0] = 1'b0;
 	am_add #(.W(DEPTH_LOG2 + 1)) a_rd (.a(rd_out), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(q_fire && !q_write), .s(rd_up),
 		.co(q_co_unused[1]));
 	am_sub #(.W(DEPTH_LOG2 + 1)) s_rd (.a(rd_up), .b({(DEPTH_LOG2 + 1){1'b0}}), .bi(rsp_rd), .d(rd_next),
@@ -326,9 +334,10 @@ module atg_blt_rsv #(
 `ifdef MUT_RSV_CREDIT
 	wire credit = 1'b1;	/* no credit */
 `else
-	wire credit = held < DEPTH;
+	wire credit = held_r < DEPTH;
 `endif
 	wire rd_take = q_open && !px_wr_valid && state == S_RISSUE && rd_left != 17'd0 && credit;
+	assign held_next = (rd_take == px_ln_pop) ? held_r : (rd_take ? held_p1 : held_m1);
 
 	assign busy = state != S_IDLE;
 
@@ -336,6 +345,9 @@ module atg_blt_rsv #(
 		if (!rst_n) begin
 			state <= S_IDLE;
 			fail <= 1'b0;
+			fail_px_r <= 1'b0;
+			fail_q_r <= 1'b0;
+			held_r <= {(DEPTH_LOG2 + 2){1'b0}};
 			done <= 1'b0;
 			error <= 1'b0;
 			error_kind <= 4'd0;
@@ -370,8 +382,15 @@ module atg_blt_rsv #(
 			/* The port and the outstanding requests. */
 			rd_out <= rd_next;
 			wr_out <= wr_next;
-			if (rsp_valid && rsp_error)
+			if (rsp_valid && rsp_error) begin
 				fail <= 1'b1;
+				fail_px_r <= 1'b1;
+				fail_q_r <= 1'b1;
+			end
+			if (state == S_IDLE || fail_q_r)
+				held_r <= {(DEPTH_LOG2 + 2){1'b0}};
+			else
+				held_r <= held_next;
 			if (q_fire)
 				q_valid <= 1'b0;
 			if (px_wr_ready) begin
@@ -395,6 +414,8 @@ module atg_blt_rsv #(
 			S_IDLE:
 				if (kick) begin
 					fail <= 1'b0;
+					fail_px_r <= 1'b0;
+					fail_q_r <= 1'b0;
 					psl <= o_psl;
 					m_fmt <= o_fmt[2:0];
 					m_tiled <= s_resolve[8];
@@ -431,6 +452,7 @@ module atg_blt_rsv #(
 				end else begin
 					state <= S_RCALC1;
 					r_first_r <= r_first;
+					w_bm1_r   <= w_bm1;
 				end
 			S_RCALC1:
 				if (fail) begin
@@ -490,7 +512,7 @@ module atg_blt_rsv #(
 `endif
 
 	wire unused_ok = &{1'b0, o_fmt[3], c_fill, c_ok, rsp_tag, r_nl[LA_W-1:17], r_last_r[LS-1:0], rc_co_unused,
-		st_co_unused, q_co_unused, unused_rsv_src_slice, unused_rsv_dst_slice, unused_rsv_depth};
+		st_co_unused, q_co_unused, held_co_unused, ln_count, unused_rsv_src_slice, unused_rsv_dst_slice, unused_rsv_depth};
 endmodule
 
 `default_nettype wire

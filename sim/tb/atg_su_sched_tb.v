@@ -72,7 +72,7 @@ module atg_su_sched_tb;
 		.fb_valid(fb_valid), .fb_warp(fb_warp), .fb_kind(fb_kind), .wake(wake),
 		.warp_ready(4'b1111),
 		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
-		.q_warp(q_warp), .q_info(q_info), .init_valid(init_valid), .init_warp(init_warp),
+		.q_warp(q_warp), .q_warp_rep(8'd0), .q_info(q_info), .init_valid(init_valid), .init_warp(init_warp),
 		.init_mask(init_mask), .pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp),
 		.busy(busy)
 	);
@@ -85,7 +85,7 @@ module atg_su_sched_tb;
 		.f_addr(f_addr_b), .fb_valid(1'b0), .fb_warp(2'd0), .fb_kind(2'd0), .wake(4'd0),
 		.warp_ready(4'b1111),
 		.wc_valid(1'b0), .wc_warp(2'd0), .wc_op(2'd0), .wc_pc(16'd0),
-		.q_warp(q_warp), .q_info(q_info_b), .init_valid(init_valid_b),
+		.q_warp(q_warp), .q_warp_rep(8'd0), .q_info(q_info_b), .init_valid(init_valid_b),
 		.init_warp(init_warp_b), .init_mask(init_mask_b), .pt_ok(1'b1), .xr_valid(1'b0),
 		.xr_warp(2'd0), .busy(busy_b)
 	);

@@ -293,12 +293,28 @@ module atg_mc_l2 #(
 
 	wire hit = |way_hit;
 
-	/* Priority encoder for hit way */
+	/* Priority encoder for hit way (balanced 2-level tree for <= 10 cmos3 at 16 ways) */
 	wire [WAY_W-1:0] hit_way_idx;
 	wire hit_msb_nz;
-	am_msb #(.W(WAYS), .SW(WAY_W)) u_hit_msb (
-		.a(way_hit), .n(hit_way_idx), .nz(hit_msb_nz)
-	);
+	generate
+		if (WAYS == 16) begin : g_hm16
+			wire [3:0] g_nz;
+			wire [1:0] g_hi [0:3];
+			genvar gh;
+			for (gh = 0; gh < 4; gh = gh + 1) begin : g_grp
+				wire [3:0] wv = way_hit[gh*4 +: 4];
+				assign g_nz[gh] = |wv;
+				assign g_hi[gh] = wv[3] ? 2'd3 : wv[2] ? 2'd2 : wv[1] ? 2'd1 : 2'd0;
+			end
+			wire [1:0] top_g = g_nz[3] ? 2'd3 : g_nz[2] ? 2'd2 : g_nz[1] ? 2'd1 : 2'd0;
+			assign hit_way_idx = {top_g, g_hi[top_g]};
+			assign hit_msb_nz  = |g_nz;
+		end else begin : g_hm_gen
+			am_msb #(.W(WAYS), .SW(WAY_W)) u_hit_msb (
+				.a(way_hit), .n(hit_way_idx), .nz(hit_msb_nz)
+			);
+		end
+	endgenerate
 	wire unused_hit_nz = hit_msb_nz;
 
 	/* Registered lookup results captured at end of S_READ_WAIT (wait_phase == 1) */
@@ -502,8 +518,10 @@ module atg_mc_l2 #(
 	wire [TAG_W-1:0] flush_line_tag = way_tag_r[active_victim_way];
 	wire [LA_W-1:0] flush_line_addr = {flush_line_tag, flush_set};
 
-	/* Range check for Range Invalidation */
+	/* Range check for Range Invalidation (pre-registered in S_FLUSH_RWAIT) */
 	wire in_range = !inv_range_r || (flush_line_addr >= inv_base_r && flush_line_addr < inv_limit_r);
+	reg [LA_W-1:0] flush_line_addr_r;
+	reg            flush_in_range_r;
 
 	assign s_req_ready = (state == S_IDLE && ((!ctrl_inv_valid && !flush) || s_req_high)) ||
 	                     (state == S_FLUSH_STEP && s_req_high);
@@ -538,6 +556,8 @@ module atg_mc_l2 #(
 			inv_base_r <= {LA_W{1'b0}};
 			inv_limit_r <= {LA_W{1'b0}};
 			active_victim_way <= {WAY_W{1'b0}};
+			flush_line_addr_r <= {LA_W{1'b0}};
+			flush_in_range_r <= 1'b0;
 			req_write <= 1'b0;
 			req_line <= {LA_W{1'b0}};
 			req_be <= {LINE_BYTES{1'b0}};
@@ -646,7 +666,7 @@ module atg_mc_l2 #(
 						victim_tag_r   <= way_tag_r[victim_way_idx];
 						plru_lk_hit_s  <= {15{!req_nc && hit}};
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-							meta_lk_dirty[init_w]  <= !req_nc && hit && req_write && (hit_way_idx == init_w[WAY_W-1:0]);
+							meta_lk_dirty[init_w]  <= !req_nc && req_write && way_hit[init_w];
 							meta_vic_match[init_w] <= (victim_way_idx == init_w[WAY_W-1:0]);
 						end
 						st_lookup_s    <= {NSL{1'b1}};
@@ -847,6 +867,8 @@ module atg_mc_l2 #(
 						wait_phase <= 1'b1;
 					end else begin
 						wait_phase <= 1'b0;
+						flush_line_addr_r <= flush_line_addr;
+						flush_in_range_r  <= in_range;
 						state <= S_FLUSH_READ;
 					end
 				end
@@ -867,10 +889,10 @@ module atg_mc_l2 #(
 				end
 
 				S_FLUSH_READ: begin
-					if (in_range && inv_clean_r) begin
+					if (flush_in_range_r && inv_clean_r) begin
 						m_req_valid <= 1'b1;
 						m_req_write <= 1'b1;
-						m_req_line  <= flush_line_addr;
+						m_req_line  <= flush_line_addr_r;
 						m_req_be    <= {LINE_BYTES{1'b1}};
 						m_req_wdata <= evict_rdata;
 						m_req_user  <= {UW{1'b0}};

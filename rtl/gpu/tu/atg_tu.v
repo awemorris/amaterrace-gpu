@@ -286,6 +286,36 @@ module atg_tu #(
 		.count(order_count)
 	);
 
+	/* Replicated scalar order storage to cap per-FF fanout on cur_f32_* <= 32 */
+	reg [3:0] ord_wp, ord_rp;
+	wire [3:0] ord_wp_next, ord_rp_next;
+	wire ord_wp_co_unused, ord_rp_co_unused;
+	wire order_push = order_in_valid && order_in_ready;
+	wire order_pop  = order_out_valid && order_out_ready;
+	am_add #(.W(4)) u_ord_wp (.a(ord_wp), .b(4'd0), .ci(1'b1), .s(ord_wp_next), .co(ord_wp_co_unused));
+	am_add #(.W(4)) u_ord_rp (.a(ord_rp), .b(4'd0), .ci(1'b1), .s(ord_rp_next), .co(ord_rp_co_unused));
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ord_wp <= 4'd0;
+			ord_rp <= 4'd0;
+		end else begin
+			if (order_push) ord_wp <= ord_wp_next;
+			if (order_pop)  ord_rp <= ord_rp_next;
+		end
+	end
+	wire [17:0] ord_path_rep;
+	genvar gof;
+	generate
+		for (gof = 0; gof < 18; gof = gof + 1) begin : g_ord_rep
+			(* keep = "true" *) reg [15:0] ord_mem;
+			always @(posedge clk) begin
+				if (order_push)
+					ord_mem[ord_wp] <= f32;
+			end
+			assign ord_path_rep[gof] = ord_mem[ord_rp];
+		end
+	endgenerate
+
 	wire order_can_take = tc_ctl[4] || order_in_ready;
 	assign tc_ready = (f32 ? f_ready : u_ready) && order_can_take;
 
@@ -322,22 +352,17 @@ module atg_tu #(
 	end
 	endgenerate
 
-	/* In-order return based on order_fifo */
-	wire cur_is_f32 = order_path;
-	(* keep = "true" *) wire [3:0] cur_f32_g = {4{cur_is_f32}};
-	(* keep = "true" *) wire [33:0] cur_f32_s;
+	/* In-order return based on order_fifo (using replicated scalar FFs per slice group) */
+	wire cur_is_f32 = ord_path_rep[17];
 	genvar gs;
 	generate
 	for (gs = 0; gs < 32; gs = gs + 1) begin : g_tr_mux
-		assign cur_f32_s[gs] = cur_f32_g[gs / 9];
-		assign tr_data[gs*16 +: 16] = cur_f32_s[gs] ? f_tr_data[gs*16 +: 16] : u_tr_data[gs*16 +: 16];
+		assign tr_data[gs*16 +: 16] = ord_path_rep[gs / 2] ? f_tr_data[gs*16 +: 16] : u_tr_data[gs*16 +: 16];
 	end
 	endgenerate
-	assign cur_f32_s[32] = cur_f32_g[3];
-	assign cur_f32_s[33] = cur_f32_g[3];
-	assign tr_valid = order_out_valid && (cur_is_f32 ? f_tr_valid : u_tr_valid);
-	assign tr_tag   = cur_f32_s[32] ? f_tr_tag : u_tr_tag;
-	assign tr_last  = cur_f32_s[33] ? f_tr_last : u_tr_last;
+	assign tr_valid = order_out_valid && (ord_path_rep[17] ? f_tr_valid : u_tr_valid);
+	assign tr_tag   = ord_path_rep[16] ? f_tr_tag : u_tr_tag;
+	assign tr_last  = ord_path_rep[17] ? f_tr_last : u_tr_last;
 
 	wire tr_fire = tr_valid && tr_ready;
 	assign u_tr_ready = tr_fire && !cur_is_f32;
@@ -388,7 +413,8 @@ module atg_tu #(
 	end
 	endgenerate
 
-	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count, aniso_req_ready, aniso_samp_valid,
+	wire unused_tu_ok = &{1'b0, f_fifo_count, order_count, order_path, ord_wp_co_unused, ord_rp_co_unused,
+		aniso_req_ready, aniso_samp_valid,
 		aniso_samp_u, aniso_samp_v, aniso_samp_weight, aniso_res_valid, aniso_res_texel,
 		tc_bord, tc_lo, f_tr_ready_raw};
 endmodule

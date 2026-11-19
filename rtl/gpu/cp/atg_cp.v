@@ -159,6 +159,7 @@ module atg_cp #(
 
 	output wire mc_quiesce,
 	output wire mc_flush,
+	output wire [3:0] mc_flush_rep,
 	output wire l2_flush,
 	input wire l2_flush_done,
 	input wire l2_idle,
@@ -466,22 +467,6 @@ module atg_cp #(
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_op_s (.I0(s_open), .O(open_state));
 	(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_op_o (.I0(s_open), .O(open_out));
 `else
-	wire [31:0] reg_wdata_regs = reg_wdata;
-	wire [31:0] reg_wdata_ring = s_hcr_wdata;
-	wire [31:0] reg_wdata_ctl = s_hcr_wdata;
-	wire [31:0] reg_wdata_fence = s_hcr_wdata;
-	wire [31:0] reg_wdata_dbg = s_hcr_wdata;
-	wire [31:0] reg_wdata_irq = s_hcr_wdata;
-	wire [31:0] reg_wdata_state = s_hcr_wdata;
-	wire [31:0] reg_wdata_disp = s_hcr_wdata;
-	wire [3:0] reg_wstrb_regs = reg_wstrb;
-	wire [3:0] reg_wstrb_ring = reg_wstrb;
-	wire [3:0] reg_wstrb_ctl = reg_wstrb;
-	wire [3:0] reg_wstrb_irq = reg_wstrb;
-	wire [16:0] reg_waddr_regs = reg_waddr;
-	wire [11:0] reg_waddr_ctl = reg_waddr[11:0];
-	wire [11:0] reg_waddr_ring = reg_waddr[11:0];
-	wire [11:0] reg_waddr_sub = reg_waddr[11:0];
 	wire [1:0] blt_err_b = {2{blt_error}};
 	wire [1:0] cpu_fault_b = {2{cpu_fault}};
 	wire [2:0] rsp_err_b = {3{s_i_rsp_error}};
@@ -495,32 +480,76 @@ module atg_cp #(
 	wire open_ring = s_open;
 	wire open_state = s_open;
 	wire open_out = s_open;
-	wire hcr_we_ctl = s_hcr_we;
+	(* keep = "true" *) reg hcr_we_ctl, hcr_we_fence, hcr_we_dbg, hcr_we_disp, hcr_we_irq;
 	wire hcr_we_ring = s_hcr_we;
-	wire hcr_we_fence = s_hcr_we;
-	wire hcr_we_dbg = s_hcr_we;
-	wire hcr_we_disp = s_hcr_we;
-	wire hcr_we_irq = s_hcr_we;
 	wire [9:0] hcr_ridx_ctl = s_hcr_ridx;
 	wire [9:0] hcr_ridx_ring = s_hcr_ridx;
 	wire [9:0] hcr_ridx_fence = s_hcr_ridx;
 	wire [9:0] hcr_ridx_dbg = s_hcr_ridx;
 	wire [9:0] hcr_ridx_disp = s_hcr_ridx;
 	wire [9:0] hcr_ridx_irq = s_hcr_ridx;
-	wire [9:0] hcr_widx_ctl = s_hcr_widx;
+	(* keep = "true" *) reg [9:0] hcr_widx_ctl, hcr_widx_fence, hcr_widx_dbg, hcr_widx_disp, hcr_widx_irq;
 	wire [9:0] hcr_widx_ring = s_hcr_widx;
-	wire [9:0] hcr_widx_fence = s_hcr_widx;
-	wire [9:0] hcr_widx_dbg = s_hcr_widx;
-	wire [9:0] hcr_widx_disp = s_hcr_widx;
-	wire [9:0] hcr_widx_irq = s_hcr_widx;
-	wire [31:0] hcr_wmask_ctl = s_hcr_wmask;
+	(* keep = "true" *) reg [31:0] hcr_wmask_ctl, hcr_wmask_fence, hcr_wmask_dbg, hcr_wmask_irq, hcr_wmask_disp;
 	wire [31:0] hcr_wmask_ring = s_hcr_wmask;
-	wire [31:0] hcr_wmask_fence = s_hcr_wmask;
-	wire [31:0] hcr_wmask_dbg = s_hcr_wmask;
-	wire [31:0] hcr_wmask_irq = s_hcr_wmask;
-	wire [31:0] hcr_wmask_disp = s_hcr_wmask;
-	wire alias_we_state = s_alias_we;
-	wire [9:0] alias_idx_state = s_alias_idx;
+	wire [31:0] reg_wdata_regs = reg_wdata;
+	wire [31:0] reg_wdata_ring = s_hcr_wdata;
+	(* keep = "true" *) reg [31:0] reg_wdata_ctl, reg_wdata_fence, reg_wdata_dbg, reg_wdata_irq, reg_wdata_state, reg_wdata_disp;
+	wire [3:0] reg_wstrb_regs = reg_wstrb;
+	wire [16:0] reg_waddr_regs = reg_waddr;
+	(* keep = "true" *) reg alias_we_state;
+	(* keep = "true" *) reg [9:0] alias_idx_state;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			hcr_we_ctl      <= 1'b0;
+			hcr_we_fence    <= 1'b0;
+			hcr_we_dbg      <= 1'b0;
+			hcr_we_disp     <= 1'b0;
+			hcr_we_irq      <= 1'b0;
+			hcr_widx_ctl    <= 10'd0;
+			hcr_widx_fence  <= 10'd0;
+			hcr_widx_dbg    <= 10'd0;
+			hcr_widx_disp   <= 10'd0;
+			hcr_widx_irq    <= 10'd0;
+			hcr_wmask_ctl   <= 32'd0;
+			hcr_wmask_fence <= 32'd0;
+			hcr_wmask_dbg   <= 32'd0;
+			hcr_wmask_irq   <= 32'd0;
+			hcr_wmask_disp  <= 32'd0;
+			reg_wdata_ctl   <= 32'd0;
+			reg_wdata_fence <= 32'd0;
+			reg_wdata_dbg   <= 32'd0;
+			reg_wdata_irq   <= 32'd0;
+			reg_wdata_state <= 32'd0;
+			reg_wdata_disp  <= 32'd0;
+			alias_we_state  <= 1'b0;
+			alias_idx_state <= 10'd0;
+		end else begin
+			hcr_we_ctl      <= s_hcr_we && (s_hcr_widx[9:6] == 4'd0);
+			hcr_we_fence    <= s_hcr_we;
+			hcr_we_dbg      <= s_hcr_we;
+			hcr_we_disp     <= s_hcr_we;
+			hcr_we_irq      <= s_hcr_we;
+			hcr_widx_ctl    <= s_hcr_widx;
+			hcr_widx_fence  <= s_hcr_widx;
+			hcr_widx_dbg    <= s_hcr_widx;
+			hcr_widx_disp   <= s_hcr_widx;
+			hcr_widx_irq    <= s_hcr_widx;
+			hcr_wmask_ctl   <= s_hcr_wmask;
+			hcr_wmask_fence <= s_hcr_wmask;
+			hcr_wmask_dbg   <= s_hcr_wmask;
+			hcr_wmask_irq   <= s_hcr_wmask;
+			hcr_wmask_disp  <= s_hcr_wmask;
+			reg_wdata_ctl   <= s_hcr_wdata;
+			reg_wdata_fence <= s_hcr_wdata;
+			reg_wdata_dbg   <= s_hcr_wdata;
+			reg_wdata_irq   <= s_hcr_wdata;
+			reg_wdata_state <= s_hcr_wdata;
+			reg_wdata_disp  <= s_hcr_wdata;
+			alias_we_state  <= s_alias_we;
+			alias_idx_state <= s_alias_idx;
+		end
+	end
 `endif
 
 `ifdef SYNTH_KINTEX7
@@ -563,11 +592,31 @@ module atg_cp #(
 	wire [31:0] reg_rdata_raw;
 	assign reg_rdata = reg_rdata_raw;
 
-	assign hcr_we = s_hcr_we;
-	assign hcr_widx = s_hcr_widx;
-	assign hcr_wdata = s_hcr_wdata;
-	assign hcr_wmask = s_hcr_wmask;
-	assign hcr_ridx = s_hcr_ridx;
+	reg hcr_we_r;
+	reg [9:0] hcr_widx_r;
+	reg [31:0] hcr_wdata_r;
+	reg [31:0] hcr_wmask_r;
+	reg [9:0] hcr_ridx_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			hcr_we_r    <= 1'b0;
+			hcr_widx_r  <= 10'd0;
+			hcr_wdata_r <= 32'd0;
+			hcr_wmask_r <= 32'd0;
+			hcr_ridx_r  <= 10'd0;
+		end else begin
+			hcr_we_r    <= s_hcr_we;
+			hcr_widx_r  <= s_hcr_widx;
+			hcr_wdata_r <= s_hcr_wdata;
+			hcr_wmask_r <= s_hcr_wmask;
+			hcr_ridx_r  <= s_hcr_ridx;
+		end
+	end
+	assign hcr_we = hcr_we_r;
+	assign hcr_widx = hcr_widx_r;
+	assign hcr_wdata = hcr_wdata_r;
+	assign hcr_wmask = hcr_wmask_r;
+	assign hcr_ridx = hcr_ridx_r;
 `endif
 
 	/* Authoritative capabilities block: single instance in atg_cp */
@@ -792,6 +841,7 @@ module atg_cp #(
 
 	/* Control: state machine, RESET order, watchdog, faults. */
 	wire s_run, s_halt, s_step, s_open, s_quiesce, s_mc_flush, s_ctrl_irq_global;
+	wire [3:0] s_mc_flush_rep;
 	(* keep = "true", dont_touch = "true" *) wire s_core_rst_n;
 	wire [3:0] s_cp_state;
 	wire [2:0] s_lc_state;
@@ -874,7 +924,7 @@ module atg_cp #(
 		.src_tag({s_disp_fault_tag, x_fault_tag[15:8], s_seq_fault_tag, 8'd0, x_fault_tag[7:0],
 			s_fence_fault_tag, 8'd0, s_seq_fault_tag, s_ring_fault_tag}),
 		.src_stage({4'd0, 4'd0, 4'd0, 4'd0, su_effective_stage, 4'd0, 4'd0, 4'd0, 4'd0}),
-		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush),
+		.run(s_run), .halt(s_halt), .ctrl_irq_global(s_ctrl_irq_global), .quiesce(s_quiesce), .mc_flush(s_mc_flush), .mc_flush_rep(s_mc_flush_rep),
 		.core_rst_n(s_core_rst_n), .open(s_open), .cp_state(s_cp_state), .lc_state(s_lc_state),
 		.host_kick(s_host_kick), .step(s_step),
 		.ev_halted(s_ev_halted), .ev_fault(s_ev_fault), .ev_wdt(s_ev_wdt),
@@ -884,6 +934,7 @@ module atg_cp #(
 
 	assign core_rst_n = s_core_rst_n;
 	assign mc_flush = s_mc_flush;
+	assign mc_flush_rep = s_mc_flush_rep;
 	assign l2_flush = s_f_flush;
 	assign cp_halt = s_halt;
 	assign cp_open = open_out;

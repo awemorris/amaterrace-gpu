@@ -253,7 +253,9 @@ module atg_vf_asm (
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) reg [14:0] p_l_2;
 	reg [2:0] p_fa, p_fl;
 	reg [8:0] f_mem_lo [0:31];
-	reg [8:0] f_mem_hi [0:31];
+	reg [12:0] f_mem_hi [0:31];
+	reg [21:0] f_head_q;
+	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) reg g_emit_r;
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) reg [4:0] f_wp_0;
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) reg [4:0] f_wp_1;
 	(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *) reg [4:0] f_wp_c;
@@ -335,10 +337,17 @@ module atg_vf_asm (
 		(s_topo_2 == T_FAN && cnt_2 == 2'd0);
 	(* keep = "true" *) wire g_wb_w = (s_topo_2 == T_TRIS && cnt_2 == 2'd1) ||
 		((s_topo_2 == T_STRIP || s_topo_2 == T_FAN) && cnt_2 != 2'd0);
-	(* keep = "true" *) wire g_emit_w = (s_topo_2 == T_LINES && cnt_2 != 2'd0) ||
-		(s_topo_2 == T_LSTRIP && cnt_2 != 2'd0) ||
-		((s_topo_2 == T_TRIS || s_topo_2 == T_STRIP || s_topo_2 == T_FAN) && cnt_2 == 2'd2) ||
-		(s_topo_2 != T_LINES && s_topo_2 != T_LSTRIP && s_topo_2 != T_TRIS && s_topo_2 != T_STRIP && s_topo_2 != T_FAN);
+	function emit_of;
+		input [2:0] tp;
+		input [1:0] cn;
+		begin
+			emit_of = (tp == T_LINES && cn != 2'd0) ||
+				(tp == T_LSTRIP && cn != 2'd0) ||
+				((tp == T_TRIS || tp == T_STRIP || tp == T_FAN) && cn == 2'd2) ||
+				(tp != T_LINES && tp != T_LSTRIP && tp != T_TRIS && tp != T_STRIP && tp != T_FAN);
+		end
+	endfunction
+	wire g_emit_w = g_emit_r;
 
 	(* keep = "true" *) wire [2:0] g_fa_w =
 		(s_topo_3 == T_LINES)  ? 3'b011 :
@@ -375,7 +384,8 @@ module atg_vf_asm (
 	assign prim_free = h_free;
 	assign prim_last = fin && f_n == 6'd0;
 	wire h_take = prim_valid && prim_ready;
-	wire [17:0] f_top = {f_mem_hi[f_rp_1], f_mem_lo[f_rp_0]};
+	wire [17:0] f_top_ram = {f_head_q[21] ? (f_head_q[17:15] | f_head_q[20:18]) : f_head_q[17:15], f_head_q[14:0]};
+	wire [17:0] f_top = f_top_ram;
 
 	/* Push the open primitive: superseded (fa) or final (fa | fl). */
 	(* keep = "true" *) wire send_push_cond = in_rst || inst_chg || (!early && g_emit_w);
@@ -521,14 +531,16 @@ module atg_vf_asm (
 		end
 	endgenerate
 
-	wire [17:0] f_wdata_ord = {p_final ? (p_fa | p_fl) : p_fa, p_l_2};
+	wire p_final_fast = st_is_close || in_rst || inst_chg;
+	wire [21:0] f_wdata_ord = {p_final_fast, p_fl, p_fa, p_l_2};
+	wire f_mem_we = p_v && !f_n[5] && (st_is_send || st_is_close);
 	wire [23:0] h_vtx_next = {pt2, pt1, pt0};
 
 	always @(posedge clk) begin
-		if (p_push_b[0])
+		if (f_mem_we) begin
 			f_mem_lo[f_wp_0] <= f_wdata_ord[8:0];
-		if (p_push_b[1])
-			f_mem_hi[f_wp_1] <= f_wdata_ord[17:9];
+			f_mem_hi[f_wp_1] <= f_wdata_ord[21:9];
+		end
 	end
 
 	always @(posedge clk or posedge rst_sync) begin
@@ -567,7 +579,9 @@ module atg_vf_asm (
 			cnt_0 <= 2'd0;
 			cnt_1 <= 2'd0;
 			cnt_2 <= 2'd0;
+			g_emit_r <= 1'b1;
 			par <= 1'b0;
+			f_head_q <= 22'd0;
 			fin <= 1'b0;
 			a_idx <= 32'd0;
 			a_inst <= 32'd0;
@@ -747,15 +761,20 @@ module atg_vf_asm (
 			else if (ce_p_emit)
 				p_v <= 1'b1;
 
+			if (we_topo)
+				g_emit_r <= emit_of(st_wdata[2:0], cnt_2);
+
 			if (seg_end) begin
 				cnt_0 <= 2'd0;
 				cnt_1 <= 2'd0;
 				cnt_2 <= 2'd0;
+				g_emit_r <= emit_of(s_topo_2, 2'd0);
 				par <= 1'b0;
 			end else if (s_put) begin
 				cnt_0 <= g_cnt;
 				cnt_1 <= g_cnt;
 				cnt_2 <= g_cnt;
+				g_emit_r <= emit_of(s_topo_2, g_cnt);
 				if (s_topo_1 == T_STRIP && cnt_1 == 2'd2)
 					par <= !par;
 			end
@@ -771,6 +790,7 @@ module atg_vf_asm (
 					cnt_0 <= 2'd0;
 					cnt_1 <= 2'd0;
 					cnt_2 <= 2'd0;
+					g_emit_r <= emit_of(s_topo_2, 2'd0);
 					par <= 1'b0;
 					if (in_rst && in_last) begin
 						fin <= 1'b1;
@@ -821,15 +841,24 @@ module atg_vf_asm (
 				st_is_go      <= 1'b0;
 				st_is_prims   <= 1'b1;
 				st_is_prims_1 <= 1'b1;
+				if (f_n != 6'd0) begin
+					f_head_q <= {f_mem_hi[f_rp_1], f_mem_lo[f_rp_0]};
+					f_rp_0 <= f_rp_next;
+					f_rp_1 <= f_rp_next;
+					f_rp_c <= f_rp_next;
+				end
 			end
 			if (st_is_prims) begin
 				/* PRIMS: the list in order; the last one waits for its successor. */
 				if (f_n != 6'd0 && (!h_v || h_take)) begin
 					h_v <= 1'b1;
 					h_free <= f_top[17:15];
-					f_rp_0 <= f_rp_next;
-					f_rp_1 <= f_rp_next;
-					f_rp_c <= f_rp_next;
+					if (f_n != 6'd1) begin
+						f_head_q <= {f_mem_hi[f_rp_1], f_mem_lo[f_rp_0]};
+						f_rp_0 <= f_rp_next;
+						f_rp_1 <= f_rp_next;
+						f_rp_c <= f_rp_next;
+					end
 				end else if (h_take) begin
 					h_v <= 1'b0;
 				end
@@ -846,6 +875,7 @@ module atg_vf_asm (
 						cnt_0 <= 2'd0;
 						cnt_1 <= 2'd0;
 						cnt_2 <= 2'd0;
+						g_emit_r <= emit_of(s_topo_2, 2'd0);
 						par <= 1'b0;
 					end
 				end

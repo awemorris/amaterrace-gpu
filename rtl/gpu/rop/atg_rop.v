@@ -219,6 +219,13 @@ module atg_rop #(
 	end
 	wire unused_rmux = &{1'b0, rmux_k_leaf[23], ds_req_tag[7], wb_req_tag[7]};
 `else
+	localparam ROP_SLA_W = ADDR_W - LINE_SHIFT;
+	localparam ROP_SLB = LINE_BYTES * 8;
+	wire rmux_req_valid, rmux_req_ready, rmux_req_write;
+	wire [ROP_SLA_W-1:0] rmux_req_line;
+	wire [LINE_BYTES-1:0] rmux_req_be;
+	wire [ROP_SLB-1:0] rmux_req_wdata;
+	wire [7:0] rmux_req_tag;
 	wire [1:0] rmux_rsp_valid_v;
 	am_amb_mux #(.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .N(2), .ID_W(1)) rmux (
 		.clk(clk), .rst_n(rst_n),
@@ -228,7 +235,17 @@ module atg_rop #(
 		.i_req_tag({wb_req_tag, ds_req_tag}),
 		.i_rsp_valid(rmux_rsp_valid_v), .i_rsp_write(ds_rsp_write), .i_rsp_tag(ds_rsp_tag),
 		.i_rsp_rdata(ds_rsp_rdata), .i_rsp_error(ds_rsp_error),
-		.o_req_valid(req_valid), .o_req_ready(req_ready), .o_req_write(req_write), .o_req_line(req_line), .o_req_be(req_be), .o_req_wdata(req_wdata), .o_req_tag(req_tag), .o_rsp_valid(rsp_valid), .o_rsp_write(rsp_write), .o_rsp_tag(rsp_tag), .o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
+		.o_req_valid(rmux_req_valid), .o_req_ready(rmux_req_ready), .o_req_write(rmux_req_write),
+		.o_req_line(rmux_req_line), .o_req_be(rmux_req_be), .o_req_wdata(rmux_req_wdata), .o_req_tag(rmux_req_tag),
+		.o_rsp_valid(rsp_valid), .o_rsp_write(rsp_write), .o_rsp_tag(rsp_tag),
+		.o_rsp_rdata(rsp_rdata), .o_rsp_error(rsp_error)
+	);
+	am_skid #(.WIDTH(1 + ROP_SLA_W + LINE_BYTES + ROP_SLB + 8)) u_req_skid (
+		.clk(clk), .rst_n(rst_n_net),
+		.in_valid(rmux_req_valid), .in_ready(rmux_req_ready),
+		.in_data({rmux_req_write, rmux_req_line, rmux_req_be, rmux_req_wdata, rmux_req_tag}),
+		.out_valid(req_valid), .out_ready(req_ready),
+		.out_data({req_write, req_line, req_be, req_wdata, req_tag})
 	);
 	assign ds_rsp_valid = rmux_rsp_valid_v[0];
 	assign wb_rsp_valid = rmux_rsp_valid_v[1];
@@ -331,21 +348,16 @@ module atg_rop #(
 		end
 	endfunction
 
-	(* keep = "true" *) wire [2:0] d_pop4_0 = pop4_lut(d_smask[3:0]);
-	(* keep = "true" *) wire [2:0] d_pop4_1 = pop4_lut(d_smask[7:4]);
-	(* keep = "true" *) wire [2:0] d_pop4_2 = pop4_lut(d_smask[11:8]);
-	(* keep = "true" *) wire [2:0] d_pop4_3 = pop4_lut(d_smask[15:12]);
-	wire [4:0] pw0 = {2'd0, d_pop4_0};
-	wire [4:0] pw1 = {2'd0, d_pop4_1};
-	wire [4:0] pw2 = {2'd0, d_pop4_2};
-	wire [4:0] pw3 = {2'd0, d_pop4_3};
-	wire [4:0] pcs1_s = pw0 ^ pw1 ^ pw2;
-	wire [4:0] pcs1_c = {((pw0[3:0] & pw1[3:0]) | (pw1[3:0] & pw2[3:0]) | (pw0[3:0] & pw2[3:0])), 1'b0};
-	wire [4:0] pcs2_s = pcs1_s ^ pcs1_c ^ pw3;
-	wire [4:0] pcs2_c = {((pcs1_s[3:0] & pcs1_c[3:0]) | (pcs1_c[3:0] & pw3[3:0]) | (pcs1_s[3:0] & pw3[3:0])), 1'b0};
+	wire [2:0] d_pop4_0 = pop4_lut(d_smask[3:0]);
+	wire [2:0] d_pop4_1 = pop4_lut(d_smask[7:4]);
+	wire [2:0] d_pop4_2 = pop4_lut(d_smask[11:8]);
+	wire [2:0] d_pop4_3 = pop4_lut(d_smask[15:12]);
+	wire [3:0] pop_s01, pop_s23;
 	wire [4:0] d_pop;
-	wire d_pop_co_unused;
-	am_add #(.W(5)) u_add_pop16 (.a(pcs2_s), .b(pcs2_c), .ci(1'b0), .s(d_pop), .co(d_pop_co_unused));
+	wire [2:0] d_pop_co_unused;
+	am_add #(.W(4)) u_add_pop01 (.a({1'b0, d_pop4_0}), .b({1'b0, d_pop4_1}), .ci(1'b0), .s(pop_s01), .co(d_pop_co_unused[0]));
+	am_add #(.W(4)) u_add_pop23 (.a({1'b0, d_pop4_2}), .b({1'b0, d_pop4_3}), .ci(1'b0), .s(pop_s23), .co(d_pop_co_unused[1]));
+	am_add #(.W(5)) u_add_pop16 (.a({1'b0, pop_s01}), .b({1'b0, pop_s23}), .ci(1'b0), .s(d_pop), .co(d_pop_co_unused[2]));
 
 	reg occ_inc_v;
 	reg [4:0] occ_inc_n;

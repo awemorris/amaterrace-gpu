@@ -21,7 +21,8 @@
 
 module am_skid #(
 	parameter W = 32,
-	parameter WIDTH = W
+	parameter WIDTH = W,
+	parameter RST_DATA = 1
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -58,11 +59,20 @@ module am_skid #(
 			assign load_skid_v[gs] = in_valid && in_ready_sl[gs];
 			assign next_out_v[gs*SL_W +: SL_W] = skid_valid_sl[gs] ?
 				skid_data[gs*SL_W +: SL_W] : in_data[gs*SL_W +: SL_W];
-			always @(posedge clk or negedge rst_n) begin
-				if (!rst_n) begin
-					out_data[gs*SL_W +: SL_W]  <= {SL_W{1'b0}};
-					skid_data[gs*SL_W +: SL_W] <= {SL_W{1'b0}};
-				end else begin
+			if (RST_DATA != 0) begin : g_rst
+				always @(posedge clk or negedge rst_n) begin
+					if (!rst_n) begin
+						out_data[gs*SL_W +: SL_W]  <= {SL_W{1'b0}};
+						skid_data[gs*SL_W +: SL_W] <= {SL_W{1'b0}};
+					end else begin
+						if (load_out_v[gs])
+							out_data[gs*SL_W +: SL_W] <= next_out_v[gs*SL_W +: SL_W];
+						if (load_skid_v[gs])
+							skid_data[gs*SL_W +: SL_W] <= in_data[gs*SL_W +: SL_W];
+					end
+				end
+			end else begin : g_norst
+				always @(posedge clk) begin
 					if (load_out_v[gs])
 						out_data[gs*SL_W +: SL_W] <= next_out_v[gs*SL_W +: SL_W];
 					if (load_skid_v[gs])
@@ -78,11 +88,20 @@ module am_skid #(
 			assign load_skid_v[RS] = in_valid && in_ready_sl[RS];
 			assign next_out_v[R0 +: REM_W] = skid_valid_sl[RS] ?
 				skid_data[R0 +: REM_W] : in_data[R0 +: REM_W];
-			always @(posedge clk or negedge rst_n) begin
-				if (!rst_n) begin
-					out_data[R0 +: REM_W]  <= {REM_W{1'b0}};
-					skid_data[R0 +: REM_W] <= {REM_W{1'b0}};
-				end else begin
+			if (RST_DATA != 0) begin : g_rst_r
+				always @(posedge clk or negedge rst_n) begin
+					if (!rst_n) begin
+						out_data[R0 +: REM_W]  <= {REM_W{1'b0}};
+						skid_data[R0 +: REM_W] <= {REM_W{1'b0}};
+					end else begin
+						if (load_out_v[RS])
+							out_data[R0 +: REM_W] <= next_out_v[R0 +: REM_W];
+						if (load_skid_v[RS])
+							skid_data[R0 +: REM_W] <= in_data[R0 +: REM_W];
+					end
+				end
+			end else begin : g_norst_r
+				always @(posedge clk) begin
 					if (load_out_v[RS])
 						out_data[R0 +: REM_W] <= next_out_v[R0 +: REM_W];
 					if (load_skid_v[RS])

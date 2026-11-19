@@ -56,6 +56,7 @@ module atg_su_lane #(
 	output wire sg_emit_done,
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -178,6 +179,7 @@ module atg_su_lane #(
 	/* Stage 1 to 5 pipeline match for QD control & operands (quad-swap pre-muxed at r0 -> r1) */
 	(* shreg_extract = "no" *) reg r1_valid, r2_valid, r3_valid;
 	(* shreg_extract = "no", max_fanout = 12 *) reg r4_valid, r5_valid;
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] r5_valid_rep, pipe_v_s6_rep;
 	(* shreg_extract = "no" *) reg [WARP_W-1:0] r1_warp, r2_warp, r3_warp, r4_warp, r5_warp;
 	(* shreg_extract = "no" *) reg [GRP_W-1:0]  r1_grp,  r2_grp,  r3_grp,  r4_grp,  r5_grp;
 	(* shreg_extract = "no" *) reg [6:0]        r1_rd,   r2_rd,   r3_rd,   r4_rd,   r5_rd;
@@ -191,6 +193,7 @@ module atg_su_lane #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			r1_valid <= 1'b0; r2_valid <= 1'b0; r3_valid <= 1'b0; r4_valid <= 1'b0; r5_valid <= 1'b0;
+			r5_valid_rep <= 8'd0;
 			r1_warp  <= {WARP_W{1'b0}}; r2_warp <= {WARP_W{1'b0}}; r3_warp <= {WARP_W{1'b0}}; r4_warp <= {WARP_W{1'b0}}; r5_warp <= {WARP_W{1'b0}};
 			r1_grp   <= {GRP_W{1'b0}};  r2_grp  <= {GRP_W{1'b0}};  r3_grp  <= {GRP_W{1'b0}};  r4_grp  <= {GRP_W{1'b0}};  r5_grp  <= {GRP_W{1'b0}};
 			r1_rd    <= 7'd0;           r2_rd   <= 7'd0;           r3_rd   <= 7'd0;           r4_rd   <= 7'd0;           r5_rd   <= 7'd0;
@@ -205,6 +208,7 @@ module atg_su_lane #(
 			r5_use_xa <= {(NPHYS*2){1'b0}};
 		end else begin
 			r1_valid <= r0_valid; r2_valid <= r1_valid; r3_valid <= r2_valid; r4_valid <= r3_valid; r5_valid <= r4_valid;
+			r5_valid_rep <= {8{r4_valid}};
 			r1_warp  <= r0_warp;  r2_warp  <= r1_warp;  r3_warp  <= r2_warp;  r4_warp  <= r3_warp;  r5_warp  <= r4_warp;
 			r1_grp   <= r0_grp;   r2_grp   <= r1_grp;   r3_grp   <= r2_grp;   r4_grp   <= r3_grp;   r5_grp   <= r4_grp;
 			r1_rd    <= r0_rd;    r2_rd    <= r1_rd;    r3_rd    <= r2_rd;    r4_rd    <= r3_rd;    r5_rd    <= r4_rd;
@@ -262,6 +266,8 @@ module atg_su_lane #(
 	localparam S_EMIT = 1'b1;
 	reg st;
 	reg [GRP_W-1:0] e_cnt;
+	(* keep = "true" *) reg [NPHYS*3*GRP_W-1:0] e_cnt_rep;
+	(* keep = "true" *) reg [31:0] st_idle_rep;
 	wire e_last = {{(32-GRP_W){1'b0}}, e_cnt} == G - 1;
 	wire emit = st == S_EMIT;
 	wire stage = sg && st == S_IDLE;
@@ -389,9 +395,9 @@ module atg_su_lane #(
 				(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_bec_h1 (.I0(e_cnt_lane[gec]), .O(ec_h1[gec]));
 			end
 `else
-			assign ec_es = e_cnt_lane;
-			assign ec_h0 = e_cnt_lane;
-			assign ec_h1 = e_cnt_lane;
+			assign ec_es = e_cnt_rep[(gzl*3 + 0)*GRP_W +: GRP_W];
+			assign ec_h0 = e_cnt_rep[(gzl*3 + 1)*GRP_W +: GRP_W];
+			assign ec_h1 = e_cnt_rep[(gzl*3 + 2)*GRP_W +: GRP_W];
 `endif
 			/* verilator lint_off WIDTHTRUNC */
 			/* verilator lint_off WIDTHEXPAND */
@@ -535,11 +541,13 @@ module atg_su_lane #(
 			assign stage_grp[gg] = stage && (gg[GRP_W-1:0] == x_grp_stg);
 		end
 		for (gp = 0; gp < 32; gp = gp + 1) begin : g_stgw
-			wire stg_cond = (gp / NPHYS < G) ? stage_grp[gp / NPHYS] : 1'b0;
 `ifdef SYNTH_KINTEX7
+			wire stg_cond = (gp / NPHYS < G) ? stage_grp[gp / NPHYS] : 1'b0;
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_stgw_l (.I0(stg_cond), .O(stg_we_lo[gp]));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_stgw_h (.I0(stg_cond), .O(stg_we_hi[gp]));
 `else
+			localparam integer GP_G = gp / NPHYS;
+			wire stg_cond = (GP_G < G) ? (sg && st_idle_rep[gp] && (GP_G[GRP_W-1:0] == x_grp_stg)) : 1'b0;
 			assign stg_we_lo[gp] = stg_cond;
 			assign stg_we_hi[gp] = stg_cond;
 `endif
@@ -550,9 +558,12 @@ module atg_su_lane #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			st <= S_IDLE;
+			st_idle_rep <= 32'hFFFFFFFF;
 			e_cnt <= {GRP_W{1'b0}};
+			e_cnt_rep <= {(NPHYS*3*GRP_W){1'b0}};
 			for (k = 0; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= {EW{1'b0}};
+			pipe_v_s6_rep <= 8'd0;
 			is_ballot_d <= {(NPHYS*2){1'b0}};
 			is_vote_d   <= {(NPHYS*2){1'b0}};
 			vote_val_d  <= {(NPHYS*2){1'b0}};
@@ -594,15 +605,21 @@ module atg_su_lane #(
 
 			for (k = 2; k < SHORT_LAT; k = k + 1)
 				pipe[k] <= pipe[k-1];
+			pipe_v_s6_rep <= {8{pipe[SHORT_LAT-2][EW-1]}};
 
 			if (stage && x_last) begin
 				st <= S_EMIT;
+				st_idle_rep <= 32'd0;
 				e_cnt <= {GRP_W{1'b0}};
+				e_cnt_rep <= {(NPHYS*3*GRP_W){1'b0}};
 			end else if (emit) begin
-				if (e_last)
+				if (e_last) begin
 					st <= S_IDLE;
-				else
+					st_idle_rep <= 32'hFFFFFFFF;
+				end else begin
 					e_cnt <= e_cnt_next;
+					e_cnt_rep <= {(NPHYS*3){e_cnt_next}};
+				end
 			end
 		end
 	end
@@ -625,6 +642,7 @@ module atg_su_lane #(
 
 	wire [EW-1:0] o = pipe[SHORT_LAT-1];
 	assign s_valid = r5_valid ? 1'b1 : o[EW-1];
+	assign s_valid_rep = r5_valid_rep | pipe_v_s6_rep;
 	assign s_warp  = r5_valid ? r5_warp : o[EW-2 -: WARP_W];
 	assign s_grp   = r5_valid ? r5_grp : o[EW-2-WARP_W -: GRP_W];
 	assign s_rd    = r5_valid ? r5_rd : o[EW-2-WARP_W-GRP_W -: 7];

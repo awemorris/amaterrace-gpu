@@ -154,7 +154,8 @@ module atg_su_pt #(
 	wire [31:0] raddr = {{(32-AW){1'b0}}, raddr_a};
 	wire unused_addr = &{1'b0, wword[31:AW], wrow[31:RW], rrow[31:RW], wrow_w32[31:AW], rrow_w32[31:AW], pt_word32[31:AW], WPV_V};
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
-	(* shreg_extract = "no", max_fanout = 12 *) reg pt_rd_r1;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [7:0] pt_rd_r1_rep;
+	wire pt_rd_r1 = pt_rd_r1_rep[0];
 	(* dont_touch = "true" *) reg [AW-1:0] raddr_r;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [$clog2(NPHYS)-1:0] rb_r1;
 	(* keep = "true", dont_touch = "true" *) reg [$clog2(NPHYS)-1:0] rb_r2_sl [0:3];
@@ -215,7 +216,7 @@ module atg_su_pt #(
 		end
 		(* ram_style = "block" *) reg [31:0] m [0:DEPTH-1];
 		reg [31:0] rd_q_b;
-		(* dont_touch = "true" *) wire pt_rd_b = pt_rd_r1;
+		(* dont_touch = "true" *) wire pt_rd_b = pt_rd_r1_rep[(b * 8) / NPHYS];
 		always @(posedge clk) begin
 			if (m_we_r[b])
 				m[m_wa_r] <= m_wd_r[32 * b +: 32];
@@ -241,14 +242,14 @@ module atg_su_pt #(
 	integer grs;
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
-			pt_rd_r1   <= 1'b0;
-			raddr_r    <= {AW{1'b0}};
-			rb_r1      <= {$clog2(NPHYS){1'b0}};
+			pt_rd_r1_rep <= 8'd0;
+			raddr_r      <= {AW{1'b0}};
+			rb_r1        <= {$clog2(NPHYS){1'b0}};
 			for (grs = 0; grs < 4; grs = grs + 1)
 				rb_r2_sl[grs] <= {$clog2(NPHYS){1'b0}};
 			pt_rdata_r <= 32'd0;
 		end else begin
-			pt_rd_r1 <= pt_rd;
+			pt_rd_r1_rep <= {8{pt_rd}};
 			if (pt_rd) begin
 				raddr_r <= raddr[AW-1:0];
 				rb_r1   <= rbank[$clog2(NPHYS)-1:0];

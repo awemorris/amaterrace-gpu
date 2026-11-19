@@ -99,14 +99,42 @@ module atg_mc_cnt #(
 		end
 	end
 `else
-	wire [NCLIENT-1:0] take_s     = take;
-	wire [NCLIENT-1:0] take_chk_s = take_chk;
-	wire [NCLIENT-1:0] rsp_s      = rsp;
-	wire done_s      = done;
-	wire done_chk_s  = done_chk;
-	wire done_keep_s = done_keep;
-	wire ax_inc_s    = ax_inc;
-	wire ax_dec_s    = ax_dec;
+	reg [NCLIENT-1:0] take_s, take_chk_s, rsp_s;
+	reg done_s, done_chk_s, done_keep_s, ax_inc_s, ax_dec_s;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			take_s      <= {NCLIENT{1'b0}};
+			take_chk_s  <= {NCLIENT{1'b0}};
+			rsp_s       <= {NCLIENT{1'b0}};
+			done_s      <= 1'b0;
+			done_chk_s  <= 1'b0;
+			done_keep_s <= 1'b0;
+		end else if (flush) begin
+			take_s      <= {NCLIENT{1'b0}};
+			take_chk_s  <= {NCLIENT{1'b0}};
+			rsp_s       <= {NCLIENT{1'b0}};
+			done_s      <= 1'b0;
+			done_chk_s  <= 1'b0;
+			done_keep_s <= 1'b0;
+		end else begin
+			take_s      <= take;
+			take_chk_s  <= take_chk;
+			rsp_s       <= rsp;
+			done_s      <= done;
+			done_chk_s  <= done_chk;
+			done_keep_s <= done_keep;
+		end
+	end
+
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			ax_inc_s <= 1'b0;
+			ax_dec_s <= 1'b0;
+		end else begin
+			ax_inc_s <= ax_inc;
+			ax_dec_s <= ax_dec;
+		end
+	end
 `endif
 
 	/*
@@ -195,9 +223,9 @@ module atg_mc_cnt #(
 	end
 `endif
 
-	assign pend_zero = pend == 8'd0;
-	assign chk_idle = chk_n == 8'd0;
-	assign unit_idle = unit_n == 10'd0;
+	assign pend_zero = pend_n == 8'd0;
+	assign chk_idle  = chk_nx == 8'd0;
+	assign unit_idle = unit_nx == 10'd0;
 
 	/* ax: precompute +1 and -1 in parallel with ax_inc/ax_dec control logic. */
 	reg [7:0] ax_n;
@@ -222,7 +250,7 @@ module atg_mc_cnt #(
 			ax_n <= ax_next;
 `endif
 
-	assign ax_zero = ax_n == 8'd0;
+	assign ax_zero = ax_next == 8'd0;
 
 	wire unused_ok = &{1'b0, ax_co_unused, cnt_co, t_csa_c[7], tc_csa_c[7], u_csa_c[9]};
 endmodule

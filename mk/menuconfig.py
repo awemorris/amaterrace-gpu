@@ -28,7 +28,7 @@ SCHEMA = [
                 "key": "TARGET_PRESET",
                 "label": "Target Board Preset",
                 "type": "choice",
-                "choices": ["kc705", "basys3", "arty_a7", "minimal_sim"],
+                "choices": ["kc705", "zcu106", "minimal_sim"],
                 "default": "kc705",
                 "help": "Target hardware board or simulation preset.",
             }

@@ -52,6 +52,7 @@ module atg_su_alu #(
 
 	/* Short result to atg_su_wb (exactly SHORT_LAT cycles after x_valid) */
 	output wire s_valid,
+	output wire [7:0] s_valid_rep,
 	output wire [WARP_W-1:0] s_warp,
 	output wire [GRP_W-1:0] s_grp,
 	output wire [6:0] s_rd,
@@ -112,6 +113,7 @@ module atg_su_alu #(
 	/*
 	 * Stage 1 (EX1): Latch inputs, prepare addsub and shift
 	 */
+	localparam integer N_IMM_G = (NPHYS + 3) / 4;
 	(* shreg_extract = "no" *) reg s1_valid;
 	(* shreg_extract = "no" *) reg [WARP_W-1:0] s1_warp;
 	(* shreg_extract = "no" *) reg [GRP_W-1:0]  s1_grp;
@@ -122,10 +124,12 @@ module atg_su_alu #(
 	(* shreg_extract = "no", max_fanout = 12 *) reg [DW-1:0] s1_la, s1_lb;
 	(* shreg_extract = "no" *) reg [DW-1:0] s1_lc;
 	(* shreg_extract = "no" *) reg [31:0] s1_movi_w;
+	(* shreg_extract = "no", keep = "true" *) reg [N_IMM_G*32-1:0] s1_imm_g;
+	(* shreg_extract = "no", keep = "true" *) reg [NPHYS*2-1:0] s1_immb;
 	(* shreg_extract = "no", dont_touch = "true" *) reg [NPHYS-1:0] s1_is_sll_lo, s1_is_sll_hi;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS-1:0] s1_sra;
 	(* shreg_extract = "no", max_fanout = 12 *) reg [NPHYS*5-1:0] s1_amt;
-	(* shreg_extract = "no", max_fanout = 12 *) reg s1_sub;
+	(* shreg_extract = "no", keep = "true" *) reg [NPHYS-1:0] s1_sub;
 
 `ifdef __ICARUS__
 	wire en_s1 = en && mine;
@@ -150,7 +154,7 @@ module atg_su_alu #(
 			s1_rd    <= 7'd0;
 			s1_mask  <= {NPHYS{1'b0}};
 			s1_op    <= 5'd0;
-			s1_sub   <= 1'b0;
+			s1_sub   <= {NPHYS{1'b0}};
 		end else if (en) begin
 			s1_valid <= mine;
 			s1_warp  <= x_warp;
@@ -158,7 +162,7 @@ module atg_su_alu #(
 			s1_rd    <= x_uop[ATG_UOP_RD +: 7];
 			s1_mask  <= x_mask[NPHYS-1:0];
 			s1_op    <= op;
-			s1_sub   <= (op != ATG_ALU_ADD);
+			s1_sub   <= {NPHYS{(op != ATG_ALU_ADD)}};
 		end
 	end
 
@@ -167,10 +171,11 @@ module atg_su_alu #(
 		if (en_s1) begin
 			s1_lc     <= x_c;
 			s1_movi_w <= imm;
+			s1_imm_g  <= {N_IMM_G{imm}};
 			for (i1 = 0; i1 < NPHYS; i1 = i1 + 1) begin
 				s1_la[i1*32 +: 32] <= x_a[i1*32 +: 32];
-				s1_lb[i1*32 +: 16] <= immb_buf[i1*2]   ? imm[15:0]  : x_b[i1*32 +: 16];
-				s1_lb[i1*32+16 +: 16] <= immb_buf[i1*2+1] ? imm[31:16] : x_b[i1*32+16 +: 16];
+				s1_lb[i1*32 +: 32] <= x_b[i1*32 +: 32];
+				s1_immb[i1*2 +: 2] <= {2{immb}};
 				s1_is_sll_lo[i1]   <= (op == ATG_ALU_SLL);
 				s1_is_sll_hi[i1]   <= (op == ATG_ALU_SLL);
 				s1_sra[i1]         <= (op == ATG_ALU_SRA) && x_a[i1*32 + 31];
@@ -182,16 +187,20 @@ module atg_su_alu #(
 	/*
 	 * Stage 2 (EX2): 33-bit addition / subtraction and bitwise logic
 	 */
+	wire [DW-1:0] s1_lb_eff;
 	wire [NPHYS*33-1:0] s2_d_comb;
 	wire [NPHYS-1:0] s2_co_unused;
 
 	genvar l2;
 	generate
 	for (l2 = 0; l2 < NPHYS; l2 = l2 + 1) begin : g_ex2_addsub
+		wire [31:0] imm_g_sl = s1_imm_g[(l2/4)*32 +: 32];
+		assign s1_lb_eff[l2*32 +: 16]      = s1_immb[l2*2]   ? imm_g_sl[15:0]  : s1_lb[l2*32 +: 16];
+		assign s1_lb_eff[l2*32 + 16 +: 16] = s1_immb[l2*2+1] ? imm_g_sl[31:16] : s1_lb[l2*32 + 16 +: 16];
 		am_addsub #(.W(33)) u_d (
 			.a({1'b0, s1_la[l2*32 +: 32]}),
-			.b({1'b0, s1_lb[l2*32 +: 32]}),
-			.sub(s1_sub),
+			.b({1'b0, s1_lb_eff[l2*32 +: 32]}),
+			.sub(s1_sub[l2]),
 			.s(s2_d_comb[l2*33 +: 33]),
 			.co(s2_co_unused[l2])
 		);
@@ -235,14 +244,14 @@ module atg_su_alu #(
 		if (en_s2) begin
 			s2_d    <= s2_d_comb;
 			s2_la   <= s1_la;
-			s2_lb   <= s1_lb;
-			s2_and  <= s1_la & s1_lb;
-			s2_or   <= s1_la | s1_lb;
-			s2_xor  <= s1_la ^ s1_lb;
-			s2_andn <= s1_la & ~s1_lb;
-			s2_orn  <= s1_la | ~s1_lb;
-			s2_xnor <= ~(s1_la ^ s1_lb);
-			s2_sel  <= (s1_la & s1_lb) | (~s1_la & s1_lc);
+			s2_lb   <= s1_lb_eff;
+			s2_and  <= s1_la & s1_lb_eff;
+			s2_or   <= s1_la | s1_lb_eff;
+			s2_xor  <= s1_la ^ s1_lb_eff;
+			s2_andn <= s1_la & ~s1_lb_eff;
+			s2_orn  <= s1_la | ~s1_lb_eff;
+			s2_xnor <= ~(s1_la ^ s1_lb_eff);
+			s2_sel  <= (s1_la & s1_lb_eff) | (~s1_la & s1_lc);
 			s2_sra  <= s1_sra;
 			s2_amt  <= s1_amt;
 			for (i2 = 0; i2 < NPHYS; i2 = i2 + 1) begin : blk_s2_sv
@@ -422,6 +431,7 @@ module atg_su_alu #(
 	 * Stage 6 (WB): Registered drive to s_* exactly SHORT_LAT (6) cycles after x_valid
 	 */
 	(* shreg_extract = "no" *) reg s6_valid;
+	(* shreg_extract = "no", keep = "true" *) reg [7:0] s6_valid_rep;
 	(* shreg_extract = "no" *) reg [WARP_W-1:0] s6_warp;
 	(* shreg_extract = "no" *) reg [GRP_W-1:0]  s6_grp;
 	(* shreg_extract = "no" *) reg [6:0]        s6_rd;
@@ -431,12 +441,14 @@ module atg_su_alu #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			s6_valid <= 1'b0;
+			s6_valid_rep <= 8'd0;
 			s6_warp  <= {WARP_W{1'b0}};
 			s6_grp   <= {GRP_W{1'b0}};
 			s6_rd    <= 7'd0;
 			s6_lanes <= {NPHYS{1'b0}};
 		end else if (en) begin
 			s6_valid <= s5_valid;
+			s6_valid_rep <= {8{s5_valid}};
 			s6_warp  <= s5_warp;
 			s6_grp   <= s5_grp;
 			s6_rd    <= s5_rd;
@@ -450,6 +462,7 @@ module atg_su_alu #(
 	end
 
 	assign s_valid = s6_valid;
+	assign s_valid_rep = s6_valid_rep;
 	assign s_warp  = s6_warp;
 	assign s_grp   = s6_grp;
 	assign s_rd    = s6_rd;

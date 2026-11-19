@@ -207,12 +207,27 @@ module atg_mc_atom #(
 			be_w[i*4 +: 4] = {{(32 - WW){1'b0}}, rwi} == i ? 4'hF : 4'h0;
 	assign req_be = st == WREQ ? rbe : {LINE_BYTES{1'b0}};
 
-	/* The new value of the word: ADD and SUB share one adder-subtractor. */
-	wire [31:0] as_s;
-	wire as_co;
-	reg [31:0] new_word;
+	/* Parallel 16+16 carry-select add/sub and borrow-based comparisons (no rop on carry chain). */
+	wire [15:0] add_lo, add_hi0, add_hi1;
+	wire add_c0, add_c1_0_unused, add_c1_1_unused;
+	am_add #(.W(16)) u_add_lo  (.a(rold[15:0]),  .b(ra[15:0]),  .ci(1'b0), .s(add_lo),  .co(add_c0));
+	am_add #(.W(16)) u_add_hi0 (.a(rold[31:16]), .b(ra[31:16]), .ci(1'b0), .s(add_hi0), .co(add_c1_0_unused));
+	am_add #(.W(16)) u_add_hi1 (.a(rold[31:16]), .b(ra[31:16]), .ci(1'b1), .s(add_hi1), .co(add_c1_1_unused));
+	wire [31:0] as_add = {add_c0 ? add_hi1 : add_hi0, add_lo};
 
-	am_addsub #(.W(32)) as (.a(rold), .b(ra), .sub(rop == 4'd5), .s(as_s), .co(as_co));
+	wire [15:0] sub_lo, sub_hi0, sub_hi1;
+	wire sub_b0, sub_b1_0, sub_b1_1;
+	am_sub #(.W(16)) u_sub_lo  (.a(rold[15:0]),  .b(ra[15:0]),  .bi(1'b0), .d(sub_lo),  .bo(sub_b0));
+	am_sub #(.W(16)) u_sub_hi0 (.a(rold[31:16]), .b(ra[31:16]), .bi(1'b0), .d(sub_hi0), .bo(sub_b1_0));
+	am_sub #(.W(16)) u_sub_hi1 (.a(rold[31:16]), .b(ra[31:16]), .bi(1'b1), .d(sub_hi1), .bo(sub_b1_1));
+	wire [31:0] as_sub = {sub_b0 ? sub_hi1 : sub_hi0, sub_lo};
+	wire cmp_lt_u = sub_b0 ? sub_b1_1 : sub_b1_0;
+	wire cmp_eq   = (rold == ra);
+	wire cmp_gt_u = !cmp_lt_u && !cmp_eq;
+	wire cmp_lt_s = (rold[31] ^ ra[31]) ? rold[31] : cmp_lt_u;
+	wire cmp_gt_s = !cmp_lt_s && !cmp_eq;
+	wire cmp_cas  = (rold == rb);
+	reg [31:0] new_word;
 
 	always @(*) begin
 		case (rop)
@@ -220,20 +235,20 @@ module atg_mc_atom #(
 		4'd1: new_word = rold | ra;
 		4'd2: new_word = rold ^ ra;
 		4'd3: new_word = ra;
-		4'd4: new_word = as_s;
-		4'd5: new_word = as_s;
-		4'd6: new_word = $signed(rold) > $signed(ra) ? rold : ra;
-		4'd7: new_word = $signed(rold) < $signed(ra) ? rold : ra;
-		4'd8: new_word = rold > ra ? rold : ra;
-		4'd9: new_word = rold < ra ? rold : ra;
-		4'd10: new_word = rold == rb ? ra : rold;
+		4'd4: new_word = as_add;
+		4'd5: new_word = as_sub;
+		4'd6: new_word = cmp_gt_s ? rold : ra;
+		4'd7: new_word = cmp_lt_s ? rold : ra;
+		4'd8: new_word = cmp_gt_u ? rold : ra;
+		4'd9: new_word = cmp_lt_u ? rold : ra;
+		4'd10: new_word = cmp_cas ? ra : rold;
 		default: new_word = rold;
 		endcase
 	end
 	assign req_wdata = rwdata;
 	assign req_tag = {6'd0, rstage};
 
-	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], as_co};
+	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], add_c1_0_unused, add_c1_1_unused};
 endmodule
 
 `default_nettype wire

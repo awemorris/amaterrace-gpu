@@ -102,6 +102,7 @@ module atg_su_sched_gto_tb;
 		.wc_op(2'd0),
 		.wc_pc(16'd0),
 		.q_warp({WARP_W{1'b0}}),
+		.q_warp_rep({(WARP_W*4){1'b0}}),
 		.q_info(q_info),
 		.init_valid(init_valid),
 		.init_warp(init_warp),
