@@ -1342,12 +1342,16 @@ module atg_cp #(
 	assign u_tag = s_seq_fault_tag;
 
 	/* The kick codes (atg_cp_seq's K_*). */
-`ifdef SYNTH_KINTEX7
 	reg blt_kick_r, draw_kick_r, cs_kick_r, cs_mesh_r, lc_kick_r, raw_kick_r, occ_clear_r;
 	reg perf_reset_r, kick_flip_r, kick_idle_r;
-	(* extract_reset = "no" *) reg [3:0] inv_r;
+	reg [3:0] inv_r;
+`ifdef SYNTH_KINTEX7
 	always @(posedge clk or posedge s_core_rst_inv) begin
 		if (s_core_rst_inv) begin
+`else
+	always @(posedge clk or negedge s_core_rst_n) begin
+		if (!s_core_rst_n) begin
+`endif
 			blt_kick_r   <= 1'b0;
 			draw_kick_r  <= 1'b0;
 			cs_kick_r    <= 1'b0;
@@ -1384,19 +1388,6 @@ module atg_cp #(
 	assign s_perf_reset = perf_reset_r;
 	wire s_kick_flip = kick_flip_r;
 	wire s_kick_idle = kick_idle_r;
-`else
-	assign blt_kick = s_host_kick[0] || s_kick && s_kick_code == 3'd0;
-	assign draw_kick = s_host_kick[1] || s_kick && s_kick_code == 3'd1;
-	assign cs_kick = s_host_kick[2] || s_kick && s_kick_code == 3'd2;
-	assign cs_mesh = s_seq_cs_mesh;
-	assign lc_kick = s_kick && s_kick_code == 3'd3;
-	assign raw_kick = s_kick && s_kick_code == 3'd4;
-	assign inv = s_seq_inv;
-	assign occ_clear = s_seq_occ_clear;
-	assign s_perf_reset = s_kick && s_kick_code == 3'd5;
-	wire s_kick_flip = s_kick && s_kick_code == 3'd6;
-	wire s_kick_idle = s_kick && s_kick_code == 3'd7;
-`endif
 
 	/* Fences. */
 	wire s_ev_fence, s_f_64;
