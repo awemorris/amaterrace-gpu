@@ -122,7 +122,8 @@ module atg_cp_seq #(
 	/* Caps internal read interface (for CMD_QUERY_CAPS) */
 	output wire [8:0] caps_r_idx,
 	input wire [31:0] caps_r_data,
-	input wire caps_fw_stall
+	input wire caps_fw_stall,
+	output reg [3:0] bound_session
 );
 	`include "ghci_regs.vh"
 
@@ -149,6 +150,7 @@ module atg_cp_seq #(
 	/* verilator lint_off UNUSEDPARAM */
 	localparam [7:0] CMD_SESSION_OPEN          = 8'h12;
 	localparam [7:0] CMD_SESSION_CLOSE         = 8'h13;
+	localparam [7:0] CMD_BIND_SESSION          = 8'h14;
 	localparam [7:0] CMD_QUERY_CAPS            = 8'h15;
 	localparam [7:0] CMD_BIND_PIPELINE         = 8'h20;
 	localparam [7:0] CMD_BIND_VERTEX_BUFFERS   = 8'h21;
@@ -307,7 +309,7 @@ module atg_cp_seq #(
 	);
 
 	(* max_fanout = 16 *) reg is_set_r, is_dset_r, is_fence_cmd_r, is_fc_or_res_r, is_query_caps_r;
-	reg is_set_r1, is_dset_r1, is_sopen_r1;
+	reg is_set_r1, is_dset_r1, is_sopen_r1, is_bsess_r;
 	reg is_fop_fence_r, is_fop_res_q_r, is_wait_fence_r;
 	(* max_fanout = 16 *) reg is_dispatch_r, is_mesh_r, is_load_const_r, is_draw_raw_r, is_barrier_r;
 	assign cs_mesh = is_mesh_r;
@@ -904,6 +906,8 @@ module atg_cp_seq #(
 			is_set_r1 <= 1'b0;
 			is_dset_r1 <= 1'b0;
 			is_sopen_r1 <= 1'b0;
+			is_bsess_r <= 1'b0;
+			bound_session <= 4'd0;
 			is_fop_fence_r <= 1'b0;
 			is_fop_res_q_r <= 1'b0;
 			is_wait_fence_r <= 1'b0;
@@ -983,6 +987,7 @@ module atg_cp_seq #(
 			if (pay_take_b[2] && p_is_0_r) begin
 				qc_addr_lo <= in_data;
 				if (in_data[5:0] != 6'd0) qc_align_err <= 1'b1;
+				if (is_bsess_r) bound_session <= in_data[3:0];
 			end
 			if (pay_take_b[2] && p_is_1_r) begin
 				qc_addr_hi <= in_data;
@@ -1006,6 +1011,7 @@ module atg_cp_seq #(
 				is_set_r1 <= !h_vendor && (h_op_b == OP_SET_REG);
 				is_dset_r1 <= !h_vendor && (h_op_b == OP_DISP_SET);
 				is_sopen_r1 <= !h_vendor && (h_op_b == CMD_SESSION_OPEN);
+				is_bsess_r <= !h_vendor && (h_op_b == CMD_BIND_SESSION);
 				is_fence_cmd_r <= (h_op_b == CMD_FENCE || h_op_b == CMD_WAIT_FENCE);
 				is_fop_fence_r <= !h_vendor && (h_op_b == OP_FENCE || h_op_b == CMD_FENCE);
 				is_fop_res_q_r <= !h_vendor && (h_op_b == OP_RESULT || h_op_b == OP_QUERY);

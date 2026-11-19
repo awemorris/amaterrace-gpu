@@ -64,7 +64,8 @@ module atg_cp_ctl #(
 	parameter C_SA = 7,
 	parameter C_DC = 8'hFF,
 	parameter C_SU = 8,
-	parameter HAS_PROT = 0
+	parameter HAS_PROT = 0,
+	parameter VA_BITS = 32
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -94,6 +95,11 @@ module atg_cp_ctl #(
 	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
 	input wire [7:0] mc_fault_tag,
 	input wire [7:0] mc_fault_req_tag,
+	input wire mmu_fault,
+	input wire [3:0] mmu_fault_kind,
+	input wire [7:0] mmu_fault_client,
+	input wire [3:0] mmu_fault_session,
+	input wire [VA_BITS-1:0] mmu_fault_addr,
 	input wire [7:0] wdt_tag,	/* the job tag of a watchdog fault */
 	input wire [NSRC-1:0] src_fault,
 	input wire [NSRC*4-1:0] src_kind,
@@ -222,6 +228,7 @@ module atg_cp_ctl #(
 	                           cp_is_fetch ? GHCI_ST_FETCH :
 	                           GHCI_ST_IDLE;
 	wire [63:0] mc_fault_addr_ext = {{(64-ADDR_W){1'b0}}, mc_fault_addr};
+	wire [63:0] mmu_fault_addr_ext = {{(64-VA_BITS){1'b0}}, mmu_fault_addr};
 	wire [63:0] ap_base_ext = {32'd0, ap_base};
 	wire [63:0] ap_limit_ext = {(&ap_limit ? 32'hFFFF_FFFF : 32'd0), ap_limit};
 	assign cp_state = cp_is_wait_halt_mc ? GHCI_ST_WAIT_MEM : cp_state_nomc;
@@ -274,6 +281,15 @@ module atg_cp_ctl #(
 	 * those of session protection (a firmware µop's fence or result). */
 	wire mc_gpu = mc_fault && (mc_fault_client != 8'd0 || mc_fault_prot || mc_fault_mem) &&
 		!(mc_fault_client == DC_CLIENT && !mc_fault_prot && !mc_fault_mem);
+	wire bus_fault = mc_gpu || mmu_fault;
+	wire [7:0] bus_fault_client = mmu_fault ? mmu_fault_client : mc_fault_client;
+	wire [7:0] bus_fault_tag = mmu_fault ? {4'd0, mmu_fault_session} : mc_fault_tag;
+	wire [3:0] bus_fault_kind = mmu_fault ? mmu_fault_kind :
+		(mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
+		(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT));
+	wire bus_fault_write = mmu_fault ? 1'b0 : mc_fault_write;
+	wire [3:0] bus_fault_req_tag = mmu_fault ? 4'd0 : mc_fault_req_tag[3:0];
+	wire [63:0] bus_fault_addr_ext = mmu_fault ? mmu_fault_addr_ext : mc_fault_addr_ext;
 
 	function [3:0] mc_client_to_unit;
 		input [7:0] client;
@@ -423,17 +439,16 @@ module atg_cp_ctl #(
 			f_s1_addr_r <= 32'd0;
 			f_s2_addr_r <= 32'd0;
 		end else begin
-			f_mc_v_r <= {8{mc_gpu}};
-			f_mc_info_r <= {11'd0, mc_fault_write,
-				(mc_client_to_unit(mc_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
-				mc_fault_tag, mc_client_to_unit(mc_fault_client),
-				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
-				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
-			f_mc_addr_r <= mc_fault_addr_ext[31:0];
-			f_mc_addr_hi_r <= mc_fault_addr_ext[63:32];
+			f_mc_v_r <= {8{bus_fault}};
+			f_mc_info_r <= {11'd0, bus_fault_write,
+				(mc_client_to_unit(bus_fault_client) == GHCI_FAULT_UNIT_SU ? {2'd0, bus_fault_req_tag[1:0]} : 4'd0),
+				bus_fault_tag, mc_client_to_unit(bus_fault_client),
+				bus_fault_kind};
+			f_mc_addr_r <= bus_fault_addr_ext[31:0];
+			f_mc_addr_hi_r <= bus_fault_addr_ext[63:32];
 
 			f_host_v_r <= {8{kick_bad || kick_absent || locked_bad || wdt_fire}};
-			f_wdt_only_r <= wdt_fire && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
+			f_wdt_only_r <= wdt_fire && !bus_fault && !kick_bad && !kick_absent && !locked_bad;
 			f_host_kind_r <= kick_absent ? GHCI_FAULT_KIND_KICK_ABSENT :
 				kick_bad ? GHCI_FAULT_KIND_INVALID_OP :
 				locked_bad ? GHCI_FAULT_KIND_LOCKED_REG : GHCI_FAULT_KIND_WATCHDOG;
@@ -508,16 +523,15 @@ module atg_cp_ctl #(
 	assign ev_wdt = f_wdt_only_r && take_fault;
 	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
-	wire [7:0] win_tag = mc_gpu ? mc_fault_tag :
+	wire [7:0] win_tag = bus_fault ? bus_fault_tag :
 	                     (kick_absent || kick_bad || locked_bad) ? 8'd0 :
 	                     wdt_fire ? wdt_tag : n_info[15:8];
 `else
-	wire [3:0] mc_unit_w = mc_client_to_unit(mc_fault_client);
-	wire [31:0] mc_info_w = {11'd0, mc_fault_write,
-		(mc_unit_w == GHCI_FAULT_UNIT_SU ? {2'd0, mc_fault_req_tag[1:0]} : 4'd0),
-		mc_fault_tag, mc_unit_w,
-		mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
-		(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
+	wire [3:0] mc_unit_w = mc_client_to_unit(bus_fault_client);
+	wire [31:0] mc_info_w = {11'd0, bus_fault_write,
+		(mc_unit_w == GHCI_FAULT_UNIT_SU ? {2'd0, bus_fault_req_tag[1:0]} : 4'd0),
+		bus_fault_tag, mc_unit_w,
+		bus_fault_kind};
 
 	wire [NSRC-1:0] sf_1h;
 	assign sf_1h[0] = src_fault[0];
@@ -544,9 +558,9 @@ module atg_cp_ctl #(
 	endgenerate
 
 	wire any_src_fault = |src_fault;
-	wire p_mc   = mc_gpu;
-	wire p_host = !mc_gpu && (kick_absent || kick_bad || locked_bad || wdt_fire);
-	wire p_src  = !mc_gpu && !kick_absent && !kick_bad && !locked_bad && !wdt_fire && any_src_fault;
+	wire p_mc   = bus_fault;
+	wire p_host = !bus_fault && (kick_absent || kick_bad || locked_bad || wdt_fire);
+	wire p_src  = !bus_fault && !kick_absent && !kick_bad && !locked_bad && !wdt_fire && any_src_fault;
 	wire [31:0] host_info_w = kick_absent ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_KICK_ABSENT} :
 	                          kick_bad    ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_INVALID_OP} :
 	                          locked_bad  ? {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG} :
@@ -555,10 +569,10 @@ module atg_cp_ctl #(
 	wire [31:0] n_info_mux = (p_mc ? mc_info_w : 32'd0) |
 	                         (p_host ? host_info_w : 32'd0) |
 	                         (p_src ? sf_info : 32'd0);
-	wire [31:0] n_addr_hi_mux = (p_mc ? mc_fault_addr_ext[63:32] : 32'd0);
-	wire [31:0] n_addr_mux = (p_mc ? mc_fault_addr_ext[31:0] : 32'd0) |
+	wire [31:0] n_addr_hi_mux = (p_mc ? bus_fault_addr_ext[63:32] : 32'd0);
+	wire [31:0] n_addr_mux = (p_mc ? bus_fault_addr_ext[31:0] : 32'd0) |
 	                         (p_src ? sf_addr : 32'd0);
-	wire any_mux = mc_gpu || kick_absent || kick_bad || locked_bad || wdt_fire || any_src_fault;
+	wire any_mux = bus_fault || kick_absent || kick_bad || locked_bad || wdt_fire || any_src_fault;
 	wire unused_n_c = &{1'b0, any, n_info, n_addr, k};
 
 	wire fault_info_uncleared = |fault_info;
@@ -567,10 +581,10 @@ module atg_cp_ctl #(
 	wire take_fault_info = any_mux && can_fault_r[2] && !fault_info_uncleared;
 	wire take_fault_addr = any_mux && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
-	assign ev_wdt = wdt_fire && take_fault && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
+	assign ev_wdt = wdt_fire && take_fault && !bus_fault && !kick_bad && !kick_absent && !locked_bad;
 	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
-	wire [7:0] win_tag = mc_gpu ? mc_fault_tag :
+	wire [7:0] win_tag = bus_fault ? bus_fault_tag :
 	                     (kick_absent || kick_bad || locked_bad) ? 8'd0 :
 	                     wdt_fire ? wdt_tag : sf_info[15:8];
 `endif

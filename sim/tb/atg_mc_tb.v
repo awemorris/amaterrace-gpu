@@ -301,6 +301,8 @@ module atg_mc_case #(
 		.dc_urgent(dc_urgent), .dc_panic(dc_panic),
 		.prot_tbase(32'd0), .prot_inv_valid(1'b0), .prot_inv_g(20'd0), .prot_inv_n(32'd0),
 		.prot_inv_pending(), .prot_gw_valid(1'b0), .prot_gw_idx(3'd0), .prot_gw_data(50'd0),
+		.mmu_walk_req_valid(1'b0), .mmu_walk_req_ready(), .mmu_walk_req_addr(32'd0),
+		.mmu_walk_rsp_valid(), .mmu_walk_rsp_data(), .mmu_walk_rsp_error(),
 		.m_awid(awid), .m_bid(bid), .m_arid(arid), .m_rid(rid),
 		.m_awaddr(awaddr), .m_awlen(awlen), .m_awsize(awsize), .m_awburst(awburst),
 		.m_awcache(awcache), .m_awprot(awprot), .m_awvalid(awvalid), .m_awready(awready),

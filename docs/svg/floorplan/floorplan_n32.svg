@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 560" width="940" height="560">
+    <defs>
+        <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+        <marker id="arr-sky" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0284c7"/>
+        </marker>
+        <marker id="arr-vio" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arr-em" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arr-slate" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+    </defs>
+    <style><![CDATA[
+        text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+        .t-title { font-size: 18px; font-weight: 700; fill: #0f172a; }
+        .t-sub { font-size: 11.5px; font-weight: 500; fill: #475569; }
+        .t-sec { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; fill: #334155; }
+        .t-su { font-size: 10.5px; font-weight: 700; fill: #0c4a6e; }
+        .t-susub { font-size: 8px; font-weight: 600; fill: #0369a1; }
+        .t-rt { font-size: 9px; font-weight: 700; fill: #4c1d95; }
+        .t-rep { font-size: 8px; font-weight: 700; fill: #92400e; }
+        .t-box { font-size: 10px; font-weight: 700; fill: #1e293b; }
+        .t-boxsub { font-size: 8.5px; font-weight: 500; fill: #475569; }
+    ]]></style>
+    <rect width="940" height="560" fill="#f8fafc" rx="10"/>
+    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 32 SUs (8x4: 8 Quads, atg_su_fabric_n32)</text>
+    <text class="t-sub" x="24" y="48">West 4x4 + East 4x4 (Each cell = 2x2 Quad w/ atg_rt4) | Outer cols rep_h(2), Inner rep_h(1) -> 4 Trunks to Spine MMU</text>
+    <rect x="24" y="64" width="892" height="295" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
+    <rect x="48" y="84" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="121.0" y="100" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">W_NW (Q0)</text>
+    <text x="121.0" y="113" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 0..3</text>
+    <rect x="95.0" y="132" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="121.0" y="143" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q0</text>
+    <rect x="226" y="84" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="299.0" y="100" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">W_NE (Q1)</text>
+    <text x="299.0" y="113" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 4..7</text>
+    <rect x="273.0" y="132" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="299.0" y="143" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q1</text>
+    <rect x="540" y="84" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="613.0" y="100" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">E_NW (Q4)</text>
+    <text x="613.0" y="113" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 16..19</text>
+    <rect x="587.0" y="132" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="613.0" y="143" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q4</text>
+    <rect x="718" y="84" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="791.0" y="100" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">E_NE (Q5)</text>
+    <text x="791.0" y="113" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 20..23</text>
+    <rect x="765.0" y="132" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="791.0" y="143" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q5</text>
+    <rect x="48" y="186" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="121.0" y="202" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">W_SW (Q2)</text>
+    <text x="121.0" y="215" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 8..11</text>
+    <rect x="95.0" y="234" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="121.0" y="245" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q2</text>
+    <rect x="226" y="186" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="299.0" y="202" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">W_SE (Q3)</text>
+    <text x="299.0" y="215" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 12..15</text>
+    <rect x="273.0" y="234" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="299.0" y="245" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q3</text>
+    <rect x="540" y="186" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="613.0" y="202" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">E_SW (Q6)</text>
+    <text x="613.0" y="215" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 24..27</text>
+    <rect x="587.0" y="234" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="613.0" y="245" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q6</text>
+    <rect x="718" y="186" width="146" height="70" rx="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.3" filter="url(#shadow)"/>
+    <text x="791.0" y="202" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0c4a6e">E_SE (Q7)</text>
+    <text x="791.0" y="215" text-anchor="middle" font-size="8.5" font-weight="600" fill="#0369a1">SU 28..31</text>
+    <rect x="765.0" y="234" width="52" height="16" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.1"/>
+    <text x="791.0" y="245" text-anchor="middle" font-size="8" font-weight="700" fill="#4c1d95">rt4_q7</text>
+    <line x1="121" y1="154" x2="121" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="121" y1="174" x2="392" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="299" y1="154" x2="299" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="299" y1="174" x2="392" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <rect x="232.5" y="166.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="256.5" y="177" text-anchor="middle">rep_h(2)</text>
+    <rect x="321.5" y="166.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="345.5" y="177" text-anchor="middle">rep_h(1)</text>
+    <rect x="363.0" y="164.0" width="58" height="20" rx="5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.4"/>
+    <text class="t-rt" x="392" y="177.5" text-anchor="middle">rt2_wn</text>
+    <line x1="392" y1="184" x2="392" y2="328" stroke="#059669" stroke-width="1.7"/>
+    <rect x="368.0" y="243.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="392" y="254.0" text-anchor="middle">rep_v(2)</text>
+    <line x1="392" y1="328" x2="360" y2="328" stroke="#059669" stroke-width="1.7"/>
+    <line x1="360" y1="328" x2="360" y2="395" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <line x1="613" y1="154" x2="613" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="613" y1="174" x2="548" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="791" y1="154" x2="791" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="791" y1="174" x2="548" y2="174" stroke="#7c3aed" stroke-width="1.5"/>
+    <rect x="556.5" y="166.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="580.5" y="177" text-anchor="middle">rep_h(1)</text>
+    <rect x="645.5" y="166.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="669.5" y="177" text-anchor="middle">rep_h(2)</text>
+    <rect x="519.0" y="164.0" width="58" height="20" rx="5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.4"/>
+    <text class="t-rt" x="548" y="177.5" text-anchor="middle">rt2_en</text>
+    <line x1="548" y1="184" x2="548" y2="328" stroke="#059669" stroke-width="1.7"/>
+    <rect x="524.0" y="243.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="548" y="254.0" text-anchor="middle">rep_v(2)</text>
+    <line x1="548" y1="328" x2="580" y2="328" stroke="#059669" stroke-width="1.7"/>
+    <line x1="580" y1="328" x2="580" y2="395" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <line x1="121" y1="256" x2="121" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="121" y1="276" x2="392" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="299" y1="256" x2="299" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="299" y1="276" x2="392" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <rect x="232.5" y="268.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="256.5" y="279" text-anchor="middle">rep_h(2)</text>
+    <rect x="321.5" y="268.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="345.5" y="279" text-anchor="middle">rep_h(1)</text>
+    <rect x="363.0" y="266.0" width="58" height="20" rx="5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.4"/>
+    <text class="t-rt" x="392" y="279.5" text-anchor="middle">rt2_ws</text>
+    <line x1="392" y1="286" x2="392" y2="340" stroke="#059669" stroke-width="1.7"/>
+    <rect x="368.0" y="300.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="392" y="311.0" text-anchor="middle">rep_v(1)</text>
+    <line x1="392" y1="340" x2="415" y2="340" stroke="#059669" stroke-width="1.7"/>
+    <line x1="415" y1="340" x2="415" y2="395" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <line x1="613" y1="256" x2="613" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="613" y1="276" x2="548" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="791" y1="256" x2="791" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <line x1="791" y1="276" x2="548" y2="276" stroke="#7c3aed" stroke-width="1.5"/>
+    <rect x="556.5" y="268.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="580.5" y="279" text-anchor="middle">rep_h(1)</text>
+    <rect x="645.5" y="268.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="669.5" y="279" text-anchor="middle">rep_h(2)</text>
+    <rect x="519.0" y="266.0" width="58" height="20" rx="5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.4"/>
+    <text class="t-rt" x="548" y="279.5" text-anchor="middle">rt2_es</text>
+    <line x1="548" y1="286" x2="548" y2="340" stroke="#059669" stroke-width="1.7"/>
+    <rect x="524.0" y="300.0" width="48" height="16" rx="4" fill="#fef3c7" stroke="#d97706" stroke-width="1.2"/>
+    <text class="t-rep" x="548" y="311.0" text-anchor="middle">rep_v(1)</text>
+    <line x1="548" y1="340" x2="525" y2="340" stroke="#059669" stroke-width="1.7"/>
+    <line x1="525" y1="340" x2="525" y2="395" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <!-- SPINE & MC ROOT -->
+    <rect x="24" y="372" width="892" height="165" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <text class="t-sec" x="38" y="390">SPINE &amp; ROOT NOC (SOUTH DIE EDGE) — 4 SU TRUNK(S) TO ATG_MMU + FIXED-FUNC SUBTREE + DC ROOT</text>
+    <rect x="250.0" y="398" width="440" height="32" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+    <text x="470.0" y="412" text-anchor="middle" font-size="9.5" font-weight="700" fill="#065f46">Spine MMU Boundary: 4x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>
+    <text x="470.0" y="424" text-anchor="middle" font-size="8.5" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>
+    <rect x="38" y="398" width="132" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="104" y="414" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>
+    <text x="104" y="427" text-anchor="middle" font-size="8" fill="#1e40af">VF, TU, ROP, BLT</text>
+    <text x="104" y="439" text-anchor="middle" font-size="8" fill="#1e40af">atg_rt4_fixed -> Root</text>
+    <text x="104" y="450" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>
+    <rect x="38" y="464" width="132" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>
+    <text x="104" y="480" text-anchor="middle" font-size="9.5" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>
+    <text x="104" y="492" text-anchor="middle" font-size="8" fill="#6d28d9">atg_su_pt + warp_dist</text>
+    <text x="104" y="504" text-anchor="middle" font-size="8" fill="#6d28d9">gfx_rt (tx/ex) + atom_rt</text>
+    <text x="104" y="516" text-anchor="middle" font-size="7.5" fill="#7c3aed">All 32 SUs run 3D/Compute</text>
+    <rect x="770" y="398" width="132" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>
+    <text x="836" y="415" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>
+    <text x="836" y="428" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>
+    <text x="836" y="440" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>
+    <text x="836" y="451" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>
+    <rect x="770" y="464" width="132" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>
+    <text x="836" y="480" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>
+    <text x="836" y="493" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>
+    <text x="836" y="505" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>
+    <text x="836" y="517" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>
+    <rect x="320.0" y="438" width="300" height="32" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="470.0" y="457" text-anchor="middle" font-size="10" font-weight="700" fill="#4c1d95">Root Fat-Tree Arbiter (CP + Fixed + SU Trunks + SA)</text>
+    <rect x="290.0" y="480" width="360" height="46" rx="6" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
+    <text x="470.0" y="499" text-anchor="middle" font-size="10.5" font-weight="700" fill="#f8fafc">atg_mc (L2 Cache + Session PROT + Aperture)</text>
+    <text x="470.0" y="515" text-anchor="middle" font-size="8.5" fill="#94a3b8">External AXI4 Master (m_awaddr / m_araddr [PA_BITS]) — 0/1 ID Local/Host</text>
+    <line x1="470.0" y1="430" x2="470.0" y2="438" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <line x1="470.0" y1="470" x2="470.0" y2="480" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-vio)"/>
+    <line x1="170" y1="427" x2="250.0" y2="416" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>
+    <line x1="770" y1="427" x2="690.0" y2="416" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>
+    <line x1="770" y1="494" x2="620.0" y2="456" stroke="#e11d48" stroke-width="1.5" marker-end="url(#arr-vio)"/>
+</svg>

@@ -238,6 +238,8 @@ hw_read(
 		return host_prot_g0;
 	case HW_PROT_G1:
 		return host_prot_g1;
+	case HW_BOOT_CAPS:
+		return (0u << 12) | (2u << 8) | (host_walker_has ? 2u : 0u) | 1u;
 	case HW_DEVICE_CAPS:
 		return host_walker_has ? GHCI_CAP_HW_WALKER : 0;
 	default:

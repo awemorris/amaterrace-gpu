@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 560" width="1040" height="560">
+    <defs>
+        <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0f172a" flood-opacity="0.08"/>
+        </filter>
+        <marker id="arr-sky" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#0284c7"/>
+        </marker>
+        <marker id="arr-vio" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed"/>
+        </marker>
+        <marker id="arr-em" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#059669"/>
+        </marker>
+        <marker id="arr-slate" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+        </marker>
+    </defs>
+    <style><![CDATA[
+        text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+        .t-title { font-size: 18px; font-weight: 700; fill: #0f172a; }
+        .t-sub { font-size: 11.5px; font-weight: 500; fill: #475569; }
+        .t-sec { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; fill: #334155; }
+        .t-su { font-size: 10.5px; font-weight: 700; fill: #0c4a6e; }
+        .t-susub { font-size: 8px; font-weight: 600; fill: #0369a1; }
+        .t-rt { font-size: 9px; font-weight: 700; fill: #4c1d95; }
+        .t-rep { font-size: 8px; font-weight: 700; fill: #92400e; }
+        .t-box { font-size: 10px; font-weight: 700; fill: #1e293b; }
+        .t-boxsub { font-size: 8.5px; font-weight: 500; fill: #475569; }
+    ]]></style>
+    <rect width="1040" height="560" fill="#f8fafc" rx="10"/>
+    <text class="t-title" x="24" y="30">Amaterrace GPU Explicit 2D Floorplan Family (N = 1 .. 128 SUs)</text>
+    <text class="t-sub" x="24" y="48">Each N has an explicit 2D physical module atg_su_fabric_n&lt;N&gt;.v with fixed repeater stages and shared Spine interface</text>
+    <rect x="24" y="70" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="24" y="70" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="36" y="88" font-size="11.5" font-weight="700" fill="#f8fafc">N = 1 (1x1)</text>
+    <text x="246" y="88" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">1 trunk</text>
+    <text x="36" y="118" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: SU0 local rt2</text>
+    <text x="36" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 0 rep</text>
+    <text x="36" y="154" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="36" y="172" font-size="9" font-weight="700" fill="#c2410c">FPGA Xbar + ASIC NoC</text>
+    <text x="36" y="188" font-size="8" fill="#64748b">File: floorplan_n1.svg</text>
+    <rect x="276" y="70" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="276" y="70" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="288" y="88" font-size="11.5" font-weight="700" fill="#f8fafc">N = 2 (2x1)</text>
+    <text x="498" y="88" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">1 trunk</text>
+    <text x="288" y="118" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: rt2_top</text>
+    <text x="288" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 0/1 rep_h</text>
+    <text x="288" y="154" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="288" y="172" font-size="9" font-weight="700" fill="#c2410c">FPGA Xbar + ASIC NoC</text>
+    <text x="288" y="188" font-size="8" fill="#64748b">File: floorplan_n2.svg</text>
+    <rect x="528" y="70" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="528" y="70" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="540" y="88" font-size="11.5" font-weight="700" fill="#f8fafc">N = 4 (2x2)</text>
+    <text x="750" y="88" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">1 trunk</text>
+    <text x="540" y="118" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 1x rt4_quad</text>
+    <text x="540" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1 rep_v</text>
+    <text x="540" y="154" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="540" y="172" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="540" y="188" font-size="8" fill="#64748b">File: floorplan_n4.svg</text>
+    <rect x="780" y="70" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="780" y="70" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="792" y="88" font-size="11.5" font-weight="700" fill="#f8fafc">N = 8 (4x2)</text>
+    <text x="1002" y="88" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">2 trunks</text>
+    <text x="792" y="118" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 2x rt4_quad</text>
+    <text x="792" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1 rep_h</text>
+    <text x="792" y="154" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="792" y="172" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="792" y="188" font-size="8" fill="#64748b">File: floorplan_n8.svg</text>
+    <rect x="24" y="218" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="24" y="218" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="36" y="236" font-size="11.5" font-weight="700" fill="#f8fafc">N = 16 (4x4)</text>
+    <text x="246" y="236" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">4 trunks</text>
+    <text x="36" y="266" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 4x rt4_quad</text>
+    <text x="36" y="284" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1-2 rep_v</text>
+    <text x="36" y="302" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="36" y="320" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="36" y="336" font-size="8" fill="#64748b">File: floorplan_n16.svg</text>
+    <rect x="276" y="218" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="276" y="218" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="288" y="236" font-size="11.5" font-weight="700" fill="#f8fafc">N = 32 (8x4)</text>
+    <text x="498" y="236" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">4 trunks</text>
+    <text x="288" y="266" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 8x rt4 + 4x rt2</text>
+    <text x="288" y="284" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1-2h, 1-2v</text>
+    <text x="288" y="302" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="288" y="320" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="288" y="336" font-size="8" fill="#64748b">File: floorplan_n32.svg</text>
+    <rect x="528" y="218" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="528" y="218" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="540" y="236" font-size="11.5" font-weight="700" fill="#f8fafc">N = 64 (8x8)</text>
+    <text x="750" y="236" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">4 trunks</text>
+    <text x="540" y="266" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 16x rt4 + 4x rt4_q16</text>
+    <text x="540" y="284" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 2h, 1-3v</text>
+    <text x="540" y="302" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="540" y="320" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="540" y="336" font-size="8" fill="#64748b">File: floorplan_n64.svg</text>
+    <rect x="780" y="218" width="232" height="130" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4" filter="url(#shadow)"/>
+    <rect x="780" y="218" width="232" height="28" rx="8" fill="#0f172a"/>
+    <text x="792" y="236" font-size="11.5" font-weight="700" fill="#f8fafc">N = 128 (16x8)</text>
+    <text x="1002" y="236" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">8 trunks</text>
+    <text x="792" y="266" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 32x rt4 + 8x rt4_q16</text>
+    <text x="792" y="284" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1-3h, 1-3v</text>
+    <text x="792" y="302" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
+    <text x="792" y="320" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
+    <text x="792" y="336" font-size="8" fill="#64748b">File: floorplan_n128.svg</text>
+    <!-- SPINE & MC ROOT -->
+    <rect x="24" y="370" width="992" height="165" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <text class="t-sec" x="38" y="388">SPINE &amp; ROOT NOC (SOUTH DIE EDGE) — 1..8 SU TRUNK(S) TO ATG_MMU + FIXED-FUNC SUBTREE + DC ROOT</text>
+    <rect x="180.0" y="396" width="680" height="32" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+    <text x="520.0" y="410" text-anchor="middle" font-size="9.5" font-weight="700" fill="#065f46">Spine MMU Boundary: 1..8x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>
+    <text x="520.0" y="422" text-anchor="middle" font-size="8.5" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>
+    <rect x="38" y="396" width="132" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="104" y="412" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>
+    <text x="104" y="425" text-anchor="middle" font-size="8" fill="#1e40af">VF, TU, ROP, BLT</text>
+    <text x="104" y="437" text-anchor="middle" font-size="8" fill="#1e40af">atg_rt4_fixed -> Root</text>
+    <text x="104" y="448" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>
+    <rect x="38" y="462" width="132" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>
+    <text x="104" y="478" text-anchor="middle" font-size="9.5" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>
+    <text x="104" y="490" text-anchor="middle" font-size="8" fill="#6d28d9">atg_su_pt + warp_dist</text>
+    <text x="104" y="502" text-anchor="middle" font-size="8" fill="#6d28d9">gfx_rt (tx/ex) + atom_rt</text>
+    <text x="104" y="514" text-anchor="middle" font-size="7.5" fill="#7c3aed">All N SUs run 3D/Compute</text>
+    <rect x="870" y="396" width="132" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>
+    <text x="936" y="413" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>
+    <text x="936" y="426" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>
+    <text x="936" y="438" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>
+    <text x="936" y="449" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>
+    <rect x="870" y="462" width="132" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>
+    <text x="936" y="478" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>
+    <text x="936" y="491" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>
+    <text x="936" y="503" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>
+    <text x="936" y="515" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>
+    <rect x="370.0" y="436" width="300" height="32" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="520.0" y="455" text-anchor="middle" font-size="10" font-weight="700" fill="#4c1d95">Root Fat-Tree Arbiter (CP + Fixed + SU Trunks + SA)</text>
+    <rect x="340.0" y="478" width="360" height="46" rx="6" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
+    <text x="520.0" y="497" text-anchor="middle" font-size="10.5" font-weight="700" fill="#f8fafc">atg_mc (L2 Cache + Session PROT + Aperture)</text>
+    <text x="520.0" y="513" text-anchor="middle" font-size="8.5" fill="#94a3b8">External AXI4 Master (m_awaddr / m_araddr [PA_BITS]) — 0/1 ID Local/Host</text>
+    <line x1="520.0" y1="428" x2="520.0" y2="436" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
+    <line x1="520.0" y1="468" x2="520.0" y2="478" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-vio)"/>
+    <line x1="170" y1="425" x2="180.0" y2="414" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>
+    <line x1="870" y1="425" x2="860.0" y2="414" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>
+    <line x1="870" y1="492" x2="670.0" y2="454" stroke="#e11d48" stroke-width="1.5" marker-end="url(#arr-vio)"/>
+</svg>

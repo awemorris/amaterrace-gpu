@@ -106,7 +106,8 @@ module atg_mc #(
 	parameter HAS_L2 = 0,		/* 256 KiB 16-way L2 cache (LLC) */
 	parameter L2_WAYS = 16,
 	parameter L2_SET_W = 8,
-	parameter USE_FLUSH_REP = 0
+	parameter USE_FLUSH_REP = 0,
+	parameter HAS_MMU_WALK = 0
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -161,6 +162,14 @@ module atg_mc #(
 	input wire prot_gw_valid,
 	input wire [PROT_GIDX_W-1:0] prot_gw_idx,
 	input wire [49:0] prot_gw_data,
+
+	/* Hardware MMU page-table walker read-only interface (HAS_MMU_WALK=1) */
+	input wire mmu_walk_req_valid,
+	output wire mmu_walk_req_ready,
+	input wire [ADDR_W-1:0] mmu_walk_req_addr,
+	output reg mmu_walk_rsp_valid,
+	output reg [63:0] mmu_walk_rsp_data,
+	output reg mmu_walk_rsp_error,
 
 	output wire m_awid,	/* 0 local, 1 host */
 	output wire [ADDR_W-1:0] m_awaddr,
@@ -340,6 +349,11 @@ module atg_mc #(
 	reg [7:0] err_tag;
 	reg err_write;
 
+	wire pg_valid, pg_ready, pg_write;
+	wire [LA_W-1:0] pg_line;
+	wire [LINE_BYTES-1:0] pg_be;
+	wire [LINE_BITS-1:0] pg_wdata;
+	wire [UW-1:0] pg_user;
 	wire g_valid, g_ready, g_write;
 	wire [LA_W-1:0] g_line;
 	wire [LINE_BYTES-1:0] g_be;
@@ -358,6 +372,8 @@ module atg_mc #(
 	wire l2_idle;
 	wire m_idle;
 	wire l2_walk = l2_rsp_user[15:8] == 8'hFF;
+	localparam [7:0] MMU_WALK_KEY = 8'hFE;
+	wire l2_mmu_walk = (HAS_MMU_WALK != 0) && (l2_rsp_user[15:8] == MMU_WALK_KEY);
 
 	atg_mc_prot #(
 		.HAS_PROT(HAS_PROT), .HAS_DC(HAS_DC), .NCLIENT(NCLIENT), .RMW_MASK(RMW_MASK),
@@ -370,8 +386,8 @@ module atg_mc #(
 		.a_ap(a_ap), .a_take(a_take_raw),
 		.d_valid(d_full), .d_head(d_head), .d_data(d_data), .d_ap(d_ap), .d_take(d_take),
 		.aperture_base(aperture_base), .aperture_limit(aperture_limit),
-		.g_valid(g_valid), .g_ready(g_ready), .g_write(g_write), .g_line(g_line), .g_be(g_be),
-		.g_wdata(g_wdata), .g_user(g_user),
+		.g_valid(pg_valid), .g_ready(pg_ready), .g_write(pg_write), .g_line(pg_line), .g_be(pg_be),
+		.g_wdata(pg_wdata), .g_user(pg_user),
 		.err_busy(err_v || bad_r), .bad(bad), .bad_head(bad_head), .bad_line(bad_line),
 		.bad_prot(bad_prot), .bad_mem(bad_mem), .done(done), .done_chk(done_chk),
 		.w_valid(l2_rsp_valid && l2_walk), .w_error(l2_rsp_error), .w_rdata(l2_rsp_rdata),
@@ -380,9 +396,54 @@ module atg_mc #(
 		.gw_valid(prot_gw_valid), .gw_idx(prot_gw_idx), .gw_data(prot_gw_data)
 	);
 
+	/* Hardware MMU walker read-only bypass mux into L2/AXI */
+	localparam [LINE_BITS-1:0] MMU_ZERO_LINE = {LINE_BITS{1'b0}};
+	localparam [LINE_BYTES-1:0] MMU_ZERO_BE = {LINE_BYTES{1'b0}};
+	reg mmu_walk_busy_r;
+	reg [LINE_SHIFT-4:0] mmu_walk_off_r;
+	wire mmu_walk_busy_c = (HAS_MMU_WALK != 0) ? mmu_walk_busy_r : 1'b0;
+	wire mmu_walk_sel = (HAS_MMU_WALK != 0) && mmu_walk_req_valid && !mmu_walk_busy_c;
+	wire [UW-1:0] mmu_walk_user = { {(RW){1'b0}}, MMU_WALK_KEY, 8'd0 } | ( {{(UW-1){1'b0}}, 1'b1} << 16 );
+	assign mmu_walk_req_ready = (HAS_MMU_WALK != 0) && !mmu_walk_busy_c && g_ready;
+
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			mmu_walk_busy_r <= 1'b0;
+			mmu_walk_off_r <= {(LINE_SHIFT-3){1'b0}};
+			mmu_walk_rsp_valid <= 1'b0;
+			mmu_walk_rsp_data <= 64'd0;
+			mmu_walk_rsp_error <= 1'b0;
+		end else if (HAS_MMU_WALK != 0) begin
+			mmu_walk_rsp_valid <= 1'b0;
+			if (mmu_walk_req_valid && mmu_walk_req_ready) begin
+				mmu_walk_busy_r <= 1'b1;
+				mmu_walk_off_r <= mmu_walk_req_addr[LINE_SHIFT-1:3];
+			end else if (l2_rsp_valid && l2_mmu_walk) begin
+				mmu_walk_busy_r <= 1'b0;
+				mmu_walk_rsp_valid <= 1'b1;
+				mmu_walk_rsp_data <= l2_rsp_rdata[{mmu_walk_off_r, 6'd0} +: 64];
+				mmu_walk_rsp_error <= l2_rsp_error;
+			end
+		end else begin
+			mmu_walk_busy_r <= 1'b0;
+			mmu_walk_off_r <= {(LINE_SHIFT-3){1'b0}};
+			mmu_walk_rsp_valid <= 1'b0;
+			mmu_walk_rsp_data <= 64'd0;
+			mmu_walk_rsp_error <= 1'b0;
+		end
+	end
+
+	assign pg_ready = mmu_walk_sel ? 1'b0 : g_ready;
+	assign g_valid = mmu_walk_sel ? 1'b1 : pg_valid;
+	assign g_write = mmu_walk_sel ? 1'b0 : pg_write;
+	assign g_line  = mmu_walk_sel ? mmu_walk_req_addr[ADDR_W-1:LINE_SHIFT] : pg_line;
+	assign g_be    = mmu_walk_sel ? MMU_ZERO_BE : pg_be;
+	assign g_wdata = mmu_walk_sel ? MMU_ZERO_LINE : pg_wdata;
+	assign g_user  = mmu_walk_sel ? mmu_walk_user : pg_user;
+
 `ifdef SYNTH_KINTEX7
 	generate
-		if (HAS_PROT == 0 && HAS_DC == 0) begin : g_fast_atake
+		if (HAS_PROT == 0 && HAS_DC == 0 && HAS_MMU_WALK == 0) begin : g_fast_atake
 			(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h44444404)) u_atake (
 				.I0(err_v), .I1(a_full), .I2(a_ap), .I3(a_head[2]), .I4(g_ready),
 				.O(a_take)
@@ -409,7 +470,7 @@ module atg_mc #(
 	 * hop has room whenever the next one has), which the AXI master's
 	 * responses need: they cannot wait.
 	 */
-	wire m_out = l2_rsp_valid && !l2_walk;
+	wire m_out = l2_rsp_valid && !l2_walk && !l2_mmu_walk;
 	wire err_out = err_v && !m_out && t_rsp_ready;
 	wire [RW-1:0] rsp_route = m_out ? l2_rsp_user[16 +: RW] : err_route;
 	wire rsp_dc = HAS_DC != 0 && !rsp_route[0];
@@ -456,8 +517,9 @@ module atg_mc #(
 	 * ROOT_KEEP: the root client's grants (route bit 0 = 0, not a walk),
 	 * responses and refusals, left out of axi_idle.
 	 */
-	wire g_keep = HAS_KEEP != 0 && g_user[15:8] != 8'hFF && !g_user[16];
-	wire l2_keep = HAS_KEEP != 0 && !l2_walk && !l2_rsp_user[16];
+	wire g_keep = HAS_KEEP != 0 && g_user[15:8] != 8'hFF && !(HAS_MMU_WALK != 0 && g_user[15:8] == MMU_WALK_KEY) && !g_user[16];
+	wire pg_keep = HAS_KEEP != 0 && pg_user[15:8] != 8'hFF && !pg_user[16];
+	wire l2_keep = HAS_KEEP != 0 && !l2_walk && !l2_mmu_walk && !l2_rsp_user[16];
 	wire bad_keep = HAS_KEEP != 0 && !bad_head[20];
 	wire err_keep = HAS_KEEP != 0 && !err_route[0];
 	wire ax_zero;
@@ -465,7 +527,7 @@ module atg_mc #(
 	atg_mc_cnt #(.NCLIENT(NCLIENT), .UNIT_MASK(UNIT_MASK), .KEEP_MASK(KEEP_MASK)) cnt (
 		.clk(clk), .rst_n(rst_n), .flush(flush_cnt), .take(c_req_valid & c_req_ready_raw),
 		.take_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}), .rsp(rsp_valid), .done(done),
-		.done_chk(done_chk), .done_keep(g_valid && g_ready ? g_keep : bad && bad_keep),
+		.done_chk(done_chk), .done_keep(pg_valid && pg_ready ? pg_keep : bad && bad_keep),
 		.ax_inc(g_valid && g_ready && !g_keep), .ax_dec(l2_rsp_valid && !l2_keep),
 		.pend_zero(pend_zero), .chk_idle(chk_idle), .unit_idle(unit_idle), .ax_zero(ax_zero)
 	);
@@ -775,7 +837,7 @@ module atg_mc #(
 	genvar g_wg;
 	generate
 		for (g_wg = 0; g_wg < 3; g_wg = g_wg + 1) begin : g_w_ctrl_grp
-			if (HAS_PROT == 0 && HAS_DC == 0 && HAS_L2 == 0) begin : g_wv_direct
+			if (HAS_PROT == 0 && HAS_DC == 0 && HAS_L2 == 0 && HAS_MMU_WALK == 0) begin : g_wv_direct
 				(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00400000)) u_wv (
 					.I0(err_v), .I1(a_full), .I2(a_ap), .I3(a_head[2]), .I4(a_head[1]),
 					.O(wv_g[g_wg])
@@ -798,7 +860,7 @@ module atg_mc #(
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_wb (.I0(ax_w_busy), .O(wb_g[g_wg]));
 			(* DONT_TOUCH = "TRUE" *) LUT1 #(.INIT(2'h2)) u_mw (.I0(m_wready),  .O(mw_g[g_wg]));
 		end
-		if (HAS_PROT == 0 && HAS_DC == 0 && HAS_L2 == 0) begin : g_rv_direct
+		if (HAS_PROT == 0 && HAS_DC == 0 && HAS_L2 == 0 && HAS_MMU_WALK == 0) begin : g_rv_direct
 			(* DONT_TOUCH = "TRUE" *) LUT5 #(.INIT(32'h00000040)) u_rv (
 				.I0(err_v), .I1(a_full), .I2(a_ap), .I3(a_head[2]), .I4(a_head[1]),
 				.O(rv_g)
@@ -1342,7 +1404,7 @@ module atg_mc #(
 
 	assign l2_idle_out = l2_idle;
 	assign fsm = {!(m_idle && l2_idle), !axi_idle, !chk_idle, !unit_idle};
-	wire unused_ok = &{1'b0, bad_head, s_req_valid};
+	wire unused_ok = &{1'b0, bad_head, s_req_valid, mmu_walk_req_addr[2:0]};
 endmodule
 
 `default_nettype wire

@@ -354,6 +354,8 @@ module atg_cp_tb;
 		.aperture_base(), .aperture_limit(), .mc_idle(1'b1), .mc_fault(1'b0),
 		.mc_fault_client(8'd0), .mc_fault_addr(32'd0), .mc_fault_write(1'b0),
 		.mc_fault_prot(1'b0), .mc_fault_mem(1'b0), .mc_fault_tag(8'd0), .mc_fault_req_tag(8'd0),
+		.mmu_fault(1'b0), .mmu_fault_kind(4'd0), .mmu_fault_client(8'd0),
+		.mmu_fault_session(4'd0), .mmu_fault_addr(32'd0),
 		.st_we(), .st_idx(), .st_wdata(),
 		.blt_kick(), .blt_busy(1'b0), .blt_error(1'b0), .blt_error_kind(4'd0),
 		.req_valid(cp_req_valid), .req_ready(cp_req_ready), .req_write(cp_req_write),

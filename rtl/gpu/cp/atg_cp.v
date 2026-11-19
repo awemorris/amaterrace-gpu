@@ -174,6 +174,11 @@ module atg_cp #(
 	input wire mc_fault_mem,	/* a protection table read failed (kind 5) */
 	input wire [7:0] mc_fault_tag,	/* the job tag of the refused request's slot */
 	input wire [7:0] mc_fault_req_tag,
+	input wire mmu_fault,
+	input wire [3:0] mmu_fault_kind,
+	input wire [7:0] mmu_fault_client,
+	input wire [3:0] mmu_fault_session,
+	input wire [VA_BITS-1:0] mmu_fault_addr,
 
 	output reg st_we,
 	output reg [9:0] st_idx,
@@ -279,7 +284,8 @@ module atg_cp #(
 	input wire sb_re,
 	input wire [5:0] sb_idx,
 	input wire [31:0] sb_wdata,
-	output reg [31:0] sb_rdata
+	output reg [31:0] sb_rdata,
+	output wire [3:0] active_session
 );
 	`include "ghci_regs.vh"
 
@@ -899,7 +905,8 @@ module atg_cp #(
 		.C_SA(C_SA),
 		.C_DC(C_DC),
 		.C_SU(C_SU),
-		.HAS_PROT(HAS_PROT)
+		.HAS_PROT(HAS_PROT),
+		.VA_BITS(VA_BITS)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),
 		.hcr_we(hcr_we_ctl), .hcr_widx(hcr_widx_ctl), .hcr_wdata(reg_wdata_ctl),
@@ -914,6 +921,9 @@ module atg_cp #(
 		.mc_fault_write(mc_fault_write), .mc_fault_prot(mc_fault_prot),
 		.mc_fault_mem(mc_fault_mem), .mc_fault_tag(mc_fault_tag),
 		.mc_fault_req_tag(mc_fault_req_tag),
+		.mmu_fault(mmu_fault), .mmu_fault_kind(mmu_fault_kind),
+		.mmu_fault_client(mmu_fault_client), .mmu_fault_session(mmu_fault_session),
+		.mmu_fault_addr(mmu_fault_addr),
 		.wdt_tag(wdt_tag),
 		.src_fault({s_disp_fault, x_fault_b1[0], blt_err_b[0], cpu_fault_b[0], x_fault_b0[0], fence_fault_b[0],
 			s_lock_fault, seq_fault_b[0], ring_fault_b[0]}),
@@ -1398,7 +1408,8 @@ module atg_cp #(
 		.u_fw(u_fw), .u_side(u_side), .u_req(u_req), .u_ok(u_ok), .u_active(u_active),
 		.caps_r_idx(s_seq_caps_r_idx),
 		.caps_r_data(s_caps_r_data),
-		.caps_fw_stall(caps_fw_stall)
+		.caps_fw_stall(caps_fw_stall),
+		.bound_session(active_session)
 	);
 	assign u_tag = s_seq_fault_tag;
 

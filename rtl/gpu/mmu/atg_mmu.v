@@ -186,12 +186,14 @@ module atg_mmu #(
 	wire [PPN_BITS-1:0]    l1_refill_pfn;
 	wire [5:0]             l1_refill_flags;
 
+	wire [NUM_CLIENTS-1:0] out_done_mask;
+
 	genvar gc;
 	generate
 	for (gc = 0; gc < NUM_CLIENTS; gc = gc + 1) begin : g_l1
 		wire [3:0]          c_sess = client_req_session[gc*4 +: 4];
 		wire [VPN_BITS-1:0] c_vpn  = client_req_va[gc*VA_BITS + 12 +: VPN_BITS];
-		wire                cl_req_val = req_valid_buf[gc] & st_is_idle_c[gc];
+		wire                cl_req_val = req_valid_buf[gc] & st_is_idle_c[gc] & ~out_done_mask[gc];
 
 `ifdef SYNTH_KINTEX7
 		wire [2:0] c_set_pfn_lo;
@@ -485,6 +487,8 @@ module atg_mmu #(
 	(* max_fanout = 16 *) reg [NUM_CLIENTS-1:0]         r_client_fault;
 	(* max_fanout = 16 *) reg [NUM_CLIENTS*PA_BITS-1:0] r_client_pa;
 	(* max_fanout = 16 *) reg [NUM_CLIENTS*6-1:0]       r_client_flags;
+
+	assign out_done_mask = (REG_CLIENT_OUT != 0) ? (r_client_ack | r_client_fault) : {NUM_CLIENTS{1'b0}};
 
 	genvar gout;
 	generate
