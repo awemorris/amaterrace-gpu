@@ -39,44 +39,30 @@ module am_fp_rint #(
 		end
 	endgenerate
 
-	wire e_ge150 = (e >= 8'd150);
-	wire e_eq126 = (e == 8'd126);
-	wire e_eq127 = (e == 8'd127);
-	wire e_in_hi = (e[7:5] == 3'b100) && (e[4:0] <= 5'd21); /* 128..149 */
-	wire e_lt126 = !e_ge150 && !e_eq126 && !e_eq127 && !e_in_hi;
+	wire e_ge150 = e[7] && (|e[6:5] || (e[4] && (e[3] || (e[2] && e[1]))));
+	wire e_lt126 = !e[7] && !(&e[6:1]);
+	wire e_hi011 = (e[7:5] == 3'b011) && (&e[4:1]);
+	wire e_hi100 = (e[7:5] == 3'b100);
 
 	/* 1-hot exponent decoder: e_oh[k] = (e == 150 - k) for k = 1..24, e_oh[0] = e_ge150. */
-	localparam [191:0] E_TGT = {
-		8'd126, 8'd127, 8'd128, 8'd129, 8'd130, 8'd131,
-		8'd132, 8'd133, 8'd134, 8'd135, 8'd136, 8'd137,
-		8'd138, 8'd139, 8'd140, 8'd141, 8'd142, 8'd143,
-		8'd144, 8'd145, 8'd146, 8'd147, 8'd148, 8'd149
-	};
 	wire [24:0] e_oh;
 	assign e_oh[0] = e_ge150;
 	generate
-		for (gi = 1; gi <= 24; gi = gi + 1) begin : g_eoh
-			assign e_oh[gi] = (e == E_TGT[(gi - 1) * 8 +: 8]);
+		for (gi = 1; gi <= 22; gi = gi + 1) begin : g_eoh
+			localparam [4:0] TGT5 = 22 - gi;
+			assign e_oh[gi] = e_hi100 && (e[4:0] == TGT5);
 		end
 	endgenerate
+	assign e_oh[23] = e_hi011 &&  e[0];
+	assign e_oh[24] = e_hi011 && !e[0];
 
-	wire g = |(e_oh[24:1] & m[23:0]);
-	wire st = (e_lt126 && sp[24]) || |(e_oh[24:2] & sp[23:1]);
-	wire q_lsb = (e_oh[0] && m[0]) || |(e_oh[23:1] & m[23:1]);
-
-	reg up;
-	always @(*)
-		case (rm)
-		3'd1: up = 1'b0;
-		3'd2: up = x[31] && (g || st);
-		3'd3: up = !x[31] && (g || st);
-		3'd4: up = g;
-		default: up = g && (st || q_lsb);
-		endcase
+	wire st_lo = e_lt126 && sp[24];
+	wire st_hi = |(e_oh[24:2] & sp[23:1]);
+	wire st = st_lo || st_hi;
 
 	wire [23:0] m_eff = e_lt126 ? 24'd0 : m;
 
-	/* Factored 2-stage 1-hot right shift on m_eff, then parallel-prefix +up increment. */
+	/* Factored 2-stage 1-hot right shift on {m_eff, 1'b0}: captures sh_m and guard bit sh_g together. */
 	wire [24:0] sh_oh = {e_oh[24] || e_lt126, e_oh[23:0]};
 	wire [3:0] lo_oh = {
 		sh_oh[3]  | sh_oh[7]  | sh_oh[11] | sh_oh[15] | sh_oh[19] | sh_oh[23],
@@ -94,18 +80,18 @@ module am_fp_rint #(
 		|sh_oh[3:0]
 	};
 
-	wire [27:0] pre_sh_p = {4'd0, m_eff};
-	wire [24:0] s1_sh;
-	wire [48:0] s1_sh_p = {24'd0, s1_sh};
-	wire [24:0] sh_m;
+	wire [28:0] pre_sh_g = {4'd0, m_eff, 1'b0};
+	wire [25:0] s1_sh;
+	wire [49:0] s1_sh_p = {24'd0, s1_sh};
+	wire [25:0] sh_out;
 	generate
-		for (gi = 0; gi < 25; gi = gi + 1) begin : g_s1_sh
+		for (gi = 0; gi < 26; gi = gi + 1) begin : g_s1_sh
 			assign s1_sh[gi] =
-				(lo_oh[0] & pre_sh_p[gi])     | (lo_oh[1] & pre_sh_p[gi + 1]) |
-				(lo_oh[2] & pre_sh_p[gi + 2]) | (lo_oh[3] & pre_sh_p[gi + 3]);
+				(lo_oh[0] & pre_sh_g[gi])     | (lo_oh[1] & pre_sh_g[gi + 1]) |
+				(lo_oh[2] & pre_sh_g[gi + 2]) | (lo_oh[3] & pre_sh_g[gi + 3]);
 		end
-		for (gi = 0; gi < 25; gi = gi + 1) begin : g_s2_sh
-			assign sh_m[gi] =
+		for (gi = 0; gi < 26; gi = gi + 1) begin : g_s2_sh
+			assign sh_out[gi] =
 				(hi_oh[0] & s1_sh_p[gi])      | (hi_oh[1] & s1_sh_p[gi + 4])  |
 				(hi_oh[2] & s1_sh_p[gi + 8])  | (hi_oh[3] & s1_sh_p[gi + 12]) |
 				(hi_oh[4] & s1_sh_p[gi + 16]) | (hi_oh[5] & s1_sh_p[gi + 20]) |
@@ -113,24 +99,39 @@ module am_fp_rint #(
 		end
 	endgenerate
 
-	wire [5:0] inc_g_all;
-	wire [6:0] inc_g_c;
-	wire [24:0] inc_c;
-	assign inc_g_c[0] = up;
+	wire [24:0] sh_m = sh_out[25:1];
+	wire g = sh_out[0];
+	wire q_lsb = sh_m[0];
+
+	reg up;
+	always @(*)
+		case (rm)
+		3'd1: up = 1'b0;
+		3'd2: up = x[31] && (g || st);
+		3'd3: up = !x[31] && (g || st);
+		3'd4: up = g;
+		default: up = g && (st || q_lsb);
+		endcase
+
+	/* Carry-propagate vector depends only on sh_m; up gates only at the final XOR. */
+	wire [5:0] inc_g4;
+	wire [6:0] inc_p4;
+	wire [24:0] inc_raw;
+	assign inc_p4[0] = 1'b1;
 	generate
 		for (gi = 0; gi < 6; gi = gi + 1) begin : g_inc_grp
-			assign inc_g_all[gi] = &sh_m[gi*4 +: 4];
-			assign inc_g_c[gi + 1] = up & (&inc_g_all[gi:0]);
-			assign inc_c[gi*4 + 0] = inc_g_c[gi];
-			assign inc_c[gi*4 + 1] = inc_g_c[gi] & sh_m[gi*4 + 0];
-			assign inc_c[gi*4 + 2] = inc_g_c[gi] & (&sh_m[gi*4 + 1 : gi*4 + 0]);
-			assign inc_c[gi*4 + 3] = inc_g_c[gi] & (&sh_m[gi*4 + 2 : gi*4 + 0]);
+			assign inc_g4[gi] = &sh_m[gi*4 +: 4];
+			assign inc_p4[gi + 1] = &inc_g4[gi:0];
+			assign inc_raw[gi*4 + 0] = inc_p4[gi];
+			assign inc_raw[gi*4 + 1] = inc_p4[gi] & sh_m[gi*4 + 0];
+			assign inc_raw[gi*4 + 2] = inc_p4[gi] & (&sh_m[gi*4 + 1 : gi*4 + 0]);
+			assign inc_raw[gi*4 + 3] = inc_p4[gi] & (&sh_m[gi*4 + 2 : gi*4 + 0]);
 		end
 	endgenerate
-	assign inc_c[24] = inc_g_c[6];
-	assign n = sh_m ^ inc_c;
+	assign inc_raw[24] = inc_p4[6];
+	assign n = sh_m ^ ({25{up}} & inc_raw);
 
-	wire unused_ok = &{1'b0, pre_sh_p[27:25], s1_sh_p[48:25], sp[0], e_oh[0]};
+	wire unused_ok = &{1'b0, pre_sh_g[28:26], s1_sh_p[49:26], sp[0], e_oh[0]};
 endmodule
 
 `default_nettype wire

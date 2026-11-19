@@ -996,14 +996,77 @@ module atg_cp_ring #(
 	end
 `endif
 
+	function [3:0] fn_inc4;
+		input [3:0] v;
+		input ci;
+		begin
+			fn_inc4[0] = v[0] ^ ci;
+			fn_inc4[1] = v[1] ^ (ci & v[0]);
+			fn_inc4[2] = v[2] ^ (ci & v[0] & v[1]);
+			fn_inc4[3] = v[3] ^ (ci & (&v[2:0]));
+		end
+	endfunction
+
+	function [35:0] fn_inc36;
+		input [35:0] v;
+		reg [8:0] g4, c4;
+		reg sg0, sg1;
+		begin
+			g4 = {&v[35:32], &v[31:28], &v[27:24], &v[23:20], &v[19:16], &v[15:12], &v[11:8], &v[7:4], &v[3:0]};
+			sg0 = &g4[2:0];
+			sg1 = &g4[5:3];
+			c4[0] = 1'b1;
+			c4[1] = g4[0];
+			c4[2] = g4[0] & g4[1];
+			c4[3] = sg0;
+			c4[4] = sg0 & g4[3];
+			c4[5] = sg0 & g4[3] & g4[4];
+			c4[6] = sg0 & sg1;
+			c4[7] = sg0 & sg1 & g4[6];
+			c4[8] = sg0 & sg1 & g4[6] & g4[7];
+			fn_inc36 = {
+				fn_inc4(v[35:32], c4[8]), fn_inc4(v[31:28], c4[7]), fn_inc4(v[27:24], c4[6]),
+				fn_inc4(v[23:20], c4[5]), fn_inc4(v[19:16], c4[4]), fn_inc4(v[15:12], c4[3]),
+				fn_inc4(v[11:8],  c4[2]), fn_inc4(v[7:4],   c4[1]), fn_inc4(v[3:0],   c4[0])
+			};
+		end
+	endfunction
+
 	wire [ADDR_W-1:0] pa_4, pa_hdr;
 	wire [15:0] k_n;
-	wire pa_4_co, pa_hdr_co, k_co;
+	wire pa_4_co = 1'b0;
+	wire pa_hdr_co, k_co;
 
-	am_add #(.W(ADDR_W)) pa_4_add (.a(pa), .b({{(ADDR_W-3){1'b0}}, 3'd4}), .ci(1'b0), .s(pa_4), .co(pa_4_co));
-	am_add #(.W(ADDR_W)) pa_hdr_add (
-		.a(base_act[ADDR_W-1:0]), .b({{(ADDR_W-24){1'b0}}, rptr_act, 2'b00}), .ci(1'b0), .s(pa_hdr), .co(pa_hdr_co)
-	);
+	reg [35:0] pa_w_pad, base_hi_pad;
+	always @(*) begin
+		pa_w_pad = 36'd0;
+		pa_w_pad[ADDR_W-3:0] = pa[ADDR_W-1:2];
+		base_hi_pad = 36'd0;
+		base_hi_pad[ADDR_W-25:0] = base_act[ADDR_W-1:24];
+	end
+	wire [35:0] pa_w_inc = fn_inc36(pa_w_pad);
+	assign pa_4 = {pa_w_inc[ADDR_W-3:0], pa[1:0]};
+
+	/* pa_hdr: base_act + {rptr_act, 2'b00} via 8+8+6 carry-select + parallel upper increment. */
+	wire [7:0] ph_s0, ph_s1_0, ph_s1_1;
+	wire [5:0] ph_s2_0, ph_s2_1;
+	wire ph_c0, ph_c1_0, ph_c1_1, ph_c2_0, ph_c2_1;
+	am_add #(.W(8)) pa_hdr_0  (.a(base_act[9:2]),   .b(rptr_act[7:0]),   .ci(1'b0), .s(ph_s0),   .co(ph_c0));
+	am_add #(.W(8)) pa_hdr_10 (.a(base_act[17:10]), .b(rptr_act[15:8]),  .ci(1'b0), .s(ph_s1_0), .co(ph_c1_0));
+	am_add #(.W(8)) pa_hdr_11 (.a(base_act[17:10]), .b(rptr_act[15:8]),  .ci(1'b1), .s(ph_s1_1), .co(ph_c1_1));
+	am_add #(.W(6)) pa_hdr_20 (.a(base_act[23:18]), .b(rptr_act[21:16]), .ci(1'b0), .s(ph_s2_0), .co(ph_c2_0));
+	am_add #(.W(6)) pa_hdr_21 (.a(base_act[23:18]), .b(rptr_act[21:16]), .ci(1'b1), .s(ph_s2_1), .co(ph_c2_1));
+	wire ph_c1 = ph_c0 ? ph_c1_1 : ph_c1_0;
+	wire ph_c2 = ph_c1 ? ph_c2_1 : ph_c2_0;
+	wire [35:0] base_hi_inc = fn_inc36(base_hi_pad);
+	assign pa_hdr = {
+		ph_c2 ? base_hi_inc[ADDR_W-25:0] : base_act[ADDR_W-1:24],
+		ph_c1 ? ph_s2_1 : ph_s2_0,
+		ph_c0 ? ph_s1_1 : ph_s1_0,
+		ph_s0,
+		base_act[1:0]
+	};
+	assign pa_hdr_co = ph_c2 ? ph_c2_1 : ph_c2_0;
 `ifdef SYNTH_KINTEX7
 	(* keep = "true" *) wire [15:0] k_add_in = k;
 	am_add #(.W(16)) k_add (.a(k_add_in), .b(16'd0), .ci(1'b1), .s(k_n), .co(k_co));
@@ -1015,10 +1078,14 @@ module atg_cp_ring #(
 	 * Background Prefetch Engine
 	 */
 	wire [LA_W-1:0] next_line;
-	wire unused_nl_co;
-	am_add #(.W(LA_W)) u_next_line (
-		.a(want_line), .b({{(LA_W-1){1'b0}}, 1'b1}), .ci(1'b0), .s(next_line), .co(unused_nl_co)
-	);
+	wire unused_nl_co = 1'b0;
+	reg [35:0] want_line_pad;
+	always @(*) begin
+		want_line_pad = 36'd0;
+		want_line_pad[LA_W-1:0] = want_line;
+	end
+	wire [35:0] next_line_inc = fn_inc36(want_line_pad);
+	assign next_line = next_line_inc[LA_W-1:0];
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) reg [LA_W-1:0] next_line_r;
 	reg [LA_W-1:0] nxt_tag_r;

@@ -163,43 +163,18 @@ module atg_su_div #(
 	wire [31:0] neg_b;
 	wire [5:0] step_next;
 	wire d0_bo_unused, nb_bo_unused, sn_co_unused;
-	/* Fast 4-chunk carry-select 33-bit subtractor u_d0 and 32-bit negate u_neg_b */
+	/* Single 33-bit Kogge-Stone subtractor u_d0 and 32-bit negate u_nb (also used for -r at s_end). */
 	wire [32:0] d0_a = s_load || s_end ? 33'd0 : {r[31:0], dn[31]};
-	wire [32:0] d0_b = s_load ? {1'b0, la} : s_end ? {1'b0, rop[1] ? r[31:0] : q} : {1'b0, dd};
-	wire [7:0] d0_s0, d0_s1_0, d0_s1_1, d0_s2_0, d0_s2_1;
-	wire [8:0] d0_s3_0, d0_s3_1;
-	wire d0_b0, d0_b1_0, d0_b1_1, d0_b2_0, d0_b2_1, d0_b3_0, d0_b3_1;
-	am_sub #(.W(8)) u_d0_0  (.a(d0_a[7:0]),   .b(d0_b[7:0]),   .bi(1'b0), .d(d0_s0),   .bo(d0_b0));
-	am_sub #(.W(8)) u_d0_10 (.a(d0_a[15:8]),  .b(d0_b[15:8]),  .bi(1'b0), .d(d0_s1_0), .bo(d0_b1_0));
-	am_sub #(.W(8)) u_d0_11 (.a(d0_a[15:8]),  .b(d0_b[15:8]),  .bi(1'b1), .d(d0_s1_1), .bo(d0_b1_1));
-	am_sub #(.W(8)) u_d0_20 (.a(d0_a[23:16]), .b(d0_b[23:16]), .bi(1'b0), .d(d0_s2_0), .bo(d0_b2_0));
-	am_sub #(.W(8)) u_d0_21 (.a(d0_a[23:16]), .b(d0_b[23:16]), .bi(1'b1), .d(d0_s2_1), .bo(d0_b2_1));
-	am_sub #(.W(9)) u_d0_30 (.a(d0_a[32:24]), .b(d0_b[32:24]), .bi(1'b0), .d(d0_s3_0), .bo(d0_b3_0));
-	am_sub #(.W(9)) u_d0_31 (.a(d0_a[32:24]), .b(d0_b[32:24]), .bi(1'b1), .d(d0_s3_1), .bo(d0_b3_1));
-	wire d0_b1 = d0_b0 ? d0_b1_1 : d0_b1_0;
-	wire d0_b2 = d0_b1 ? d0_b2_1 : d0_b2_0;
-	assign d0 = {d0_b2 ? d0_s3_1 : d0_s3_0, d0_b1 ? d0_s2_1 : d0_s2_0, d0_b0 ? d0_s1_1 : d0_s1_0, d0_s0};
-	assign d0_bo_unused = d0_b2 ? d0_b3_1 : d0_b3_0;
-
-	wire [7:0] nb_s0, nb_s1_0, nb_s1_1, nb_s2_0, nb_s2_1, nb_s3_0, nb_s3_1;
-	wire nb_b0, nb_b1_0, nb_b1_1, nb_b2_0, nb_b2_1, nb_b3_0, nb_b3_1;
-	am_sub #(.W(8)) u_nb_0  (.a(8'd0), .b(lb[7:0]),   .bi(1'b0), .d(nb_s0),   .bo(nb_b0));
-	am_sub #(.W(8)) u_nb_10 (.a(8'd0), .b(lb[15:8]),  .bi(1'b0), .d(nb_s1_0), .bo(nb_b1_0));
-	am_sub #(.W(8)) u_nb_11 (.a(8'd0), .b(lb[15:8]),  .bi(1'b1), .d(nb_s1_1), .bo(nb_b1_1));
-	am_sub #(.W(8)) u_nb_20 (.a(8'd0), .b(lb[23:16]), .bi(1'b0), .d(nb_s2_0), .bo(nb_b2_0));
-	am_sub #(.W(8)) u_nb_21 (.a(8'd0), .b(lb[23:16]), .bi(1'b1), .d(nb_s2_1), .bo(nb_b2_1));
-	am_sub #(.W(8)) u_nb_30 (.a(8'd0), .b(lb[31:24]), .bi(1'b0), .d(nb_s3_0), .bo(nb_b3_0));
-	am_sub #(.W(8)) u_nb_31 (.a(8'd0), .b(lb[31:24]), .bi(1'b1), .d(nb_s3_1), .bo(nb_b3_1));
-	wire nb_b1 = nb_b0 ? nb_b1_1 : nb_b1_0;
-	wire nb_b2 = nb_b1 ? nb_b2_1 : nb_b2_0;
-	assign neg_b = {nb_b2 ? nb_s3_1 : nb_s3_0, nb_b1 ? nb_s2_1 : nb_s2_0, nb_b0 ? nb_s1_1 : nb_s1_0, nb_s0};
-	assign nb_bo_unused = nb_b2 ? nb_b3_1 : nb_b3_0;
+	wire [32:0] d0_b = s_load ? {1'b0, la} : s_end ? {1'b0, q} : {1'b0, dd};
+	wire [31:0] nb_b = s_load ? lb : r[31:0];
+	am_sub #(.W(33)) u_d0 (.a(d0_a),  .b(d0_b), .bi(1'b0), .d(d0),    .bo(d0_bo_unused));
+	am_sub #(.W(32)) u_nb (.a(32'd0), .b(nb_b), .bi(1'b0), .d(neg_b), .bo(nb_bo_unused));
 
 	am_add #(.W(6)) u_step (.a(step), .b(6'd0), .ci(1'b1), .s(step_next), .co(sn_co_unused));
 	(* keep = "true", max_fanout = 12 *) wire trial_pos = !d0[32];
 
 	wire [31:0] div_res = lb_zero_r ? (rop[1] ? la : 32'hFFFFFFFF) :
-		rop[1] ? (neg_r ? d0[31:0] : r[31:0]) :
+		rop[1] ? (neg_r ? neg_b : r[31:0]) :
 		(neg_q ? d0[31:0] : q);
 
 	/* Buffered control and index signals */

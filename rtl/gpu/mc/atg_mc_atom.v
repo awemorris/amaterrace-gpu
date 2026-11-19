@@ -207,48 +207,58 @@ module atg_mc_atom #(
 			be_w[i*4 +: 4] = {{(32 - WW){1'b0}}, rwi} == i ? 4'hF : 4'h0;
 	assign req_be = st == WREQ ? rbe : {LINE_BYTES{1'b0}};
 
-	/* Parallel 16+16 carry-select add/sub and borrow-based comparisons (no rop on carry chain). */
-	wire [15:0] add_lo, add_hi0, add_hi1;
-	wire add_c0, add_c1_0_unused, add_c1_1_unused;
-	am_add #(.W(16)) u_add_lo  (.a(rold[15:0]),  .b(ra[15:0]),  .ci(1'b0), .s(add_lo),  .co(add_c0));
-	am_add #(.W(16)) u_add_hi0 (.a(rold[31:16]), .b(ra[31:16]), .ci(1'b0), .s(add_hi0), .co(add_c1_0_unused));
-	am_add #(.W(16)) u_add_hi1 (.a(rold[31:16]), .b(ra[31:16]), .ci(1'b1), .s(add_hi1), .co(add_c1_1_unused));
-	wire [31:0] as_add = {add_c0 ? add_hi1 : add_hi0, add_lo};
+	/* Single 32b Kogge-Stone add/sub, parallel 4-byte unsigned compare, factored result mux. */
+	wire [31:0] as_add, as_sub;
+	wire add_c1_0_unused;
+	wire add_c1_1_unused = 1'b0;
+	wire sub_b_unused;
+	am_add #(.W(32)) u_add (.a(rold), .b(ra), .ci(1'b0), .s(as_add), .co(add_c1_0_unused));
+	am_sub #(.W(32)) u_sub (.a(rold), .b(ra), .bi(1'b0), .d(as_sub), .bo(sub_b_unused));
 
-	wire [15:0] sub_lo, sub_hi0, sub_hi1;
-	wire sub_b0, sub_b1_0, sub_b1_1;
-	am_sub #(.W(16)) u_sub_lo  (.a(rold[15:0]),  .b(ra[15:0]),  .bi(1'b0), .d(sub_lo),  .bo(sub_b0));
-	am_sub #(.W(16)) u_sub_hi0 (.a(rold[31:16]), .b(ra[31:16]), .bi(1'b0), .d(sub_hi0), .bo(sub_b1_0));
-	am_sub #(.W(16)) u_sub_hi1 (.a(rold[31:16]), .b(ra[31:16]), .bi(1'b1), .d(sub_hi1), .bo(sub_b1_1));
-	wire [31:0] as_sub = {sub_b0 ? sub_hi1 : sub_hi0, sub_lo};
-	wire cmp_lt_u = sub_b0 ? sub_b1_1 : sub_b1_0;
-	wire cmp_eq   = (rold == ra);
+	wire [3:0] eq_b, lt_b;
+	genvar gb;
+	generate
+		for (gb = 0; gb < 4; gb = gb + 1) begin : g_cmp_b
+			assign eq_b[gb] = (rold[gb*8 +: 8] == ra[gb*8 +: 8]);
+			assign lt_b[gb] = (rold[gb*8 +: 8] <  ra[gb*8 +: 8]);
+		end
+	endgenerate
+	wire cmp_eq   = &eq_b;
+	wire cmp_lt_u = lt_b[3] || (eq_b[3] && (lt_b[2] || (eq_b[2] && (lt_b[1] || (eq_b[1] && lt_b[0])))));
 	wire cmp_gt_u = !cmp_lt_u && !cmp_eq;
 	wire cmp_lt_s = (rold[31] ^ ra[31]) ? rold[31] : cmp_lt_u;
 	wire cmp_gt_s = !cmp_lt_s && !cmp_eq;
 	wire cmp_cas  = (rold == rb);
-	reg [31:0] new_word;
 
+	reg pick_ra;
+	always @(*) begin
+		case (rop)
+		4'd3:  pick_ra = 1'b1;
+		4'd6:  pick_ra = !cmp_gt_s;
+		4'd7:  pick_ra = !cmp_lt_s;
+		4'd8:  pick_ra = !cmp_gt_u;
+		4'd9:  pick_ra = !cmp_lt_u;
+		4'd10: pick_ra = cmp_cas;
+		default: pick_ra = 1'b0;
+		endcase
+	end
+	wire [31:0] cmp_or_pass = pick_ra ? ra : rold;
+
+	reg [31:0] new_word;
 	always @(*) begin
 		case (rop)
 		4'd0: new_word = rold & ra;
 		4'd1: new_word = rold | ra;
 		4'd2: new_word = rold ^ ra;
-		4'd3: new_word = ra;
 		4'd4: new_word = as_add;
 		4'd5: new_word = as_sub;
-		4'd6: new_word = cmp_gt_s ? rold : ra;
-		4'd7: new_word = cmp_lt_s ? rold : ra;
-		4'd8: new_word = cmp_gt_u ? rold : ra;
-		4'd9: new_word = cmp_lt_u ? rold : ra;
-		4'd10: new_word = cmp_cas ? ra : rold;
-		default: new_word = rold;
+		default: new_word = cmp_or_pass;
 		endcase
 	end
 	assign req_wdata = rwdata;
 	assign req_tag = {6'd0, rstage};
 
-	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], add_c1_0_unused, add_c1_1_unused};
+	wire unused_ok = &{1'b0, rsp_tag, badr[1:0], add_c1_0_unused, add_c1_1_unused, sub_b_unused};
 endmodule
 
 `default_nettype wire

@@ -200,9 +200,10 @@ module atg_cp_ctl #(
 	assign quiesce = halt_r[2];
 	assign mc_flush = st == S_RS_PULSE;
 	assign mc_flush_rep = st_mcf_rep;
-	/* Micro-architectural CP_STATE (§3.3) */
+	/* Micro-architectural CP_STATE (§3.3) — isolate mc_idle to final 2:1 mux */
 	wire cp_is_fault = faulted;
-	wire cp_is_wait_mem = resetting || (st == S_HALTING && !mc_idle) || (seq_st == 4'd10) || (seq_st == 4'd11); /* Q_BARRIER, Q_FLUSH */
+	wire cp_is_wait_mem_nomc = resetting || (seq_st == 4'd10) || (seq_st == 4'd11); /* Q_BARRIER, Q_FLUSH */
+	wire cp_is_wait_halt_mc  = !faulted && (st == S_HALTING) && !mc_idle;
 	wire cp_is_blit = busy_in[1]; /* blt_busy */
 	wire cp_is_wait_fence = (seq_st == 4'd5); /* Q_FWAIT strictly */
 	wire cp_is_exec = (seq_st == 4'd1 || seq_st == 4'd2 || seq_st == 4'd3 || seq_st == 4'd4 || seq_st == 4'd6 || (f_busy && seq_st != 4'd5)); /* Q_PAY, Q_EXEC, Q_POST, Q_FREQ, Q_VSYNC, f_busy */
@@ -210,14 +211,15 @@ module atg_cp_ctl #(
 	wire halt_ok = mc_idle && (!ring_busy || (seq_st == 4'd0 && !f_busy));
 	wire cp_is_fetch = (st != S_HALTED) && (ring_busy || (!ring_empty && cmd_active));
 
-	assign cp_state = cp_is_fault ? GHCI_ST_FAULT :
-	                  cp_is_wait_mem ? GHCI_ST_WAIT_MEM :
-	                  cp_is_blit ? GHCI_ST_BLIT :
-	                  cp_is_wait_fence ? GHCI_ST_WAIT_FENCE :
-	                  cp_is_exec ? GHCI_ST_EXEC :
-	                  cp_is_decode ? GHCI_ST_DECODE :
-	                  cp_is_fetch ? GHCI_ST_FETCH :
-	                  GHCI_ST_IDLE;
+	wire [3:0] cp_state_nomc = cp_is_fault ? GHCI_ST_FAULT :
+	                           cp_is_wait_mem_nomc ? GHCI_ST_WAIT_MEM :
+	                           cp_is_blit ? GHCI_ST_BLIT :
+	                           cp_is_wait_fence ? GHCI_ST_WAIT_FENCE :
+	                           cp_is_exec ? GHCI_ST_EXEC :
+	                           cp_is_decode ? GHCI_ST_DECODE :
+	                           cp_is_fetch ? GHCI_ST_FETCH :
+	                           GHCI_ST_IDLE;
+	assign cp_state = cp_is_wait_halt_mc ? GHCI_ST_WAIT_MEM : cp_state_nomc;
 	assign lc_state = resetting ? GHCI_LC_RESETTING : st;
 	assign aperture_base = ap_base;
 	assign aperture_limit = ap_limit;
@@ -898,7 +900,6 @@ module atg_cp_ctl #(
 
 	always @(*) begin
 		case (hcr_ridx)
-		I_STATUS:        rd = status;
 		I_CTRL:          rd = {25'd0, irq_global, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
 		I_FAULT_INFO:    rd = fault_info;
 		I_FAULT_ADDR:    rd = fault_addr;
@@ -910,7 +911,7 @@ module atg_cp_ctl #(
 		endcase
 	end
 
-	assign hcr_rdata = rd;
+	assign hcr_rdata = (hcr_ridx == I_STATUS) ? status : rd;
 	wire unused_co = &{1'b0, wdt_co, stuck_co, hcr_ridx[9:6]};
 endmodule
 

@@ -373,6 +373,13 @@ module atg_vf_asm (
 	wire n_rst = st_is_next && in_v && in_rst;
 	wire in_take = s_rst || s_put || n_rst;
 	wire seg_end = s_rst || (s_go && !in_rst && inst_chg);
+	wire cnt_clr_w = seg_end ||
+		(st_is_next && in_v && (in_rst || (in_inst_ne && cnt_2 != 2'd0))) ||
+		(st_is_prims && (f_n == 6'd0) && fin && (!h_v || h_take));
+	wire g_emit_put = (s_topo_2 == T_LINES) ? (cnt_0 == 2'd0) :
+		(s_topo_2 == T_TRIS) ? (cnt_0 == 2'd1) :
+		(s_topo_2 == T_STRIP || s_topo_2 == T_FAN) ? (cnt_0 != 2'd0) :
+		1'b1;
 
 	assign vl_req = st_is_alloc;
 	assign busy = !st_is_idle || sk0_v || sk1_v || in_v;
@@ -761,10 +768,10 @@ module atg_vf_asm (
 			else if (ce_p_emit)
 				p_v <= 1'b1;
 
-			if (we_topo)
+			if (we_topo && !cnt_clr_w && !s_put)
 				g_emit_r <= emit_of(st_wdata[2:0], cnt_2);
 
-			if (seg_end) begin
+			if (cnt_clr_w) begin
 				cnt_0 <= 2'd0;
 				cnt_1 <= 2'd0;
 				cnt_2 <= 2'd0;
@@ -774,7 +781,7 @@ module atg_vf_asm (
 				cnt_0 <= g_cnt;
 				cnt_1 <= g_cnt;
 				cnt_2 <= g_cnt;
-				g_emit_r <= emit_of(s_topo_2, g_cnt);
+				g_emit_r <= g_emit_put;
 				if (s_topo_1 == T_STRIP && cnt_1 == 2'd2)
 					par <= !par;
 			end
@@ -787,11 +794,6 @@ module atg_vf_asm (
 			if (st_is_next && in_v) begin
 				/* Between warps: open the next one only for a real vertex. */
 				if (in_rst || (in_inst_ne && cnt_2 != 2'd0)) begin
-					cnt_0 <= 2'd0;
-					cnt_1 <= 2'd0;
-					cnt_2 <= 2'd0;
-					g_emit_r <= emit_of(s_topo_2, 2'd0);
-					par <= 1'b0;
 					if (in_rst && in_last) begin
 						fin <= 1'b1;
 						st_is_next    <= 1'b0;
@@ -872,11 +874,6 @@ module atg_vf_asm (
 						st_is_prims_1 <= 1'b0;
 						st_is_idle    <= 1'b1;
 						fin <= 1'b0;
-						cnt_0 <= 2'd0;
-						cnt_1 <= 2'd0;
-						cnt_2 <= 2'd0;
-						g_emit_r <= emit_of(s_topo_2, 2'd0);
-						par <= 1'b0;
 					end
 				end
 			end

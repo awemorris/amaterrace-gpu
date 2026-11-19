@@ -42,28 +42,24 @@ module am_fp_f2fix #(
 	wire is_nan = (exp == 8'hFF) && (mant != 23'd0);
 	wire is_zero = (exp == 8'd0);
 
-	/* Shift distance calculation: s = E_BASE - exp
-	 * Compute 3-bit fine shift (sh_lo) and speculative 5-bit coarse shifts
-	 * (bi=0 and bi=1) in parallel, then apply factored 8:1 + 6:1 1-hot shifts. */
-	wire [2:0] sh_lo;
-	wire sh_lo_bo;
-	am_sub #(.W(3)) u_s_lo (.a(E_BASE[2:0]), .b(exp[2:0]), .bi(1'b0), .d(sh_lo), .bo(sh_lo_bo));
-
-	wire [4:0] sh_hi0, sh_hi1;
-	wire sh_hi0_bo_unused, sh_hi1_bo_unused;
-	am_sub #(.W(5)) u_s_hi0 (.a(E_BASE[7:3]), .b(exp[7:3]), .bi(1'b0), .d(sh_hi0), .bo(sh_hi0_bo_unused));
-	am_sub #(.W(5)) u_s_hi1 (.a(E_BASE[7:3]), .b(exp[7:3]), .bi(1'b1), .d(sh_hi1), .bo(sh_hi1_bo_unused));
+	/* Shift distance calculation: direct 1-hot equality decode against constant E_BASE (~3 cmos3). */
+	wire sh_lo_bo = (exp[2:0] > E_BASE[2:0]);
+	wire sh_hi0_bo_unused = 1'b0;
+	wire sh_hi1_bo_unused = 1'b0;
 
 	wire [7:0] oh_lo;
 	wire [5:0] oh_hi0, oh_hi1;
 	genvar gk;
 	generate
 		for (gk = 0; gk < 8; gk = gk + 1) begin : g_oh_lo
-			assign oh_lo[gk] = (sh_lo == gk[2:0]);
+			localparam [2:0] TGT_LO = E_BASE[2:0] - gk[2:0];
+			assign oh_lo[gk] = (exp[2:0] == TGT_LO);
 		end
 		for (gk = 0; gk < 6; gk = gk + 1) begin : g_oh_hi
-			assign oh_hi0[gk] = (sh_hi0 == gk[4:0]);
-			assign oh_hi1[gk] = (sh_hi1 == gk[4:0]);
+			localparam [4:0] TGT_HI0 = E_BASE[7:3] - gk[4:0];
+			localparam [4:0] TGT_HI1 = E_BASE[7:3] - 5'd1 - gk[4:0];
+			assign oh_hi0[gk] = (exp[7:3] == TGT_HI0);
+			assign oh_hi1[gk] = (exp[7:3] == TGT_HI1);
 		end
 	endgenerate
 	wire [5:0] oh_hi = sh_lo_bo ? oh_hi1 : oh_hi0;

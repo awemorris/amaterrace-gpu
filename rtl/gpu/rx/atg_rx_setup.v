@@ -1780,8 +1780,9 @@ module atg_rx_setup #(
 	/* 9. Main Control FSM: Compute st_next, seq_next, p_step_next ONCE combinationally
 	 * so replicating st_rep_*, seq_step_rep_*, p_step_rep_* does NOT duplicate next-state logic cones! */
 	wire ps_ne_0100 = (point_size != 16'h0100);
-	wire [4:0] seq_inc, seq_inc_hi;
-	wire seq_inc_co_unused, seq_inc_hi_co_unused;
+	wire [4:0] seq_inc;
+	wire seq_inc_co_unused;
+	wire seq_inc_hi_co_unused = 1'b0;
 	am_add #(.W(5)) u_inc_seq (
 		.a(seq_step_rep_b),
 		.b(5'd1),
@@ -1789,19 +1790,11 @@ module atg_rx_setup #(
 		.s(seq_inc),
 		.co(seq_inc_co_unused)
 	);
-	am_add #(.W(5)) u_inc_seq_hi (
-		.a(seq_step_hi),
-		.b(5'd1),
-		.ci(1'b0),
-		.s(seq_inc_hi),
-		.co(seq_inc_hi_co_unused)
-	);
-	(* keep = "true" *) wire xyz_use_fa = (seq_step_rep_b == 5'd3 || seq_step_rep_b == 5'd6 || seq_step_rep_b == 5'd9 ||
-		seq_step_rep_b == 5'd14 || seq_step_rep_b == 5'd17 || seq_step_rep_b == 5'd20 ||
-		seq_step_rep_b == 5'd25 || seq_step_rep_b == 5'd28 || seq_step_rep_b == 5'd31);
-	(* keep = "true" *) wire xyz_use_fa_hi = (seq_step_hi == 5'd3 || seq_step_hi == 5'd6 || seq_step_hi == 5'd9 ||
-		seq_step_hi == 5'd14 || seq_step_hi == 5'd17 || seq_step_hi == 5'd20 ||
-		seq_step_hi == 5'd25 || seq_step_hi == 5'd28 || seq_step_hi == 5'd31);
+	wire [4:3] seq_inc_hi = {
+		seq_step_hi[4] ^ (&seq_step_hi[3:0]),
+		seq_step_hi[3] ^ (&seq_step_hi[2:0])
+	};
+	(* keep = "true" *) reg xyz_use_fa_r, xyz_use_fa_hi_r;
 
 	(* keep = "true" *) reg [3:0] s_plane_done_st_r;
 	wire [3:0] s_plane_done_st_w = raw ? S_OUT :
@@ -1860,7 +1853,7 @@ module atg_rx_setup #(
 					else seq_next_lo = 3'd0;
 				end
 			S_PERSP_XYZ:
-				if ((seq_step == 5'd0) || (xyz_use_fa ? fa_o_c_seq : fm_o_c_seq))
+				if ((seq_step == 5'd0) || (xyz_use_fa_r ? fa_o_c_seq : fm_o_c_seq))
 					seq_next_lo = seq_inc[2:0];
 			S_RECT:
 				case (seq_step)
@@ -1908,13 +1901,13 @@ module atg_rx_setup #(
 			S_PERSP_W:
 				if (fd_o_w) seq_next_hi = 2'd0;
 			S_PERSP_XYZ:
-				if ((seq_step_hi == 5'd0) || (xyz_use_fa_hi ? fa_o_c_ps : fm_o_c_ps))
+				if ((seq_step_hi == 5'd0) || (xyz_use_fa_hi_r ? fa_o_c_ps : fm_o_c_ps))
 					seq_next_hi = seq_inc_hi[4:3];
 			S_RECT:
 				case (seq_step_hi)
 				5'd0: if (fm_o_c_ps) seq_next_hi = 2'd0;
 				5'd1: if (fm_o_c_ps && rm[3]) seq_next_hi = 2'd0;
-				5'd2, 5'd3, 5'd4: if (fa_o_c_ps) seq_next_hi = seq_inc_hi[4:3];
+				5'd2, 5'd3, 5'd4: if (fa_o_c_ps) seq_next_hi = 2'd0;
 				default: ;
 				endcase
 			S_EDGE:
@@ -1933,7 +1926,8 @@ module atg_rx_setup #(
 				end
 			S_BIAS:
 				case (seq_step_hi)
-				5'd0, 5'd1, 5'd6, 5'd7: seq_next_hi = seq_inc_hi[4:3];
+				5'd0, 5'd1, 5'd6: seq_next_hi = 2'd0;
+				5'd7: seq_next_hi = 2'd1;
 				5'd2: if (fm_o_c_ps) seq_next_hi = 2'd0;
 				5'd3: seq_next_hi = 2'd0;
 				5'd4: if (fm_o_c_ps) seq_next_hi = 2'd0;
@@ -1944,6 +1938,9 @@ module atg_rx_setup #(
 			endcase
 	end
 	(* keep = "true" *) wire [4:0] seq_next = {seq_next_hi, seq_next_lo};
+	wire next_xyz_use_fa = (seq_next == 5'd3 || seq_next == 5'd6 || seq_next == 5'd9 ||
+		seq_next == 5'd14 || seq_next == 5'd17 || seq_next == 5'd20 ||
+		seq_next == 5'd25 || seq_next == 5'd28 || seq_next == 5'd31);
 
 	wire [3:0] p_step_ctrl_inc;
 	wire p_step_ctrl_inc_co_unused;
@@ -2004,6 +2001,8 @@ module atg_rx_setup #(
 			seq_step_rep_b <= 5'd0;
 			seq_step_rep_c <= 5'd0;
 			seq_step_rep_d <= 5'd0;
+			xyz_use_fa_r <= 1'b0;
+			xyz_use_fa_hi_r <= 1'b0;
 
 			p_step <= 4'd0;
 			p_step_rep_a <= 4'd0;
@@ -2040,6 +2039,8 @@ module atg_rx_setup #(
 			seq_step_rep_b <= seq_next;
 			seq_step_rep_c <= seq_next;
 			seq_step_rep_d <= seq_next;
+			xyz_use_fa_r <= next_xyz_use_fa;
+			xyz_use_fa_hi_r <= next_xyz_use_fa;
 
 			p_step <= p_step_next;
 			p_step_rep_a <= p_step_next;

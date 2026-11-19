@@ -139,60 +139,79 @@ module am_fp_add #(
 	endgenerate
 	assign lza_f[0] = lza_p[1] ? lza_g[0] : lza_z[0];
 
-	/* Parallel-prefix OR from MSB down to compute priority 1-hot mask of first 1 in lza_f. */
-	wire [26:0] lza_p1 = lza_f | {1'b0, lza_f[26:1]};
-	wire [26:0] lza_p2 = lza_p1 | {2'b0, lza_p1[26:2]};
-	wire [26:0] lza_p4 = lza_p2 | {4'b0, lza_p2[26:4]};
-	wire [26:0] lza_p8 = lza_p4 | {8'b0, lza_p4[26:8]};
-	wire [26:0] lza_p16 = lza_p8 | {16'b0, lza_p8[26:16]};
-	wire [26:0] lza_1h = lza_f & ~{1'b0, lza_p16[26:1]};
+	/* 7x4 hierarchical nibble LOD on {lza_f, 1'b0}: computes lza_1h, lz_est, lz_est_p1 in ~8 cmos3. */
+	wire [27:0] lza_v28 = {lza_f, 1'b0};
+	wire [6:0]  lza_nib_nz, lza_nib_b1, lza_nib_b0;
+	wire [27:0] lza_nib_1h;
+	genvar gi_lzn;
+	generate
+		for (gi_lzn = 0; gi_lzn < 7; gi_lzn = gi_lzn + 1) begin : g_lza_nib
+			wire [3:0] nb = lza_v28[gi_lzn*4 +: 4];
+			assign lza_nib_nz[gi_lzn] = |nb;
+			assign lza_nib_b1[gi_lzn] = ~(nb[3] | nb[2]);
+			assign lza_nib_b0[gi_lzn] = (~nb[3]) & (nb[2] | (~nb[1] & nb[0]));
+			assign lza_nib_1h[gi_lzn*4 +: 4] = {
+				nb[3],
+				~nb[3] & nb[2],
+				~nb[3] & ~nb[2] & nb[1],
+				~(|nb[3:1]) & nb[0]
+			};
+		end
+	endgenerate
+	wire lza_hi_nz = |lza_nib_nz[6:4];
+	wire [2:0] lza_hw = {
+		lza_nib_nz[6],
+		~lza_nib_nz[6] & lza_nib_nz[5],
+		~lza_nib_nz[6] & ~lza_nib_nz[5] & lza_nib_nz[4]
+	};
+	wire [3:0] lza_lw = {
+		lza_nib_nz[3],
+		~lza_nib_nz[3] & lza_nib_nz[2],
+		~lza_nib_nz[3] & ~lza_nib_nz[2] & lza_nib_nz[1],
+		~(|lza_nib_nz[3:1]) & lza_nib_nz[0]
+	};
+	wire [6:0] lza_nw = {lza_hw, {4{~lza_hi_nz}} & lza_lw};
+	wire lza_any = lza_hi_nz | (|lza_nib_nz[3:0]);
+	wire [27:0] lza_1h_28;
+	generate
+		for (gi_lzn = 0; gi_lzn < 7; gi_lzn = gi_lzn + 1) begin : g_lza_1h
+			assign lza_1h_28[gi_lzn*4 +: 4] = {4{lza_nw[gi_lzn]}} & lza_nib_1h[gi_lzn*4 +: 4];
+		end
+	endgenerate
+	wire [26:0] lza_1h = lza_1h_28[27:1];
 
-	reg [4:0] lz_est, lz_est_p1;
-	reg lz_v3, lz_v2, lz_v1;
-	reg [4:0] lz_g3, lz_g2, lz_g1, lz_g0;
-	reg [4:0] lz_g3_p1, lz_g2_p1, lz_g1_p1, lz_g0_p1;
+	/* lz_est[4:2] = 6 - k (when lza_any), else 6 (27 = 5'd27); lz_est[1:0] = local offset (or 3). */
+	wire [4:0] lz_est = {
+		lza_nw[2] | lza_nw[1] | lza_nw[0] | ~lza_any,
+		lza_nw[4] | lza_nw[3] | lza_nw[0] | ~lza_any,
+		lza_nw[5] | lza_nw[3] | lza_nw[1],
+		(|(lza_nw & lza_nib_b1)) | ~lza_any,
+		(|(lza_nw & lza_nib_b0)) | ~lza_any
+	};
+	wire [26:0] lza_1h_m0 = lza_1h; /* bit b -> lz_est_p1 = (b==0 ? 27 : 27 - b) */
+	wire [4:0] lz_est_p1 = {
+		lza_1h_m0[11] | lza_1h_m0[10] | lza_1h_m0[9]  | lza_1h_m0[8]  |
+		lza_1h_m0[7]  | lza_1h_m0[6]  | lza_1h_m0[5]  | lza_1h_m0[4]  |
+		lza_1h_m0[3]  | lza_1h_m0[2]  | lza_1h_m0[1]  | lza_1h_m0[0]  | ~lza_any,
 
-	always @(*) begin
-		lz_v3 = |lza_f[26:20];
-		if      (lza_f[26]) begin lz_g3 = 5'd0; lz_g3_p1 = 5'd1; end
-		else if (lza_f[25]) begin lz_g3 = 5'd1; lz_g3_p1 = 5'd2; end
-		else if (lza_f[24]) begin lz_g3 = 5'd2; lz_g3_p1 = 5'd3; end
-		else if (lza_f[23]) begin lz_g3 = 5'd3; lz_g3_p1 = 5'd4; end
-		else if (lza_f[22]) begin lz_g3 = 5'd4; lz_g3_p1 = 5'd5; end
-		else if (lza_f[21]) begin lz_g3 = 5'd5; lz_g3_p1 = 5'd6; end
-		else                begin lz_g3 = 5'd6; lz_g3_p1 = 5'd7; end
+		lza_1h_m0[19] | lza_1h_m0[18] | lza_1h_m0[17] | lza_1h_m0[16] |
+		lza_1h_m0[15] | lza_1h_m0[14] | lza_1h_m0[13] | lza_1h_m0[12] |
+		lza_1h_m0[3]  | lza_1h_m0[2]  | lza_1h_m0[1]  | lza_1h_m0[0]  | ~lza_any,
 
-		lz_v2 = |lza_f[19:13];
-		if      (lza_f[19]) begin lz_g2 = 5'd7;  lz_g2_p1 = 5'd8;  end
-		else if (lza_f[18]) begin lz_g2 = 5'd8;  lz_g2_p1 = 5'd9;  end
-		else if (lza_f[17]) begin lz_g2 = 5'd9;  lz_g2_p1 = 5'd10; end
-		else if (lza_f[16]) begin lz_g2 = 5'd10; lz_g2_p1 = 5'd11; end
-		else if (lza_f[15]) begin lz_g2 = 5'd11; lz_g2_p1 = 5'd12; end
-		else if (lza_f[14]) begin lz_g2 = 5'd12; lz_g2_p1 = 5'd13; end
-		else                begin lz_g2 = 5'd13; lz_g2_p1 = 5'd14; end
+		lza_1h_m0[23] | lza_1h_m0[22] | lza_1h_m0[21] | lza_1h_m0[20] |
+		lza_1h_m0[15] | lza_1h_m0[14] | lza_1h_m0[13] | lza_1h_m0[12] |
+		lza_1h_m0[7]  | lza_1h_m0[6]  | lza_1h_m0[5]  | lza_1h_m0[4],
 
-		lz_v1 = |lza_f[12:6];
-		if      (lza_f[12]) begin lz_g1 = 5'd14; lz_g1_p1 = 5'd15; end
-		else if (lza_f[11]) begin lz_g1 = 5'd15; lz_g1_p1 = 5'd16; end
-		else if (lza_f[10]) begin lz_g1 = 5'd16; lz_g1_p1 = 5'd17; end
-		else if (lza_f[9])  begin lz_g1 = 5'd17; lz_g1_p1 = 5'd18; end
-		else if (lza_f[8])  begin lz_g1 = 5'd18; lz_g1_p1 = 5'd19; end
-		else if (lza_f[7])  begin lz_g1 = 5'd19; lz_g1_p1 = 5'd20; end
-		else                begin lz_g1 = 5'd20; lz_g1_p1 = 5'd21; end
+		lza_1h_m0[25] | lza_1h_m0[24] | lza_1h_m0[21] | lza_1h_m0[20] |
+		lza_1h_m0[17] | lza_1h_m0[16] | lza_1h_m0[13] | lza_1h_m0[12] |
+		lza_1h_m0[9]  | lza_1h_m0[8]  | lza_1h_m0[5]  | lza_1h_m0[4]  |
+		lza_1h_m0[1]  | lza_1h_m0[0]  | ~lza_any,
 
-		if      (lza_f[5])  begin lz_g0 = 5'd21; lz_g0_p1 = 5'd22; end
-		else if (lza_f[4])  begin lz_g0 = 5'd22; lz_g0_p1 = 5'd23; end
-		else if (lza_f[3])  begin lz_g0 = 5'd23; lz_g0_p1 = 5'd24; end
-		else if (lza_f[2])  begin lz_g0 = 5'd24; lz_g0_p1 = 5'd25; end
-		else if (lza_f[1])  begin lz_g0 = 5'd25; lz_g0_p1 = 5'd26; end
-		else if (lza_f[0])  begin lz_g0 = 5'd26; lz_g0_p1 = 5'd27; end
-		else                begin lz_g0 = 5'd27; lz_g0_p1 = 5'd27; end
-
-		if (lz_v3)      begin lz_est = lz_g3; lz_est_p1 = lz_g3_p1; end
-		else if (lz_v2) begin lz_est = lz_g2; lz_est_p1 = lz_g2_p1; end
-		else if (lz_v1) begin lz_est = lz_g1; lz_est_p1 = lz_g1_p1; end
-		else            begin lz_est = lz_g0; lz_est_p1 = lz_g0_p1; end
-	end
+		lza_1h_m0[26] | lza_1h_m0[24] | lza_1h_m0[22] | lza_1h_m0[20] |
+		lza_1h_m0[18] | lza_1h_m0[16] | lza_1h_m0[14] | lza_1h_m0[12] |
+		lza_1h_m0[10] | lza_1h_m0[8]  | lza_1h_m0[6]  | lza_1h_m0[4]  |
+		lza_1h_m0[2]  | lza_1h_m0[0]  | ~lza_any
+	};
 
 	wire [3:0] nl_hit_g_w = {
 		|(lza_1h[26:21] & sum[26:21]),
@@ -544,20 +563,36 @@ module am_fp_add #(
 				r_e0_4 <= e0_comb5;
 			end
 
-			/* Stage 5: Round & pack */
+			/* Stage 5: Round & pack (parallel increment + overflow predict cuts 26 -> ~12 cmos3) */
 			wire inc5 = r_n4[2] && (r_n4[1] || r_n4[0] || r_n4[3]);
-			wire [24:0] m0_5;
-			wire m_co_unused5;
-			am_add #(.W(25)) u_m0_5 (.a({1'b0, r_n4[26:3]}), .b(25'd0), .ci(inc5), .s(m0_5), .co(m_co_unused5));
-			wire [24:0] m5 = m0_5[24] ? {1'b0, m0_5[24:1]} : m0_5;
-			wire [9:0] e5;
+			wire [5:0] inc5_g4;
+			wire [6:0] inc5_p4;
+			wire [23:0] inc5_mask;
+			assign inc5_p4[0] = 1'b1;
+			genvar gi_m5;
+			for (gi_m5 = 0; gi_m5 < 6; gi_m5 = gi_m5 + 1) begin : g_inc5
+				assign inc5_g4[gi_m5] = &r_n4[3 + gi_m5*4 +: 4];
+				assign inc5_p4[gi_m5 + 1] = &inc5_g4[gi_m5:0];
+				assign inc5_mask[gi_m5*4 + 0] = inc5_p4[gi_m5];
+				assign inc5_mask[gi_m5*4 + 1] = inc5_p4[gi_m5] & r_n4[3 + gi_m5*4 + 0];
+				assign inc5_mask[gi_m5*4 + 2] = inc5_p4[gi_m5] & (&r_n4[3 + gi_m5*4 + 1 : 3 + gi_m5*4 + 0]);
+				assign inc5_mask[gi_m5*4 + 3] = inc5_p4[gi_m5] & (&r_n4[3 + gi_m5*4 + 2 : 3 + gi_m5*4 + 0]);
+			end
+			wire m0_ovf5 = inc5 && inc5_p4[6];
+			wire [23:0] m0_5_lo = r_n4[26:3] ^ ({24{inc5}} & inc5_mask);
+			wire [24:0] m5 = m0_ovf5 ? 25'h0800000 : {1'b0, m0_5_lo};
+			wire m_co_unused5 = 1'b0;
+			wire [9:0] e5_p1;
 			wire e_co_unused5;
-			am_add #(.W(10)) u_e_5 (.a(r_e0_4), .b(10'd0), .ci(m0_5[24]), .s(e5), .co(e_co_unused5));
+			am_add #(.W(10)) u_e_5 (.a(r_e0_4), .b(10'd0), .ci(1'b1), .s(e5_p1), .co(e_co_unused5));
+			wire [9:0] e5 = m0_ovf5 ? e5_p1 : r_e0_4;
+			wire e5_ge255 = !e5[9] && (e5[8] || (&e5[7:0]));
+			wire e5_le0   = e5[9] || !(|e5);
 
 			wire [31:0] o_r_comb5 = r_sp4 ? r_spv4 :
 				r_sz4 ? 32'd0 :
-				(!e5[9] && e5 >= 10'd255) ? {r_sx4, 8'hFF, 23'd0} :
-				(e5[9] || e5 == 10'd0) ? {r_sx4, 31'd0} :
+				e5_ge255 ? {r_sx4, 8'hFF, 23'd0} :
+				e5_le0 ? {r_sx4, 31'd0} :
 				{r_sx4, e5[7:0], m5[22:0]};
 
 			reg r_ovalid5;
