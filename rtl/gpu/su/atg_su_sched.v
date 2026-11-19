@@ -343,22 +343,49 @@ module atg_su_sched #(
 			assign fsel[0] = use_fixed ? fixed_w[0] : (!w0_win && !w2_win);
 			assign fsel_v  = hold_v || (active_live ? cand[last_warp] : (|cand));
 		end else begin : g_sel_rr
-			reg [WARP_W-1:0] sel_rr;
-			reg sel_v_rr;
-			integer k, c, r;
-			always @(*) begin
-				sel_v_rr = 1'b0;
-				sel_rr = {WARP_W{1'b0}};
-				for (r = 0; r < NWARPS; r = r + 1)
-					if (rr == r[WARP_W-1:0])
-						for (k = NWARPS - 1; k >= 0; k = k - 1) begin
-							c = (r + k) % NWARPS;
-							if (cand[c]) begin
-								sel_v_rr = 1'b1;
-								sel_rr = c[WARP_W-1:0];
-							end
+			wire [2*NWARPS-1:0] cand_dbl = {cand, cand};
+			wire [NWARPS-1:0] cand_rot = cand_dbl[rr +: NWARPS];
+			wire [WARP_W-1:0] sel_off;
+			wire sel_v_rr;
+			if (NWARPS == 8) begin : g_pe8
+				wire [3:0] v2;
+				wire [3:0] b2;
+				assign v2[0] = cand_rot[0] | cand_rot[1]; assign b2[0] = !cand_rot[0];
+				assign v2[1] = cand_rot[2] | cand_rot[3]; assign b2[1] = !cand_rot[2];
+				assign v2[2] = cand_rot[4] | cand_rot[5]; assign b2[2] = !cand_rot[4];
+				assign v2[3] = cand_rot[6] | cand_rot[7]; assign b2[3] = !cand_rot[6];
+				wire v4_0 = v2[0] | v2[1];
+				wire v4_1 = v2[2] | v2[3];
+				wire [1:0] b4_0 = {!v2[0], v2[0] ? b2[0] : b2[1]};
+				wire [1:0] b4_1 = {!v2[2], v2[2] ? b2[2] : b2[3]};
+				assign sel_v_rr = v4_0 | v4_1;
+				assign sel_off  = {!v4_0, v4_0 ? b4_0 : b4_1};
+			end else if (NWARPS == 4) begin : g_pe4
+				wire v2_0 = cand_rot[0] | cand_rot[1];
+				wire v2_1 = cand_rot[2] | cand_rot[3];
+				wire b2_0 = !cand_rot[0];
+				wire b2_1 = !cand_rot[2];
+				assign sel_v_rr = v2_0 | v2_1;
+				assign sel_off  = {!v2_0, v2_0 ? b2_0 : b2_1};
+			end else begin : g_pe_gen
+				reg [WARP_W-1:0] pe_off;
+				reg pe_v;
+				integer k;
+				always @(*) begin
+					pe_v = 1'b0;
+					pe_off = {WARP_W{1'b0}};
+					for (k = NWARPS - 1; k >= 0; k = k - 1)
+						if (cand_rot[k]) begin
+							pe_v = 1'b1;
+							pe_off = k[WARP_W-1:0];
 						end
+				end
+				assign sel_v_rr = pe_v;
+				assign sel_off  = pe_off;
 			end
+			wire [WARP_W-1:0] sel_rr;
+			wire rr_sel_co_unused;
+			am_add #(.W(WARP_W)) u_rr_sel (.a(rr), .b(sel_off), .ci(1'b0), .s(sel_rr), .co(rr_sel_co_unused));
 			assign fsel   = hold_v ? hold_w : sel_rr;
 			assign fsel_v = hold_v || sel_v_rr;
 		end

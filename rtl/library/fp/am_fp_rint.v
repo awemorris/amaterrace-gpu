@@ -40,19 +40,8 @@ module am_fp_rint #(
 	wire [23:0] q = f >= 8'd24 ? 24'd0 : q0;
 	wire g = f > 8'd24 ? 1'b0 : m[fm1];
 
-	/* prefix OR of m for fast sticky bit calculation without barrel shifter */
-	/* verilator lint_off UNOPTFLAT */
-	wire [23:0] m_or;
-	assign m_or[0] = m[0];
-	genvar gi;
-	generate
-		for (gi = 1; gi < 24; gi = gi + 1) begin : g_or
-			assign m_or[gi] = m_or[gi-1] | m[gi];
-		end
-	endgenerate
-	/* verilator lint_on UNOPTFLAT */
-
-	wire st = f > 8'd24 ? m_or[23] : (fm1 == 5'd0 || f == 8'd0) ? 1'b0 : m_or[fm2];
+	wire [23:0] st_mask = ~({24{1'b1}} << fm1);
+	wire st = f > 8'd24 ? (|m) : (fm1 == 5'd0 || f == 8'd0) ? 1'b0 : |(m & st_mask);
 	reg up;
 	always @(*)
 		case (rm)
@@ -62,7 +51,9 @@ module am_fp_rint #(
 		3'd4: up = g;
 		default: up = g && (st || q[0]);
 		endcase
-	am_add #(.W(25)) u_n (.a({1'b0, q}), .b(25'd0), .ci(up), .s(n), .co(carry_unused[3]));
+	wire [24:0] qp1;
+	am_add #(.W(25)) u_n (.a({1'b0, q}), .b(25'd0), .ci(1'b1), .s(qp1), .co(carry_unused[3]));
+	assign n = up ? qp1 : {1'b0, q};
 
 	wire unused_ok = &{1'b0, carry_unused, fm1_w[7:5], fm2_w[7:5]};
 endmodule

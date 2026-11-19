@@ -87,28 +87,22 @@ module atg_su_div #(
 	assign x_ready = st == IDLE;
 
 	/* The next lane in the mask at or after lane n (NPHYS when none). */
-	reg [LW:0] first;
-	integer fi;
-	always @(*) begin
-		first = NPHYS[LW:0];
-		for (fi = NPHYS - 1; fi >= 0; fi = fi - 1)
-			if (x_mask[fi])
-				first = fi[LW:0];
-	end
-
-	wire [LW:0] li_1;
-	wire l1_co_unused;
-	am_add #(.W(LW + 1)) u_li_1 (.a({1'b0, li}), .b({(LW + 1){1'b0}}), .ci(1'b1), .s(li_1),
-		.co(l1_co_unused));
-
-	reg [LW:0] after;
-	integer ai;
-	always @(*) begin
-		after = NPHYS[LW:0];
-		for (ai = NPHYS - 1; ai >= 0; ai = ai - 1)
-			if (rm[ai] && ai >= li_1)
-				after = ai[LW:0];
-	end
+	wire [NPHYS-1:0] x_mask_rev;
+	wire [NPHYS-1:0] rm_after = rm & ({{(NPHYS-1){1'b1}}, 1'b0} << li);
+	wire [NPHYS-1:0] rm_after_rev;
+	genvar gdr;
+	generate
+		for (gdr = 0; gdr < NPHYS; gdr = gdr + 1) begin : g_div_rev
+			assign x_mask_rev[gdr]   = x_mask[NPHYS - 1 - gdr];
+			assign rm_after_rev[gdr] = rm_after[NPHYS - 1 - gdr];
+		end
+	endgenerate
+	wire [LW-1:0] first_rev_n, after_rev_n;
+	wire first_nz, after_nz;
+	am_msb #(.W(NPHYS), .SW(LW)) u_div_first (.a(x_mask_rev),   .n(first_rev_n), .nz(first_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_div_after (.a(rm_after_rev), .n(after_rev_n), .nz(after_nz));
+	wire [LW:0] first = first_nz ? {1'b0, ~first_rev_n} : NPHYS[LW:0];
+	wire [LW:0] after = after_nz ? {1'b0, ~after_rev_n} : NPHYS[LW:0];
 	wire [DW-1:0] ra, rb, rq;
 	wire [31:0] la = la_cur_r;
 	wire [31:0] lb = lb_cur_r;

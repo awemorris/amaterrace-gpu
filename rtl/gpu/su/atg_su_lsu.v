@@ -171,28 +171,23 @@ module atg_su_lsu #(
 	assign x_ready = st == IDLE;
 
 	/* The first pending lane and the lanes in its line. */
-	(* max_fanout = 12 *) reg [LW:0] lead;
+	wire [NPHYS-1:0] pend_rev;
+	genvar gpr;
+	generate
+		for (gpr = 0; gpr < NPHYS; gpr = gpr + 1) begin : g_pend_rev
+			assign pend_rev[gpr] = pend[NPHYS - 1 - gpr];
+		end
+	endgenerate
+	wire [LW-1:0] pend_rev_n;
+	wire pend_nz;
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_lead (.a(pend_rev), .n(pend_rev_n), .nz(pend_nz));
+	(* max_fanout = 12 *) wire [LW:0] lead = pend_nz ? {1'b0, ~pend_rev_n} : NPHYS[LW:0];
 	wire [NPHYS-1:0] inl = pend & lhit;
 	wire [NPHYS-1:0] line_eq;
-	reg [LA_W-1:0] lline;
-	integer l;
-	always @(*) begin
-		lead = NPHYS[LW:0];
-		for (l = NPHYS - 1; l >= 0; l = l - 1)
-			if (pend[l])
-				lead = l[LW:0];
-		lline = radr[lead[LW-1:0]*32 + LINE_SHIFT +: LA_W];
-	end
+	wire [LA_W-1:0] lline = radr[lead[LW-1:0]*32 + LINE_SHIFT +: LA_W];
 
 	/* The next atomic lane. */
-	reg [LW:0] anext;
-	integer l2;
-	always @(*) begin
-		anext = NPHYS[LW:0];
-		for (l2 = NPHYS - 1; l2 >= 0; l2 = l2 - 1)
-			if (pend[l2])
-				anext = l2[LW:0];
-	end
+	wire [LW:0] anext = lead;
 
 	/* The lanes' addresses: registered radr + rimm in PREP (avoids opd+adder in IDLE). */
 	localparam N_LEQ = (LA_W + 2) / 3;

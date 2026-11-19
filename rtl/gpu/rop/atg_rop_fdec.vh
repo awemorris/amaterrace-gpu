@@ -1,5 +1,11 @@
 /*
  * Amaterrace GPU
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
  * Pure-LUT decoder for ROP fblend supported formats
  * Zero adders, zero CARRY4 primitives, 100% compliant with ASIC 5nm 1.5 GHz.
  */

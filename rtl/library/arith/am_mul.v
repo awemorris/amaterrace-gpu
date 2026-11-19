@@ -37,16 +37,22 @@ module am_mul #(
 	output wire [AW+BW-1:0] p
 );
 `ifndef SYNTH_KINTEX7
-	(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
 	generate
-	if (SIGNED != 0) begin : g_s
-		assign m = $signed(a) * $signed(b);
-	end else begin : g_u
-		assign m = a * b;
-	end
 	if (LAT == 0) begin : g_c
+		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
+		if (SIGNED != 0) begin : g_s
+			assign m = $signed(a) * $signed(b);
+		end else begin : g_u
+			assign m = a * b;
+		end
 		assign p = m;
-	end else begin : g_r
+	end else if (LAT == 1 || (AW <= 17 && BW <= 17)) begin : g_r1
+		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
+		if (SIGNED != 0) begin : g_s
+			assign m = $signed(a) * $signed(b);
+		end else begin : g_u
+			assign m = a * b;
+		end
 		reg [AW+BW-1:0] r [0:LAT-1];
 		integer i;
 		always @(posedge clk)
@@ -55,6 +61,150 @@ module am_mul #(
 				for (i = 1; i < LAT; i = i + 1)
 					r[i] <= r[i-1];
 			end
+		assign p = r[LAT-1];
+	end else if (AW > 17 && BW > 17) begin : g_r2d
+		localparam PW = AW + BW;
+		localparam AHI_W = AW - 17;
+		localparam BHI_W = BW - 17;
+		wire [16:0] a_lo = a[16:0];
+		wire [16:0] b_lo = b[16:0];
+		wire [AHI_W-1:0] a_hi = a[AW-1:17];
+		wire [BHI_W-1:0] b_hi = b[BW-1:17];
+		reg [33:0] p_ll_r;
+		reg [PW-1:0] r [1:LAT-1];
+		if (SIGNED != 0) begin : g_s2d
+			wire [33:0] p_ll_w = {1'b0, a_lo} * {1'b0, b_lo};
+			wire signed [AHI_W+17:0] p_hl_w = $signed(a_hi) * $signed({1'b0, b_lo});
+			wire signed [BHI_W+17:0] p_lh_w = $signed({1'b0, a_lo}) * $signed(b_hi);
+			wire signed [AHI_W+BHI_W-1:0] p_hh_w = $signed(a_hi) * $signed(b_hi);
+			reg signed [AHI_W+17:0] p_hl_r;
+			reg signed [BHI_W+17:0] p_lh_r;
+			reg signed [AHI_W+BHI_W-1:0] p_hh_r;
+			wire signed [PW-1:0] t_ll = $signed({{(PW-34){1'b0}}, p_ll_r});
+			wire signed [PW-1:0] t_hl = $signed({p_hl_r, 17'd0});
+			wire signed [PW-1:0] t_lh = $signed({p_lh_r, 17'd0});
+			wire signed [PW-1:0] t_hh = $signed({p_hh_r, 34'd0});
+			wire signed [PW-1:0] sum_w = t_ll + t_hl + t_lh + t_hh;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_ll_r <= p_ll_w;
+					p_hl_r <= p_hl_w;
+					p_lh_r <= p_lh_w;
+					p_hh_r <= p_hh_w;
+					r[1]   <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end else begin : g_u2d
+			wire [33:0] p_ll_w = a_lo * b_lo;
+			wire [AHI_W+16:0] p_hl_w = a_hi * b_lo;
+			wire [BHI_W+16:0] p_lh_w = a_lo * b_hi;
+			wire [AHI_W+BHI_W-1:0] p_hh_w = a_hi * b_hi;
+			reg [AHI_W+16:0] p_hl_r;
+			reg [BHI_W+16:0] p_lh_r;
+			reg [AHI_W+BHI_W-1:0] p_hh_r;
+			wire [PW-1:0] t_ll = {{(PW-34){1'b0}}, p_ll_r};
+			wire [PW-1:0] t_hl = {{(BW-17){1'b0}}, p_hl_r, 17'd0};
+			wire [PW-1:0] t_lh = {{(AW-17){1'b0}}, p_lh_r, 17'd0};
+			wire [PW-1:0] t_hh = {p_hh_r, 34'd0};
+			wire [PW-1:0] sum_w = t_ll + t_hl + t_lh + t_hh;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_ll_r <= p_ll_w;
+					p_hl_r <= p_hl_w;
+					p_lh_r <= p_lh_w;
+					p_hh_r <= p_hh_w;
+					r[1]   <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end
+		assign p = r[LAT-1];
+	end else if (AW > 17) begin : g_r1d_a
+		localparam PW = AW + BW;
+		localparam AHI_W = AW - 17;
+		wire [16:0] a_lo = a[16:0];
+		wire [AHI_W-1:0] a_hi = a[AW-1:17];
+		reg [PW-1:0] r [1:LAT-1];
+		if (SIGNED != 0) begin : g_s1da
+			wire signed [BW+17:0] p_l_w = $signed({1'b0, a_lo}) * $signed(b);
+			wire signed [AHI_W+BW-1:0] p_h_w = $signed(a_hi) * $signed(b);
+			reg signed [BW+17:0] p_l_r;
+			reg signed [AHI_W+BW-1:0] p_h_r;
+			wire signed [PW-1:0] t_l = p_l_r;
+			wire signed [PW-1:0] t_h = $signed({p_h_r, 17'd0});
+			wire signed [PW-1:0] sum_w = t_l + t_h;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_l_r <= p_l_w;
+					p_h_r <= p_h_w;
+					r[1]  <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end else begin : g_u1da
+			wire [17+BW-1:0] p_l_w = a_lo * b;
+			wire [AHI_W+BW-1:0] p_h_w = a_hi * b;
+			reg [17+BW-1:0] p_l_r;
+			reg [AHI_W+BW-1:0] p_h_r;
+			wire [PW-1:0] t_l = {{(AHI_W){1'b0}}, p_l_r};
+			wire [PW-1:0] t_h = {p_h_r, 17'd0};
+			wire [PW-1:0] sum_w = t_l + t_h;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_l_r <= p_l_w;
+					p_h_r <= p_h_w;
+					r[1]  <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end
+		assign p = r[LAT-1];
+	end else begin : g_r1d_b
+		localparam PW = AW + BW;
+		localparam BHI_W = BW - 17;
+		wire [16:0] b_lo = b[16:0];
+		wire [BHI_W-1:0] b_hi = b[BW-1:17];
+		reg [PW-1:0] r [1:LAT-1];
+		if (SIGNED != 0) begin : g_s1db
+			wire signed [AW+17:0] p_l_w = $signed(a) * $signed({1'b0, b_lo});
+			wire signed [AW+BHI_W-1:0] p_h_w = $signed(a) * $signed(b_hi);
+			reg signed [AW+17:0] p_l_r;
+			reg signed [AW+BHI_W-1:0] p_h_r;
+			wire signed [PW-1:0] t_l = p_l_r;
+			wire signed [PW-1:0] t_h = $signed({p_h_r, 17'd0});
+			wire signed [PW-1:0] sum_w = t_l + t_h;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_l_r <= p_l_w;
+					p_h_r <= p_h_w;
+					r[1]  <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end else begin : g_u1db
+			wire [AW+17-1:0] p_l_w = a * b_lo;
+			wire [AW+BHI_W-1:0] p_h_w = a * b_hi;
+			reg [AW+17-1:0] p_l_r;
+			reg [AW+BHI_W-1:0] p_h_r;
+			wire [PW-1:0] t_l = {{(BHI_W){1'b0}}, p_l_r};
+			wire [PW-1:0] t_h = {p_h_r, 17'd0};
+			wire [PW-1:0] sum_w = t_l + t_h;
+			integer i;
+			always @(posedge clk)
+				if (en) begin
+					p_l_r <= p_l_w;
+					p_h_r <= p_h_w;
+					r[1]  <= sum_w;
+					for (i = 2; i < LAT; i = i + 1)
+						r[i] <= r[i-1];
+				end
+		end
 		assign p = r[LAT-1];
 	end
 	endgenerate

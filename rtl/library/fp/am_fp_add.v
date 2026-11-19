@@ -64,27 +64,15 @@ module am_fp_add #(
 	wire [7:0] ex1, d1;
 	wire [23:0] mx1, my1;
 
-	/* Stage 2: align the smaller operand (3 extra bits, the last sticky). */
-	reg [26:0] sh;
-	reg stk;
-	integer k;
-
 	wire [26:0] shi = {my1, 3'b000};
 	wire [26:0] shr;	/* (d1 < 27 where it is used) */
 	am_shift #(.W(27), .SW(5), .DIR(1)) u_shr (.a(shi), .amt(d1[4:0]), .left(1'b0), .arith(1'b0),
 		.y(shr));
-	always @(*) begin
-		stk = 1'b0;
-		if (d1 >= 8'd27) begin
-			stk = my1 != 24'd0;
-			sh = 27'd0;
-		end else begin
-			for (k = 0; k < 27; k = k + 1)
-				if (k < d1)
-					stk = stk | shi[k];
-			sh = shr;
-		end
-	end
+	wire d1_ge27 = (d1 >= 8'd27);
+	wire [26:0] stk_mask = ~({27{1'b1}} << d1[4:0]);
+	wire stk_lo = |(shi & stk_mask);
+	wire stk = d1_ge27 ? (my1 != 24'd0) : stk_lo;
+	wire [26:0] sh = d1_ge27 ? 27'd0 : shr;
 
 	wire v2_w = rst_n && v1;
 	wire sp2_w = sp1;

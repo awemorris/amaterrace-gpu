@@ -133,14 +133,7 @@ module atg_su_lds #(
 	wire [NPHYS-1:0] xl = is_sts || is_atom ? x_mask[2*NPHYS-1:NPHYS] : x_mask[NPHYS-1:0];
 	(* max_fanout = 12 *) wire [31:0] imm = is_atom ? 32'd0 : x_uop[ATG_UOP_IMM +: 32];
 	/* Lane li's word address (a selection: AW bits a lane). */
-	(* max_fanout = 12 *) reg [AW-1:0] a;
-	integer al;
-	always @(*) begin
-		a = radr[AW-1:0];
-		for (al = 1; al < NPHYS; al = al + 1)
-			if (li == al[LW-1:0])
-				a = radr[al*AW +: AW];
-	end
+	(* max_fanout = 12 *) wire [AW-1:0] a = radr[li*AW +: AW];
 	(* max_fanout = 12 *) wire lane_on = lanes[li];
 	/* An atom lane's read-modify-write uses q_pipe (dedicated fabric register after BRAM q). */
 	wire [31:0] cur_rdat = rdat[li*32 +: 32];

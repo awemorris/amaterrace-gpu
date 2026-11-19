@@ -139,27 +139,23 @@ module atg_su_xu #(
 
 	wire [27:0] carry_unused;	/* the adders' carries and borrows */
 
-	reg [LW:0] first;
-	integer fi;
-	always @(*) begin
-		first = NPHYS[LW:0];
-		for (fi = NPHYS - 1; fi >= 0; fi = fi - 1)
-			if (x_mask[fi])
-				first = fi[LW:0];
-	end
-
-	wire [LW:0] li1;
-	am_add #(.W(LW+1)) u_li1 (.a({1'b0, li}), .b({(LW+1){1'b0}}), .ci(1'b1), .s(li1),
-		.co(carry_unused[0]));
-
-	reg [LW:0] after;
-	integer ai;
-	always @(*) begin
-		after = NPHYS[LW:0];
-		for (ai = NPHYS - 1; ai >= 0; ai = ai - 1)
-			if (rmask[ai] && ai >= li1)
-				after = ai[LW:0];
-	end
+	wire [NPHYS-1:0] x_mask_rev;
+	wire [NPHYS-1:0] rm_after = rmask & ({{(NPHYS-1){1'b1}}, 1'b0} << li);
+	wire [NPHYS-1:0] rm_after_rev;
+	genvar gxr;
+	generate
+		for (gxr = 0; gxr < NPHYS; gxr = gxr + 1) begin : g_xu_rev
+			assign x_mask_rev[gxr]   = x_mask[NPHYS - 1 - gxr];
+			assign rm_after_rev[gxr] = rm_after[NPHYS - 1 - gxr];
+		end
+	endgenerate
+	wire [LW-1:0] first_rev_n, after_rev_n;
+	wire first_nz, after_nz;
+	am_msb #(.W(NPHYS), .SW(LW)) u_xu_first (.a(x_mask_rev),   .n(first_rev_n), .nz(first_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_xu_after (.a(rm_after_rev), .n(after_rev_n), .nz(after_nz));
+	wire [LW:0] first = first_nz ? {1'b0, ~first_rev_n} : NPHYS[LW:0];
+	wire [LW:0] after = after_nz ? {1'b0, ~after_rev_n} : NPHYS[LW:0];
+	assign carry_unused[0] = 1'b0;
 	/* The lane's input, flushed, and its fields (registered in sub_st 0). */
 	wire [31:0] lx_cur_r;
 	wire [31:0] lx_raw = atg_su_flush(lx_cur_r);

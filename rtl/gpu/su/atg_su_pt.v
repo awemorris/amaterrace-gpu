@@ -249,15 +249,12 @@ module atg_su_pt #(
 	generate
 	for (gbh = 0; gbh < 4; gbh = gbh + 1) begin : g_rdata_sl
 		(* dont_touch = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_sl = rb_r3;
-		reg [7:0] rdata_sl_w;
-		integer rbi;
-		always @(*) begin
-			rdata_sl_w = rd_q_pipe[gbh*8 +: 8];
-			for (rbi = 1; rbi < NPHYS; rbi = rbi + 1)
-				if (rb_r3_sl == rbi[$clog2(NPHYS)-1:0])
-					rdata_sl_w = rd_q_pipe[rbi*32 + gbh*8 +: 8];
+		wire [NPHYS*8-1:0] rdata_b;
+		genvar grbi;
+		for (grbi = 0; grbi < NPHYS; grbi = grbi + 1) begin : g_rbi
+			assign rdata_b[grbi*8 +: 8] = rd_q_pipe[grbi*32 + gbh*8 +: 8];
 		end
-		assign pt_rdata[gbh*8 +: 8] = rdata_sl_w;
+		assign pt_rdata[gbh*8 +: 8] = rdata_b[rb_r3_sl*8 +: 8];
 	end
 	endgenerate
 
