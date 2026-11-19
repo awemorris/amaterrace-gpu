@@ -23,6 +23,7 @@ module atg_mmu #(
 	parameter PA_BITS = 32,
 	parameter VPN_BITS = VA_BITS - 12,
 	parameter PPN_BITS = PA_BITS - 12,
+	parameter FC_W = (NUM_CLIENTS > 8) ? 4 : 3,
 `ifdef SYNTH_KINTEX7
 	parameter REG_CLIENT_OUT = 1
 `else
@@ -60,7 +61,7 @@ module atg_mmu #(
 	(* max_fanout = 16 *) output reg                fault_valid,
 	(* max_fanout = 16 *) output reg [3:0]          fault_kind,
 	(* max_fanout = 16 *) output reg [3:0]          fault_session,
-	(* max_fanout = 16 *) output reg [2:0]          fault_client,
+	(* max_fanout = 16 *) output reg [FC_W-1:0]     fault_client,
 	(* max_fanout = 16 *) output reg [VA_BITS-1:0]  fault_addr,
 
 	/* Walker Memory Read Master interface (to MC) */
@@ -129,20 +130,23 @@ module atg_mmu #(
 	end
 	assign inflight_count = r_inflight;
 
+	localparam PA_HI_W  = PA_BITS - 16;
+	localparam VPN_HI_W = VPN_BITS - 10;
+
 	/* Active client registers */
-	reg [2:0]          active_client;
+	reg [FC_W-1:0]     active_client;
 	reg [3:0]          active_session;
 	reg [VPN_BITS-1:0] active_vpn;
 	reg [11:0]         active_offset;
 	reg [1:0]          active_type;
 
 	/* Destination-specific session and VPN registers to decouple fanout */
-	(* dont_touch = "true" *) reg [3:0]          l1_ref_sess_c0, l1_ref_sess_c1, l1_ref_sess_c2, l1_ref_sess_c3, l1_ref_sess_c4;
+	(* dont_touch = "true" *) reg [3:0]          l1_ref_sess_c [0:NUM_CLIENTS-1];
 	(* dont_touch = "true" *) reg [3:0]          l2_ref_sess;
 	(* dont_touch = "true" *) reg [3:0]          wlk_session;
 	(* dont_touch = "true" *) reg [3:0]          l2_lk_session;
 
-	(* dont_touch = "true" *) reg [VPN_BITS-1:0] l1_ref_vpn_c0, l1_ref_vpn_c1, l1_ref_vpn_c2, l1_ref_vpn_c3, l1_ref_vpn_c4;
+	(* dont_touch = "true" *) reg [VPN_BITS-1:0] l1_ref_vpn_c  [0:NUM_CLIENTS-1];
 	(* dont_touch = "true" *) reg [VPN_BITS-1:0] l2_ref_vpn;
 	(* dont_touch = "true" *) reg [VPN_BITS-1:0] wlk_vpn;
 	(* dont_touch = "true" *) reg [VPN_BITS-1:0] flt_vpn;
@@ -165,10 +169,8 @@ module atg_mmu #(
 	end
 
 	/* Replicated state decode registers per client to isolate state fanout */
-	(* dont_touch = "true" *) reg st_is_refill_c0, st_is_refill_c1, st_is_refill_c2, st_is_refill_c3, st_is_refill_c4;
-	(* dont_touch = "true" *) reg st_is_idle_c0,   st_is_idle_c1,   st_is_idle_c2,   st_is_idle_c3,   st_is_idle_c4;
-	wire [NUM_CLIENTS-1:0] st_is_refill_c = {st_is_refill_c4, st_is_refill_c3, st_is_refill_c2, st_is_refill_c1, st_is_refill_c0};
-	wire [NUM_CLIENTS-1:0] st_is_idle_c   = {st_is_idle_c4,   st_is_idle_c3,   st_is_idle_c2,   st_is_idle_c1,   st_is_idle_c0};
+	(* dont_touch = "true" *) reg [NUM_CLIENTS-1:0] st_is_refill_c;
+	(* dont_touch = "true" *) reg [NUM_CLIENTS-1:0] st_is_idle_c;
 
 	/* Per-client L1 TLBs */
 	wire [NUM_CLIENTS-1:0]          l1_hit;
@@ -215,22 +217,10 @@ module atg_mmu #(
 		wire [2:0] c_set_hit    = client_req_va[gc*VA_BITS+12 +: 3];
 `endif
 
-		wire [VPN_BITS-1:0] c_ref_vpn = (gc == 0) ? l1_ref_vpn_c0 :
-		                                (gc == 1) ? l1_ref_vpn_c1 :
-		                                (gc == 2) ? l1_ref_vpn_c2 :
-		                                (gc == 3) ? l1_ref_vpn_c3 : l1_ref_vpn_c4;
-		wire [3:0] c_ref_sess = (gc == 0) ? l1_ref_sess_c0 :
-		                        (gc == 1) ? l1_ref_sess_c1 :
-		                        (gc == 2) ? l1_ref_sess_c2 :
-		                        (gc == 3) ? l1_ref_sess_c3 : l1_ref_sess_c4;
-		wire [PPN_BITS-1:0] c_ref_pfn = (gc == 0) ? r_refill_pfn_c0 :
-		                                (gc == 1) ? r_refill_pfn_c1 :
-		                                (gc == 2) ? r_refill_pfn_c2 :
-		                                (gc == 3) ? r_refill_pfn_c3 : r_refill_pfn_c4;
-		wire [5:0] c_ref_flg = (gc == 0) ? r_refill_flags_c0 :
-		                       (gc == 1) ? r_refill_flags_c1 :
-		                       (gc == 2) ? r_refill_flags_c2 :
-		                       (gc == 3) ? r_refill_flags_c3 : r_refill_flags_c4;
+		wire [VPN_BITS-1:0] c_ref_vpn = l1_ref_vpn_c[gc];
+		wire [3:0]          c_ref_sess = l1_ref_sess_c[gc];
+		wire [PPN_BITS-1:0] c_ref_pfn = r_refill_pfn_c[gc];
+		wire [5:0]          c_ref_flg = r_refill_flags_c[gc];
 
 		atg_tlb_l1 #(
 			.ENTRIES(16),
@@ -291,8 +281,8 @@ module atg_mmu #(
 	(* dont_touch = "true" *) reg [5:0] l2_lookup_set_w3_vpn, l2_lookup_set_w3_pfn_lo, l2_lookup_set_w3_pfn_hi, l2_lookup_set_w3_flg, l2_lookup_set_w3_sl;
 
 	/* Replicated L1 refill signals per client to strictly limit fanout <= 16 */
-	(* dont_touch = "true" *) reg [PPN_BITS-1:0] r_refill_pfn_c0, r_refill_pfn_c1, r_refill_pfn_c2, r_refill_pfn_c3, r_refill_pfn_c4;
-	(* dont_touch = "true" *) reg [5:0]          r_refill_flags_c0, r_refill_flags_c1, r_refill_flags_c2, r_refill_flags_c3, r_refill_flags_c4;
+	(* dont_touch = "true" *) reg [PPN_BITS-1:0] r_refill_pfn_c   [0:NUM_CLIENTS-1];
+	(* dont_touch = "true" *) reg [5:0]          r_refill_flags_c [0:NUM_CLIENTS-1];
 
 	/* Dedicated L2 refill signals */
 	(* dont_touch = "true" *) reg [PPN_BITS-1:0] r_refill_pfn_l2;
@@ -438,7 +428,16 @@ module atg_mmu #(
 	wire [PPN_BITS-1:0] root_pt_g1 = session_root_pt[wlk_sess_g1];
 	wire [PPN_BITS-1:0] root_pt_g2 = session_root_pt[wlk_sess_g2];
 	wire [PPN_BITS-1:0] root_pt_g3 = session_root_pt[wlk_sess_g3];
-	wire [PPN_BITS-1:0] walker_root_pt = {root_pt_g3[19:15], root_pt_g2[14:10], root_pt_g1[9:5], root_pt_g0[4:0]};
+	localparam PQ0 = PPN_BITS / 4;
+	localparam PQ1 = PPN_BITS / 4;
+	localparam PQ2 = PPN_BITS / 4;
+	localparam PQ3 = PPN_BITS - PQ0 - PQ1 - PQ2;
+	wire [PPN_BITS-1:0] walker_root_pt = {
+		root_pt_g3[PQ0+PQ1+PQ2 +: PQ3],
+		root_pt_g2[PQ0+PQ1     +: PQ2],
+		root_pt_g1[PQ0         +: PQ1],
+		root_pt_g0[0           +: PQ0]
+	};
 
 	atg_mmu_walker #(
 		.VA_BITS(VA_BITS),
@@ -490,10 +489,10 @@ module atg_mmu #(
 	genvar gout;
 	generate
 	for (gout = 0; gout < NUM_CLIENTS; gout = gout + 1) begin : g_client_out
-		(* dont_touch = "true" *) wire refill_now_hi  = st_is_refill_c[gout] & (active_client == gout[2:0]);
-		(* dont_touch = "true" *) wire refill_now_lo  = st_is_refill_c[gout] & (active_client == gout[2:0]);
-		(* dont_touch = "true" *) wire refill_now_flg = st_is_refill_c[gout] & (active_client == gout[2:0]);
-		(* dont_touch = "true" *) wire refill_now_ctl = st_is_refill_c[gout] & (active_client == gout[2:0]);
+		(* dont_touch = "true" *) wire refill_now_hi  = st_is_refill_c[gout] & (active_client == gout[FC_W-1:0]);
+		(* dont_touch = "true" *) wire refill_now_lo  = st_is_refill_c[gout] & (active_client == gout[FC_W-1:0]);
+		(* dont_touch = "true" *) wire refill_now_flg = st_is_refill_c[gout] & (active_client == gout[FC_W-1:0]);
+		(* dont_touch = "true" *) wire refill_now_ctl = st_is_refill_c[gout] & (active_client == gout[FC_W-1:0]);
 
 		reg [PA_BITS-1:16] r_l1_pa_w0_hi;
 		reg [15:0]         r_l1_pa_w0_lo;
@@ -528,18 +527,18 @@ module atg_mmu #(
 				r_ref_pa_lo     <= 16'd0;
 				r_ref_flg       <= 6'd0;
 			end else begin
-				r_l1_pa_w0_hi   <= l1_pfn_w0[gout*PPN_BITS + 4 +: 16];
+				r_l1_pa_w0_hi   <= l1_pfn_w0[gout*PPN_BITS + 4 +: PA_HI_W];
 				r_l1_pa_w0_lo   <= {l1_pfn_w0[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
 				r_l1_flg_w0     <= l1_flags_w0[gout*6 +: 6];
 
-				r_l1_pa_w1_hi   <= l1_pfn_w1[gout*PPN_BITS + 4 +: 16];
+				r_l1_pa_w1_hi   <= l1_pfn_w1[gout*PPN_BITS + 4 +: PA_HI_W];
 				r_l1_pa_w1_lo   <= {l1_pfn_w1[gout*PPN_BITS +: 4], client_req_va[gout*VA_BITS +: 12]};
 				r_l1_flg_w1     <= l1_flags_w1[gout*6 +: 6];
 
 				r_l1_hit_w1_pa  <= l1_hit_w1[gout];
 				r_l1_hit_w1_flg <= l1_hit_w1[gout];
 
-				if (refill_now_hi)  r_ref_pa_hi <= r_refill_pfn[19:4];
+				if (refill_now_hi)  r_ref_pa_hi <= r_refill_pfn[PPN_BITS-1:4];
 				if (refill_now_lo)  r_ref_pa_lo <= {r_refill_pfn[3:0], active_offset};
 				if (refill_now_flg) r_ref_flg   <= r_refill_flags;
 			end
@@ -575,10 +574,10 @@ module atg_mmu #(
 		wire [5:0]          l1_flg_mux   = r_l1_hit_w1_flg ? r_l1_flg_w1   : r_l1_flg_w0;
 
 		always @(*) begin
-			r_client_ack[gout]                   = r_client_ack_l1 | r_client_ack_ref;
-			r_client_pa[gout*PA_BITS + 16 +: 16] = r_is_refill_hi  ? r_ref_pa_hi : l1_pa_hi_mux;
-			r_client_pa[gout*PA_BITS + 0  +: 16] = r_is_refill_lo  ? r_ref_pa_lo : l1_pa_lo_mux;
-			r_client_flags[gout*6 +: 6]          = r_is_refill_flg ? r_ref_flg   : l1_flg_mux;
+			r_client_ack[gout]                        = r_client_ack_l1 | r_client_ack_ref;
+			r_client_pa[gout*PA_BITS + 16 +: PA_HI_W] = r_is_refill_hi  ? r_ref_pa_hi : l1_pa_hi_mux;
+			r_client_pa[gout*PA_BITS + 0  +: 16]      = r_is_refill_lo  ? r_ref_pa_lo : l1_pa_lo_mux;
+			r_client_flags[gout*6 +: 6]               = r_is_refill_flg ? r_ref_flg   : l1_flg_mux;
 		end
 	end
 	endgenerate
@@ -612,14 +611,12 @@ module atg_mmu #(
 			if (state == S_REFILL) begin
 				client_ack[active_client] = !r_refill_fault;
 				client_fault[active_client] = r_refill_fault;
-				case (active_client)
-				3'd0: begin client_pa[0*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset}; client_flags[0*6 +: 6] = r_refill_flags; end
-				3'd1: begin client_pa[1*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset}; client_flags[1*6 +: 6] = r_refill_flags; end
-				3'd2: begin client_pa[2*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset}; client_flags[2*6 +: 6] = r_refill_flags; end
-				3'd3: begin client_pa[3*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset}; client_flags[3*6 +: 6] = r_refill_flags; end
-				3'd4: begin client_pa[4*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset}; client_flags[4*6 +: 6] = r_refill_flags; end
-				default: ;
-				endcase
+				for (c = 0; c < NUM_CLIENTS; c = c + 1) begin
+					if (active_client == c[FC_W-1:0]) begin
+						client_pa[c*PA_BITS +: PA_BITS] = {r_refill_pfn, active_offset};
+						client_flags[c*6 +: 6]          = r_refill_flags;
+					end
+				end
 			end
 		end
 	end
@@ -638,28 +635,29 @@ module atg_mmu #(
 
 
 	wire any_miss = |r_client_miss;
-	reg [2:0] next_client;
+	reg [FC_W-1:0] next_client;
+	integer nc;
 	always @(*) begin
-		if (r_client_miss[0])      next_client = 3'd0;
-		else if (r_client_miss[1]) next_client = 3'd1;
-		else if (r_client_miss[2]) next_client = 3'd2;
-		else if (r_client_miss[3]) next_client = 3'd3;
-		else                       next_client = 3'd4;
+		next_client = {FC_W{1'b0}};
+		for (nc = NUM_CLIENTS - 1; nc >= 0; nc = nc - 1) begin
+			if (r_client_miss[nc])
+				next_client = nc[FC_W-1:0];
+		end
 	end
 
 	/* Active client context registers with replicated client select to avoid high fanout */
-	(* dont_touch = "true" *) reg [2:0] act_client_vpn_lo;
-	(* dont_touch = "true" *) reg [2:0] act_client_vpn_hi;
-	(* dont_touch = "true" *) reg [2:0] act_client_off;
-	(* dont_touch = "true" *) reg [2:0] act_client_meta;
+	(* dont_touch = "true" *) reg [FC_W-1:0] act_client_vpn_lo;
+	(* dont_touch = "true" *) reg [FC_W-1:0] act_client_vpn_hi;
+	(* dont_touch = "true" *) reg [FC_W-1:0] act_client_off;
+	(* dont_touch = "true" *) reg [FC_W-1:0] act_client_meta;
 
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
-			active_client     <= 3'd0;
-			act_client_vpn_lo <= 3'd0;
-			act_client_vpn_hi <= 3'd0;
-			act_client_off    <= 3'd0;
-			act_client_meta   <= 3'd0;
+			active_client     <= {FC_W{1'b0}};
+			act_client_vpn_lo <= {FC_W{1'b0}};
+			act_client_vpn_hi <= {FC_W{1'b0}};
+			act_client_off    <= {FC_W{1'b0}};
+			act_client_meta   <= {FC_W{1'b0}};
 		end else if (state == S_IDLE && any_miss) begin
 			active_client     <= next_client;
 			act_client_vpn_lo <= next_client;
@@ -703,72 +701,41 @@ module atg_mmu #(
 		end
 	end
 
-	reg [3:0]  sel_session;
-	reg [9:0]  sel_vpn_lo;
-	reg [5:0]  raw_lo_lk;
-	reg [5:0]  raw_lo_ref_a;
-	reg [5:0]  raw_lo_ref_b;
-	reg [9:0]  sel_vpn_hi;
-	reg [11:0] sel_offset;
-	reg [1:0]  sel_type;
+	reg [3:0]          sel_session;
+	reg [9:0]          sel_vpn_lo;
+	reg [5:0]          raw_lo_lk;
+	reg [5:0]          raw_lo_ref_a;
+	reg [5:0]          raw_lo_ref_b;
+	reg [VPN_HI_W-1:0] sel_vpn_hi;
+	reg [11:0]         sel_offset;
+	reg [1:0]          sel_type;
+	integer            sci;
 
 	always @(*) begin
-		case (act_client_vpn_lo)
-		3'd0: begin
-			sel_vpn_lo   = client_req_va[0*VA_BITS + 12 +: 10];
-			raw_lo_lk    = client_req_va[0*VA_BITS + 12 +: 6];
-			raw_lo_ref_a = client_req_va[0*VA_BITS + 12 +: 6];
-			raw_lo_ref_b = client_req_va[0*VA_BITS + 12 +: 6];
+		sel_vpn_lo   = 10'd0;
+		raw_lo_lk    = 6'd0;
+		raw_lo_ref_a = 6'd0;
+		raw_lo_ref_b = 6'd0;
+		sel_vpn_hi   = {VPN_HI_W{1'b0}};
+		sel_offset   = 12'd0;
+		sel_session  = 4'd0;
+		sel_type     = 2'd0;
+		for (sci = 0; sci < NUM_CLIENTS; sci = sci + 1) begin
+			if (act_client_vpn_lo == sci[FC_W-1:0]) begin
+				sel_vpn_lo   = client_req_va[sci*VA_BITS + 12 +: 10];
+				raw_lo_lk    = client_req_va[sci*VA_BITS + 12 +: 6];
+				raw_lo_ref_a = client_req_va[sci*VA_BITS + 12 +: 6];
+				raw_lo_ref_b = client_req_va[sci*VA_BITS + 12 +: 6];
+			end
+			if (act_client_vpn_hi == sci[FC_W-1:0])
+				sel_vpn_hi = client_req_va[sci*VA_BITS + 22 +: VPN_HI_W];
+			if (act_client_off == sci[FC_W-1:0])
+				sel_offset = client_req_va[sci*VA_BITS +: 12];
+			if (act_client_meta == sci[FC_W-1:0]) begin
+				sel_session = client_req_session[sci*4 +: 4];
+				sel_type    = client_req_type[sci*2 +: 2];
+			end
 		end
-		3'd1: begin
-			sel_vpn_lo   = client_req_va[1*VA_BITS + 12 +: 10];
-			raw_lo_lk    = client_req_va[1*VA_BITS + 12 +: 6];
-			raw_lo_ref_a = client_req_va[1*VA_BITS + 12 +: 6];
-			raw_lo_ref_b = client_req_va[1*VA_BITS + 12 +: 6];
-		end
-		3'd2: begin
-			sel_vpn_lo   = client_req_va[2*VA_BITS + 12 +: 10];
-			raw_lo_lk    = client_req_va[2*VA_BITS + 12 +: 6];
-			raw_lo_ref_a = client_req_va[2*VA_BITS + 12 +: 6];
-			raw_lo_ref_b = client_req_va[2*VA_BITS + 12 +: 6];
-		end
-		3'd3: begin
-			sel_vpn_lo   = client_req_va[3*VA_BITS + 12 +: 10];
-			raw_lo_lk    = client_req_va[3*VA_BITS + 12 +: 6];
-			raw_lo_ref_a = client_req_va[3*VA_BITS + 12 +: 6];
-			raw_lo_ref_b = client_req_va[3*VA_BITS + 12 +: 6];
-		end
-		default: begin
-			sel_vpn_lo   = client_req_va[4*VA_BITS + 12 +: 10];
-			raw_lo_lk    = client_req_va[4*VA_BITS + 12 +: 6];
-			raw_lo_ref_a = client_req_va[4*VA_BITS + 12 +: 6];
-			raw_lo_ref_b = client_req_va[4*VA_BITS + 12 +: 6];
-		end
-		endcase
-
-		case (act_client_vpn_hi)
-		3'd0: sel_vpn_hi = client_req_va[0*VA_BITS + 22 +: 10];
-		3'd1: sel_vpn_hi = client_req_va[1*VA_BITS + 22 +: 10];
-		3'd2: sel_vpn_hi = client_req_va[2*VA_BITS + 22 +: 10];
-		3'd3: sel_vpn_hi = client_req_va[3*VA_BITS + 22 +: 10];
-		default: sel_vpn_hi = client_req_va[4*VA_BITS + 22 +: 10];
-		endcase
-
-		case (act_client_off)
-		3'd0: sel_offset = client_req_va[0*VA_BITS +: 12];
-		3'd1: sel_offset = client_req_va[1*VA_BITS +: 12];
-		3'd2: sel_offset = client_req_va[2*VA_BITS +: 12];
-		3'd3: sel_offset = client_req_va[3*VA_BITS +: 12];
-		default: sel_offset = client_req_va[4*VA_BITS +: 12];
-		endcase
-
-		case (act_client_meta)
-		3'd0: begin sel_session = client_req_session[0*4 +: 4]; sel_type = client_req_type[0*2 +: 2]; end
-		3'd1: begin sel_session = client_req_session[1*4 +: 4]; sel_type = client_req_type[1*2 +: 2]; end
-		3'd2: begin sel_session = client_req_session[2*4 +: 4]; sel_type = client_req_type[2*2 +: 2]; end
-		3'd3: begin sel_session = client_req_session[3*4 +: 4]; sel_type = client_req_type[3*2 +: 2]; end
-		default: begin sel_session = client_req_session[4*4 +: 4]; sel_type = client_req_type[4*2 +: 2]; end
-		endcase
 	end
 
 	wire [5:0] sel_vpn_lk_w0_a, sel_vpn_lk_w0_b;
@@ -833,15 +800,13 @@ module atg_mmu #(
 	assign sel_vpn_ref_w3_flg = raw_lo_ref_b;
 `endif
 
+	integer smi;
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			active_session    <= 4'd0;
 			active_type       <= 2'd0;
-			l1_ref_sess_c0    <= 4'd0;
-			l1_ref_sess_c1    <= 4'd0;
-			l1_ref_sess_c2    <= 4'd0;
-			l1_ref_sess_c3    <= 4'd0;
-			l1_ref_sess_c4    <= 4'd0;
+			for (smi = 0; smi < NUM_CLIENTS; smi = smi + 1)
+				l1_ref_sess_c[smi] <= 4'd0;
 			l2_ref_sess       <= 4'd0;
 			wlk_session       <= 4'd0;
 			l2_lk_session     <= 4'd0;
@@ -849,11 +814,8 @@ module atg_mmu #(
 		end else if (ce_act_meta) begin
 			active_session    <= sel_session;
 			active_type       <= sel_type;
-			l1_ref_sess_c0    <= sel_session;
-			l1_ref_sess_c1    <= sel_session;
-			l1_ref_sess_c2    <= sel_session;
-			l1_ref_sess_c3    <= sel_session;
-			l1_ref_sess_c4    <= sel_session;
+			for (smi = 0; smi < NUM_CLIENTS; smi = smi + 1)
+				l1_ref_sess_c[smi] <= sel_session;
 			l2_ref_sess       <= sel_session;
 			wlk_session       <= sel_session;
 			l2_lk_session     <= sel_session;
@@ -869,40 +831,32 @@ module atg_mmu #(
 		end
 	end
 
+	integer svi;
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
-			active_vpn[19:10]    <= 10'd0;
-			active_vpn[9:0]      <= 10'd0;
-			l1_ref_vpn_c0        <= {VPN_BITS{1'b0}};
-			l1_ref_vpn_c1        <= {VPN_BITS{1'b0}};
-			l1_ref_vpn_c2        <= {VPN_BITS{1'b0}};
-			l1_ref_vpn_c3        <= {VPN_BITS{1'b0}};
-			l1_ref_vpn_c4        <= {VPN_BITS{1'b0}};
-			l2_ref_vpn           <= {VPN_BITS{1'b0}};
-			wlk_vpn              <= {VPN_BITS{1'b0}};
-			flt_vpn              <= {VPN_BITS{1'b0}};
+			active_vpn[VPN_BITS-1:10] <= {VPN_HI_W{1'b0}};
+			active_vpn[9:0]           <= 10'd0;
+			for (svi = 0; svi < NUM_CLIENTS; svi = svi + 1)
+				l1_ref_vpn_c[svi] <= {VPN_BITS{1'b0}};
+			l2_ref_vpn                <= {VPN_BITS{1'b0}};
+			wlk_vpn                   <= {VPN_BITS{1'b0}};
+			flt_vpn                   <= {VPN_BITS{1'b0}};
 		end else begin
 			if (ce_act_vpn_hi) begin
-				active_vpn[19:10]    <= sel_vpn_hi;
-				l1_ref_vpn_c0[19:10] <= sel_vpn_hi;
-				l1_ref_vpn_c1[19:10] <= sel_vpn_hi;
-				l1_ref_vpn_c2[19:10] <= sel_vpn_hi;
-				l1_ref_vpn_c3[19:10] <= sel_vpn_hi;
-				l1_ref_vpn_c4[19:10] <= sel_vpn_hi;
-				l2_ref_vpn[19:10]    <= sel_vpn_hi;
-				wlk_vpn[19:10]       <= sel_vpn_hi;
-				flt_vpn[19:10]       <= sel_vpn_hi;
+				active_vpn[VPN_BITS-1:10] <= sel_vpn_hi;
+				for (svi = 0; svi < NUM_CLIENTS; svi = svi + 1)
+					l1_ref_vpn_c[svi][VPN_BITS-1:10] <= sel_vpn_hi;
+				l2_ref_vpn[VPN_BITS-1:10] <= sel_vpn_hi;
+				wlk_vpn[VPN_BITS-1:10]    <= sel_vpn_hi;
+				flt_vpn[VPN_BITS-1:10]    <= sel_vpn_hi;
 			end
 			if (ce_act_vpn_lo) begin
-				active_vpn[9:0]      <= sel_vpn_lo;
-				l1_ref_vpn_c0[9:0]   <= sel_vpn_lo;
-				l1_ref_vpn_c1[9:0]   <= sel_vpn_lo;
-				l1_ref_vpn_c2[9:0]   <= sel_vpn_lo;
-				l1_ref_vpn_c3[9:0]   <= sel_vpn_lo;
-				l1_ref_vpn_c4[9:0]   <= sel_vpn_lo;
-				l2_ref_vpn[9:0]      <= sel_vpn_lo;
-				wlk_vpn[9:0]         <= sel_vpn_lo;
-				flt_vpn[9:0]         <= sel_vpn_lo;
+				active_vpn[9:0]           <= sel_vpn_lo;
+				for (svi = 0; svi < NUM_CLIENTS; svi = svi + 1)
+					l1_ref_vpn_c[svi][9:0] <= sel_vpn_lo;
+				l2_ref_vpn[9:0]           <= sel_vpn_lo;
+				wlk_vpn[9:0]              <= sel_vpn_lo;
+				flt_vpn[9:0]              <= sel_vpn_lo;
 			end
 		end
 	end
@@ -1005,8 +959,8 @@ module atg_mmu #(
 
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
-			l2_lookup_vpn[19:10]      <= 10'd0;
-			l2_lookup_vpn[9:0]        <= 10'd0;
+			l2_lookup_vpn[VPN_BITS-1:10] <= {VPN_HI_W{1'b0}};
+			l2_lookup_vpn[9:0]           <= 10'd0;
 			l2_lookup_set_w0_vpn      <= 6'h00;
 			l2_lookup_set_w0_pfn_lo   <= 6'h00;
 			l2_lookup_set_w0_pfn_hi   <= 6'h00;
@@ -1028,7 +982,7 @@ module atg_mmu #(
 			l2_lookup_set_w3_flg      <= 6'h03;
 			l2_lookup_set_w3_sl       <= 6'h03;
 		end else begin
-			if (ce_l2_vpn_hi) l2_lookup_vpn[19:10] <= sel_vpn_hi;
+			if (ce_l2_vpn_hi) l2_lookup_vpn[VPN_BITS-1:10] <= sel_vpn_hi;
 			if (ce_l2_vpn_lo) begin
 				l2_lookup_vpn[9:0]        <= sel_vpn_lo;
 				l2_lookup_set_w0_vpn      <= sel_vpn_lk_w0_a;
@@ -1076,48 +1030,34 @@ module atg_mmu #(
 	wire [PPN_BITS-1:0] next_refill_pfn = l2_hit_p ? l2_hit_pfn : walker_out_pfn;
 	wire [5:0]          next_refill_flags = l2_hit_f ? l2_hit_flags : walker_out_flags;
 
+	integer sri;
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
 			r_refill_pfn      <= {PPN_BITS{1'b0}};
 			r_refill_flags    <= 6'd0;
-			r_refill_pfn_c0   <= {PPN_BITS{1'b0}};
-			r_refill_pfn_c1   <= {PPN_BITS{1'b0}};
-			r_refill_pfn_c2   <= {PPN_BITS{1'b0}};
-			r_refill_pfn_c3   <= {PPN_BITS{1'b0}};
-			r_refill_pfn_c4   <= {PPN_BITS{1'b0}};
-			r_refill_flags_c0 <= 6'd0;
-			r_refill_flags_c1 <= 6'd0;
-			r_refill_flags_c2 <= 6'd0;
-			r_refill_flags_c3 <= 6'd0;
-			r_refill_flags_c4 <= 6'd0;
+			for (sri = 0; sri < NUM_CLIENTS; sri = sri + 1) begin
+				r_refill_pfn_c[sri]   <= {PPN_BITS{1'b0}};
+				r_refill_flags_c[sri] <= 6'd0;
+			end
 			r_refill_pfn_l2   <= {PPN_BITS{1'b0}};
 			r_refill_flags_l2 <= 6'd0;
 		end else begin
 			if (ce_refill_hi) begin
-				r_refill_pfn[19:10]    <= next_refill_pfn[19:10];
-				r_refill_pfn_c0[19:10] <= next_refill_pfn[19:10];
-				r_refill_pfn_c1[19:10] <= next_refill_pfn[19:10];
-				r_refill_pfn_c2[19:10] <= next_refill_pfn[19:10];
-				r_refill_pfn_c3[19:10] <= next_refill_pfn[19:10];
-				r_refill_pfn_c4[19:10] <= next_refill_pfn[19:10];
-				r_refill_pfn_l2[19:10] <= next_refill_pfn[19:10];
+				r_refill_pfn[PPN_BITS-1:10]    <= next_refill_pfn[PPN_BITS-1:10];
+				for (sri = 0; sri < NUM_CLIENTS; sri = sri + 1)
+					r_refill_pfn_c[sri][PPN_BITS-1:10] <= next_refill_pfn[PPN_BITS-1:10];
+				r_refill_pfn_l2[PPN_BITS-1:10] <= next_refill_pfn[PPN_BITS-1:10];
 			end
 			if (ce_refill_lo) begin
 				r_refill_pfn[9:0]    <= next_refill_pfn[9:0];
-				r_refill_pfn_c0[9:0] <= next_refill_pfn[9:0];
-				r_refill_pfn_c1[9:0] <= next_refill_pfn[9:0];
-				r_refill_pfn_c2[9:0] <= next_refill_pfn[9:0];
-				r_refill_pfn_c3[9:0] <= next_refill_pfn[9:0];
-				r_refill_pfn_c4[9:0] <= next_refill_pfn[9:0];
+				for (sri = 0; sri < NUM_CLIENTS; sri = sri + 1)
+					r_refill_pfn_c[sri][9:0] <= next_refill_pfn[9:0];
 				r_refill_pfn_l2[9:0] <= next_refill_pfn[9:0];
 			end
 			if (ce_refill_flg) begin
 				r_refill_flags    <= next_refill_flags;
-				r_refill_flags_c0 <= next_refill_flags;
-				r_refill_flags_c1 <= next_refill_flags;
-				r_refill_flags_c2 <= next_refill_flags;
-				r_refill_flags_c3 <= next_refill_flags;
-				r_refill_flags_c4 <= next_refill_flags;
+				for (sri = 0; sri < NUM_CLIENTS; sri = sri + 1)
+					r_refill_flags_c[sri] <= next_refill_flags;
 				r_refill_flags_l2 <= next_refill_flags;
 			end
 		end
@@ -1129,7 +1069,7 @@ module atg_mmu #(
 		if (rst_mmu_int) begin
 			fault_kind    <= 4'd0;
 			fault_session <= 4'd0;
-			fault_client  <= 3'd0;
+			fault_client  <= {FC_W{1'b0}};
 			fault_addr    <= {VA_BITS{1'b0}};
 		end else if (ce_fault_data) begin
 			fault_kind    <= walker_fault_kind;
@@ -1144,27 +1084,11 @@ module atg_mmu #(
 
 	always @(posedge clk_mmu or posedge rst_mmu_int) begin
 		if (rst_mmu_int) begin
-			st_is_refill_c0 <= 1'b0;
-			st_is_refill_c1 <= 1'b0;
-			st_is_refill_c2 <= 1'b0;
-			st_is_refill_c3 <= 1'b0;
-			st_is_refill_c4 <= 1'b0;
-			st_is_idle_c0   <= 1'b1;
-			st_is_idle_c1   <= 1'b1;
-			st_is_idle_c2   <= 1'b1;
-			st_is_idle_c3   <= 1'b1;
-			st_is_idle_c4   <= 1'b1;
+			st_is_refill_c <= {NUM_CLIENTS{1'b0}};
+			st_is_idle_c   <= {NUM_CLIENTS{1'b1}};
 		end else begin
-			st_is_refill_c0 <= next_is_refill;
-			st_is_refill_c1 <= next_is_refill;
-			st_is_refill_c2 <= next_is_refill;
-			st_is_refill_c3 <= next_is_refill;
-			st_is_refill_c4 <= next_is_refill;
-			st_is_idle_c0   <= next_is_idle;
-			st_is_idle_c1   <= next_is_idle;
-			st_is_idle_c2   <= next_is_idle;
-			st_is_idle_c3   <= next_is_idle;
-			st_is_idle_c4   <= next_is_idle;
+			st_is_refill_c <= {NUM_CLIENTS{next_is_refill}};
+			st_is_idle_c   <= {NUM_CLIENTS{next_is_idle}};
 		end
 	end
 

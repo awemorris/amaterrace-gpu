@@ -56,19 +56,24 @@ module atg_mmu_walker #(
 	localparam [3:0] FAULT_PERM_VIOLATION = 4'd10;
 
 	localparam [2:0] ST_IDLE     = 3'd0;
-	localparam [2:0] ST_READ_PDE = 3'd1;
-	localparam [2:0] ST_WAIT_PDE = 3'd2;
-	localparam [2:0] ST_READ_PTE = 3'd3;
-	localparam [2:0] ST_WAIT_PTE = 3'd4;
+	localparam [2:0] ST_READ     = 3'd1;
+	localparam [2:0] ST_WAIT     = 3'd2;
 	localparam [2:0] ST_DONE     = 3'd5;
 	localparam [2:0] ST_FAULT    = 3'd6;
 
+	/* Number of page table walk levels (strictly <= 4 KiB per table):
+	 * - PA_BITS <= 32 (4B entries): 2 levels (10 + 10 bits)
+	 * - PA_BITS >  32 (8B entries, 9 bits/page): 2 (VA<=30), 3 (VA 31..39), 4 (VA 40) */
+	localparam LEVELS = (ENTRY_SHIFT == 2) ? 2 : ((VPN_BITS <= 18) ? 2 : ((VPN_BITS <= 27) ? 3 : 4));
+	localparam [1:0] LAST_LVL = (LEVELS == 2) ? 2'd1 : ((LEVELS == 3) ? 2'd2 : 2'd3);
+
 	(* max_fanout = 16 *) reg [2:0] st;
+	(* max_fanout = 16 *) reg [1:0] r_lvl;
 	(* max_fanout = 16 *) reg [1:0] r_access_type;
-	(* max_fanout = 16 *) reg [9:0] r_pti;
-	(* max_fanout = 16 *) reg [PPN_BITS-11:0] r_l2_base_hi;
-	(* max_fanout = 16 *) reg [9:0]           r_l2_base_lo;
-	wire [PPN_BITS-1:0] r_l2_base = {r_l2_base_hi, r_l2_base_lo};
+	(* max_fanout = 16 *) reg [VPN_BITS-1:0] r_vpn;
+	(* max_fanout = 16 *) reg [PPN_BITS-11:0] r_base_hi;
+	(* max_fanout = 16 *) reg [9:0]           r_base_lo;
+	wire [PPN_BITS-1:0] r_base = {r_base_hi, r_base_lo};
 
 	assign busy = (st != ST_IDLE);
 
@@ -93,22 +98,51 @@ module atg_mmu_walker #(
 	wire pte_local = pte_data[1];
 	wire pte_w     = pte_data[2];
 	wire pte_x     = pte_data[3];
-	wire [PPN_BITS-1:0] pte_ppn = (PA_BITS <= 32) ? pte_data[31:12] : pte_data[PA_BITS-1:12];
+	wire [PPN_BITS-1:0] pte_ppn = pte_data[PPN_BITS+11:12];
 
 	/* PDE parsing */
 	wire pde_v = r_rsp_data[0];
-	wire [PPN_BITS-1:0] pde_ppn = (PA_BITS <= 32) ? r_rsp_data[31:12] : r_rsp_data[PA_BITS-1:12];
+	wire [PPN_BITS-1:0] pde_ppn = r_rsp_data[PPN_BITS+11:12];
 
-	/* Address calculations: 8-byte entry for ENTRY_SHIFT=3, 4-byte for ENTRY_SHIFT=2 */
-	wire [PA_BITS-1:0] pde_addr = (ENTRY_SHIFT == 3) ?
-		{root_pt, vpn[VPN_BITS-1 -: 9], 3'b000} :
-		{root_pt, vpn[19:10], 2'b00};
-	wire [PA_BITS-1:0] pte_addr = (ENTRY_SHIFT == 3) ?
-		{r_l2_base, r_pti[8:0], 3'b000} :
-		{r_l2_base, r_pti[9:0], 2'b00};
+	/* Zero-padded VPN for uniform slice selection across VA_BITS = 30..40 */
+	wire [35:0] vpn_pad   = {{(36-VPN_BITS){1'b0}}, vpn};
+	wire [35:0] r_vpn_pad = {{(36-VPN_BITS){1'b0}}, r_vpn};
+
+	/* Level index extraction */
+	reg [9:0] top_idx32;
+	reg [8:0] cur_idx64;
+	always @(*) begin
+		top_idx32 = 10'd0;
+		cur_idx64 = 9'd0;
+		if (ENTRY_SHIFT == 2) begin
+			top_idx32 = (st == ST_IDLE) ? vpn_pad[19:10] : r_vpn_pad[9:0];
+		end else begin
+			if (st == ST_IDLE) begin
+				if (LEVELS == 2)
+					cur_idx64 = vpn_pad[17:9];
+				else if (LEVELS == 3)
+					cur_idx64 = vpn_pad[26:18];
+				else
+					cur_idx64 = vpn_pad[35:27];
+			end else begin
+				if (LEVELS == 2)
+					cur_idx64 = r_vpn_pad[8:0];
+				else if (LEVELS == 3)
+					cur_idx64 = (r_lvl == 2'd0) ? r_vpn_pad[17:9] : r_vpn_pad[8:0];
+				else
+					cur_idx64 = (r_lvl == 2'd0) ? r_vpn_pad[26:18] : ((r_lvl == 2'd1) ? r_vpn_pad[17:9] : r_vpn_pad[8:0]);
+			end
+		end
+	end
+
+	wire [PPN_BITS-1:0] addr_base = (st == ST_IDLE) ? root_pt : pde_ppn;
+	wire [PA_BITS-1:0] next_req_addr = (ENTRY_SHIFT == 3) ?
+		{addr_base, cur_idx64, 3'b000} :
+		{addr_base, top_idx32, 2'b00};
+	wire is_last_lvl = (r_lvl == LAST_LVL);
 
 	/* Dedicated address register stage with decoupled byte enables (<= 16 fanout) */
-	wire ce_req_raw = (st == ST_IDLE && start_fsm) || (st == ST_WAIT_PDE && r_rsp_valid && pde_v);
+	wire ce_req_raw = (st == ST_IDLE && start_fsm) || (st == ST_WAIT && r_rsp_valid && pde_v && !is_last_lvl);
 	wire ce_req_hi, ce_req_lo;
 `ifdef SYNTH_KINTEX7
 	LUT1 #(.INIT(2'h2)) u_b_ce_hi (.I0(ce_req_raw), .O(ce_req_hi));
@@ -117,20 +151,19 @@ module atg_mmu_walker #(
 	assign ce_req_hi = ce_req_raw;
 	assign ce_req_lo = ce_req_raw;
 `endif
-	wire [PA_BITS-1:0] next_req_addr = (st == ST_IDLE) ? pde_addr : pte_addr;
 
 	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
-			req_addr[31:16] <= 16'd0;
-			req_addr[15:0]  <= 16'd0;
+			req_addr[PA_BITS-1:16] <= {(PA_BITS-16){1'b0}};
+			req_addr[15:0]         <= 16'd0;
 		end else begin
-			if (ce_req_hi) req_addr[31:16] <= next_req_addr[31:16];
-			if (ce_req_lo) req_addr[15:0]  <= next_req_addr[15:0];
+			if (ce_req_hi) req_addr[PA_BITS-1:16] <= next_req_addr[PA_BITS-1:16];
+			if (ce_req_lo) req_addr[15:0]         <= next_req_addr[15:0];
 		end
 	end
 
 	/* Dedicated output register stage (<= 20 fanout) */
-	(* keep = "true", max_fanout = 16 *) wire ce_out = (st == ST_WAIT_PTE && r_rsp_valid && pte_v &&
+	(* keep = "true", max_fanout = 16 *) wire ce_out = (st == ST_WAIT && is_last_lvl && r_rsp_valid && pte_v &&
 	             !((r_access_type == 2'd1 && !pte_w) || (r_access_type == 2'd2 && !pte_x)));
 
 	always @(posedge clk_wlk or posedge rst_wlk_int) begin
@@ -143,17 +176,20 @@ module atg_mmu_walker #(
 		end
 	end
 
+	wire [1:0] next_lvl = (r_lvl == 2'd0) ? 2'd1 : ((r_lvl == 2'd1) ? 2'd2 : 2'd3);
+
 	always @(posedge clk_wlk or posedge rst_wlk_int) begin
 		if (rst_wlk_int) begin
 			done          <= 1'b0;
 			fault         <= 1'b0;
 			st            <= ST_IDLE;
+			r_lvl         <= 2'd0;
 			req_valid     <= 1'b0;
 			fault_kind    <= FAULT_NONE;
 			r_access_type <= 2'd0;
-			r_pti         <= 10'd0;
-			r_l2_base_hi  <= {(PPN_BITS-10){1'b0}};
-			r_l2_base_lo  <= 10'd0;
+			r_vpn         <= {VPN_BITS{1'b0}};
+			r_base_hi     <= {(PPN_BITS-10){1'b0}};
+			r_base_lo     <= 10'd0;
 		end else begin
 			done  <= 1'b0;
 			fault <= 1'b0;
@@ -161,56 +197,46 @@ module atg_mmu_walker #(
 			ST_IDLE: begin
 				if (start_fsm) begin
 					req_valid <= 1'b1;
-					st        <= ST_READ_PDE;
+					r_lvl     <= 2'd0;
+					st        <= ST_READ;
 				end
 				if (start_meta) begin
 					r_access_type <= access_type;
-					r_pti         <= vpn[9:0];
+					r_vpn         <= vpn;
 				end
 			end
 
-			ST_READ_PDE: begin
+			ST_READ: begin
 				if (req_valid && req_ready) begin
 					req_valid <= 1'b0;
-					st        <= ST_WAIT_PDE;
+					st        <= ST_WAIT;
 				end
 			end
 
-			ST_WAIT_PDE: begin
+			ST_WAIT: begin
 				if (r_rsp_valid) begin
-					if (!pde_v) begin
-						/* Page Directory entry invalid */
-						fault_kind <= FAULT_PAGE_FAULT;
-						st         <= ST_FAULT;
+					if (!is_last_lvl) begin
+						if (!pde_v) begin
+							fault_kind <= FAULT_PAGE_FAULT;
+							st         <= ST_FAULT;
+						end else begin
+							r_base_hi <= pde_ppn[PPN_BITS-1:10];
+							r_base_lo <= pde_ppn[9:0];
+							r_lvl     <= next_lvl;
+							req_valid <= 1'b1;
+							st        <= ST_READ;
+						end
 					end else begin
-						/* Valid PDE: fetch PTE */
-						r_l2_base_hi <= pde_ppn[PPN_BITS-1:10];
-						r_l2_base_lo <= pde_ppn[9:0];
-						req_valid    <= 1'b1;
-						st           <= ST_READ_PTE;
-					end
-				end
-			end
-
-			ST_READ_PTE: begin
-				if (req_valid && req_ready) begin
-					req_valid <= 1'b0;
-					st        <= ST_WAIT_PTE;
-				end
-			end
-
-			ST_WAIT_PTE: begin
-				if (r_rsp_valid) begin
-					if (!pte_v) begin
-						/* Page Table entry invalid */
-						fault_kind <= FAULT_PAGE_FAULT;
-						st         <= ST_FAULT;
-					end else if ((r_access_type == 2'd1 && !pte_w) ||
-					             (r_access_type == 2'd2 && !pte_x)) begin
-						fault_kind <= FAULT_PERM_VIOLATION;
-						st         <= ST_FAULT;
-					end else begin
-						st        <= ST_DONE;
+						if (!pte_v) begin
+							fault_kind <= FAULT_PAGE_FAULT;
+							st         <= ST_FAULT;
+						end else if ((r_access_type == 2'd1 && !pte_w) ||
+						             (r_access_type == 2'd2 && !pte_x)) begin
+							fault_kind <= FAULT_PERM_VIOLATION;
+							st         <= ST_FAULT;
+						end else begin
+							st <= ST_DONE;
+						end
 					end
 				end
 			end
@@ -230,7 +256,7 @@ module atg_mmu_walker #(
 		end
 	end
 
-	wire unused_ok = &{1'b0, session_id, pte_local, rsp_data, pte_data};
+	wire unused_ok = &{1'b0, session_id, pte_local, rsp_data, pte_data, r_base, vpn_pad, r_vpn_pad};
 endmodule
 
 `default_nettype wire

@@ -174,29 +174,24 @@ module atg_tlb_l1 #(
 			end
 		end
 
-		/* Level 1: 7 groups of 3-bit equality checks per way (1 LUT each) */
-		wire eq0_0 = (w0_tag[2:0]   == req_tag[2:0]);
-		wire eq0_1 = (w0_tag[5:3]   == req_tag[5:3]);
-		wire eq0_2 = (w0_tag[8:6]   == req_tag[8:6]);
-		wire eq0_3 = (w0_tag[11:9]  == req_tag[11:9]);
-		wire eq0_4 = (w0_tag[14:12] == req_tag[14:12]);
-		wire eq0_5 = (w0_tag[17:15] == req_tag[17:15]);
-		wire eq0_6 = (w0_tag[20:18] == req_tag[20:18]);
-
-		wire eq1_0 = (w1_tag[2:0]   == req_tag[2:0]);
-		wire eq1_1 = (w1_tag[5:3]   == req_tag[5:3]);
-		wire eq1_2 = (w1_tag[8:6]   == req_tag[8:6]);
-		wire eq1_3 = (w1_tag[11:9]  == req_tag[11:9]);
-		wire eq1_4 = (w1_tag[14:12] == req_tag[14:12]);
-		wire eq1_5 = (w1_tag[17:15] == req_tag[17:15]);
-		wire eq1_6 = (w1_tag[20:18] == req_tag[20:18]);
+		/* Level 1: ceil(TAG_W/3) groups of <=3-bit equality checks per way (1 LUT each) */
+		localparam N_TEQ    = (TAG_W + 2) / 3;
+		localparam N_TEQ_LO = (N_TEQ + 1) / 2;
+		wire [N_TEQ-1:0] eq0_c, eq1_c;
+		genvar gtc;
+		for (gtc = 0; gtc < N_TEQ; gtc = gtc + 1) begin : g_teq
+			localparam TB = gtc * 3;
+			localparam TW = (TB + 3 <= TAG_W) ? 3 : (TAG_W - TB);
+			assign eq0_c[gtc] = (w0_tag[TB +: TW] == req_tag[TB +: TW]);
+			assign eq1_c[gtc] = (w1_tag[TB +: TW] == req_tag[TB +: TW]);
+		end
 
 		/* Level 2: combine into hi/lo intermediate terms */
-		wire m0_lo = eq0_0 & eq0_1 & eq0_2 & eq0_3;
-		wire m0_hi = eq0_4 & eq0_5 & eq0_6 & w0_valid;
+		wire m0_lo = &eq0_c[N_TEQ_LO-1:0];
+		wire m0_hi = (&eq0_c[N_TEQ-1:N_TEQ_LO]) & w0_valid;
 
-		wire m1_lo = eq1_0 & eq1_1 & eq1_2 & eq1_3;
-		wire m1_hi = eq1_4 & eq1_5 & eq1_6 & w1_valid;
+		wire m1_lo = &eq1_c[N_TEQ_LO-1:0];
+		wire m1_hi = (&eq1_c[N_TEQ-1:N_TEQ_LO]) & w1_valid;
 
 		/* Level 3: per-set hit indicators (clean logic depth <= 2) */
 		assign set_hit[gs]       = (m0_lo & m0_hi) | (m1_lo & m1_hi);

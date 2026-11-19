@@ -274,69 +274,67 @@ module atg_tlb_l2 #(
 	end
 
 	/* Sliced Way Distributed Dual-Port RAM Arrays using RAM64X1D primitives (WIDTH <= 5) */
-	wire [4:0] dout0_vpn_a, dout0_vpn_b; wire [3:0] dout0_vpn_c;
-	wire [4:0] dout1_vpn_a, dout1_vpn_b; wire [3:0] dout1_vpn_c;
-	wire [4:0] dout2_vpn_a, dout2_vpn_b; wire [3:0] dout2_vpn_c;
-	wire [4:0] dout3_vpn_a, dout3_vpn_b; wire [3:0] dout3_vpn_c;
+	localparam N_VPN_SL = (REM_VPN + 4) / 5;
+	localparam N_PFN_SL = (PPN_BITS + 4) / 5;
 
-	wire [4:0] dout0_pfn_a, dout0_pfn_b, dout0_pfn_c, dout0_pfn_d;
-	wire [4:0] dout1_pfn_a, dout1_pfn_b, dout1_pfn_c, dout1_pfn_d;
-	wire [4:0] dout2_pfn_a, dout2_pfn_b, dout2_pfn_c, dout2_pfn_d;
-	wire [4:0] dout3_pfn_a, dout3_pfn_b, dout3_pfn_c, dout3_pfn_d;
+	wire [REM_VPN-1:0]  dout0_vpn, dout1_vpn, dout2_vpn, dout3_vpn;
+	wire [PPN_BITS-1:0] dout0_pfn, dout1_pfn, dout2_pfn, dout3_pfn;
 
 	wire [2:0] dout0_flg_a, dout0_flg_b;
 	wire [2:0] dout1_flg_a, dout1_flg_b;
 	wire [2:0] dout2_flg_a, dout2_flg_b;
 	wire [2:0] dout3_flg_a, dout3_flg_b;
 
-	/* Way 0 Slices */
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_vpn_a (.clk(clk_l2), .we(we0_vpn_a), .waddr(refill_set_w0_vpn_a), .din(r_ref_vpn[4:0]),   .raddr(lookup_set_w0_vpn),    .dout(dout0_vpn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_vpn_b (.clk(clk_l2), .we(we0_vpn_b), .waddr(refill_set_w0_vpn_b), .din(r_ref_vpn[9:5]),   .raddr(lookup_set_w0_vpn),    .dout(dout0_vpn_b));
-	atg_ram64x1d_array #(.WIDTH(4)) u_ram_w0_vpn_c (.clk(clk_l2), .we(we0_vpn_c), .waddr(refill_set_w0_vpn_c), .din(r_ref_vpn[13:10]), .raddr(lookup_set_w0_vpn),    .dout(dout0_vpn_c));
+	genvar gvsl, gpsl;
+	generate
+		for (gvsl = 0; gvsl < N_VPN_SL; gvsl = gvsl + 1) begin : g_vpn_sl
+			localparam VB = gvsl * 5;
+			localparam VW = (VB + 5 <= REM_VPN) ? 5 : (REM_VPN - VB);
+			wire we0_v = (gvsl == 0) ? we0_vpn_a : ((gvsl == 1) ? we0_vpn_b : we0_vpn_c);
+			wire we1_v = (gvsl == 0) ? we1_vpn_a : ((gvsl == 1) ? we1_vpn_b : we1_vpn_c);
+			wire we2_v = (gvsl == 0) ? we2_vpn_a : ((gvsl == 1) ? we2_vpn_b : we2_vpn_c);
+			wire we3_v = (gvsl == 0) ? we3_vpn_a : ((gvsl == 1) ? we3_vpn_b : we3_vpn_c);
+			wire [5:0] wa0_v = (gvsl == 0) ? refill_set_w0_vpn_a : ((gvsl == 1) ? refill_set_w0_vpn_b : refill_set_w0_vpn_c);
+			wire [5:0] wa1_v = (gvsl == 0) ? refill_set_w1_vpn_a : ((gvsl == 1) ? refill_set_w1_vpn_b : refill_set_w1_vpn_c);
+			wire [5:0] wa2_v = (gvsl == 0) ? refill_set_w2_vpn_a : ((gvsl == 1) ? refill_set_w2_vpn_b : refill_set_w2_vpn_c);
+			wire [5:0] wa3_v = (gvsl == 0) ? refill_set_w3_vpn_a : ((gvsl == 1) ? refill_set_w3_vpn_b : refill_set_w3_vpn_c);
+			atg_ram64x1d_array #(.WIDTH(VW)) u_ram_w0_vpn (.clk(clk_l2), .we(we0_v), .waddr(wa0_v), .din(r_ref_vpn[VB +: VW]), .raddr(lookup_set_w0_vpn), .dout(dout0_vpn[VB +: VW]));
+			atg_ram64x1d_array #(.WIDTH(VW)) u_ram_w1_vpn (.clk(clk_l2), .we(we1_v), .waddr(wa1_v), .din(r_ref_vpn[VB +: VW]), .raddr(lookup_set_w1_vpn), .dout(dout1_vpn[VB +: VW]));
+			atg_ram64x1d_array #(.WIDTH(VW)) u_ram_w2_vpn (.clk(clk_l2), .we(we2_v), .waddr(wa2_v), .din(r_ref_vpn[VB +: VW]), .raddr(lookup_set_w2_vpn), .dout(dout2_vpn[VB +: VW]));
+			atg_ram64x1d_array #(.WIDTH(VW)) u_ram_w3_vpn (.clk(clk_l2), .we(we3_v), .waddr(wa3_v), .din(r_ref_vpn[VB +: VW]), .raddr(lookup_set_w3_vpn), .dout(dout3_vpn[VB +: VW]));
+		end
 
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_pfn_a (.clk(clk_l2), .we(we0_pfn_a), .waddr(refill_set_w0_pfn_a), .din(r_ref_pfn[4:0]),   .raddr(lookup_set_w0_pfn_lo), .dout(dout0_pfn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_pfn_b (.clk(clk_l2), .we(we0_pfn_b), .waddr(refill_set_w0_pfn_b), .din(r_ref_pfn[9:5]),   .raddr(lookup_set_w0_pfn_lo), .dout(dout0_pfn_b));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_pfn_c (.clk(clk_l2), .we(we0_pfn_c), .waddr(refill_set_w0_pfn_c), .din(r_ref_pfn[14:10]), .raddr(lookup_set_w0_pfn_hi), .dout(dout0_pfn_c));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w0_pfn_d (.clk(clk_l2), .we(we0_pfn_d), .waddr(refill_set_w0_pfn_d), .din(r_ref_pfn[19:15]), .raddr(lookup_set_w0_pfn_hi), .dout(dout0_pfn_d));
+		for (gpsl = 0; gpsl < N_PFN_SL; gpsl = gpsl + 1) begin : g_pfn_sl
+			localparam PB = gpsl * 5;
+			localparam PW = (PB + 5 <= PPN_BITS) ? 5 : (PPN_BITS - PB);
+			localparam IS_HI = (gpsl >= (N_PFN_SL / 2)) ? 1 : 0;
+			wire we0_p = (gpsl == 0) ? we0_pfn_a : ((gpsl == 1) ? we0_pfn_b : ((gpsl == 2) ? we0_pfn_c : we0_pfn_d));
+			wire we1_p = (gpsl == 0) ? we1_pfn_a : ((gpsl == 1) ? we1_pfn_b : ((gpsl == 2) ? we1_pfn_c : we1_pfn_d));
+			wire we2_p = (gpsl == 0) ? we2_pfn_a : ((gpsl == 1) ? we2_pfn_b : ((gpsl == 2) ? we2_pfn_c : we2_pfn_d));
+			wire we3_p = (gpsl == 0) ? we3_pfn_a : ((gpsl == 1) ? we3_pfn_b : ((gpsl == 2) ? we3_pfn_c : we3_pfn_d));
+			wire [5:0] wa0_p = (gpsl == 0) ? refill_set_w0_pfn_a : ((gpsl == 1) ? refill_set_w0_pfn_b : ((gpsl == 2) ? refill_set_w0_pfn_c : refill_set_w0_pfn_d));
+			wire [5:0] wa1_p = (gpsl == 0) ? refill_set_w1_pfn_a : ((gpsl == 1) ? refill_set_w1_pfn_b : ((gpsl == 2) ? refill_set_w1_pfn_c : refill_set_w1_pfn_d));
+			wire [5:0] wa2_p = (gpsl == 0) ? refill_set_w2_pfn_a : ((gpsl == 1) ? refill_set_w2_pfn_b : ((gpsl == 2) ? refill_set_w2_pfn_c : refill_set_w2_pfn_d));
+			wire [5:0] wa3_p = (gpsl == 0) ? refill_set_w3_pfn_a : ((gpsl == 1) ? refill_set_w3_pfn_b : ((gpsl == 2) ? refill_set_w3_pfn_c : refill_set_w3_pfn_d));
+			wire [5:0] ra0_p = IS_HI ? lookup_set_w0_pfn_hi : lookup_set_w0_pfn_lo;
+			wire [5:0] ra1_p = IS_HI ? lookup_set_w1_pfn_hi : lookup_set_w1_pfn_lo;
+			wire [5:0] ra2_p = IS_HI ? lookup_set_w2_pfn_hi : lookup_set_w2_pfn_lo;
+			wire [5:0] ra3_p = IS_HI ? lookup_set_w3_pfn_hi : lookup_set_w3_pfn_lo;
+			atg_ram64x1d_array #(.WIDTH(PW)) u_ram_w0_pfn (.clk(clk_l2), .we(we0_p), .waddr(wa0_p), .din(r_ref_pfn[PB +: PW]), .raddr(ra0_p), .dout(dout0_pfn[PB +: PW]));
+			atg_ram64x1d_array #(.WIDTH(PW)) u_ram_w1_pfn (.clk(clk_l2), .we(we1_p), .waddr(wa1_p), .din(r_ref_pfn[PB +: PW]), .raddr(ra1_p), .dout(dout1_pfn[PB +: PW]));
+			atg_ram64x1d_array #(.WIDTH(PW)) u_ram_w2_pfn (.clk(clk_l2), .we(we2_p), .waddr(wa2_p), .din(r_ref_pfn[PB +: PW]), .raddr(ra2_p), .dout(dout2_pfn[PB +: PW]));
+			atg_ram64x1d_array #(.WIDTH(PW)) u_ram_w3_pfn (.clk(clk_l2), .we(we3_p), .waddr(wa3_p), .din(r_ref_pfn[PB +: PW]), .raddr(ra3_p), .dout(dout3_pfn[PB +: PW]));
+		end
+	endgenerate
 
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w0_flg_a (.clk(clk_l2), .we(we0_flg_a), .waddr(refill_set_w0_flg_a), .din(r_ref_flags[2:0]), .raddr(lookup_set_w0_flg),    .dout(dout0_flg_a));
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w0_flg_b (.clk(clk_l2), .we(we0_flg_b), .waddr(refill_set_w0_flg_b), .din(r_ref_flags[5:3]), .raddr(lookup_set_w0_flg),    .dout(dout0_flg_b));
 
-	/* Way 1 Slices */
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_vpn_a (.clk(clk_l2), .we(we1_vpn_a), .waddr(refill_set_w1_vpn_a), .din(r_ref_vpn[4:0]),   .raddr(lookup_set_w1_vpn),    .dout(dout1_vpn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_vpn_b (.clk(clk_l2), .we(we1_vpn_b), .waddr(refill_set_w1_vpn_b), .din(r_ref_vpn[9:5]),   .raddr(lookup_set_w1_vpn),    .dout(dout1_vpn_b));
-	atg_ram64x1d_array #(.WIDTH(4)) u_ram_w1_vpn_c (.clk(clk_l2), .we(we1_vpn_c), .waddr(refill_set_w1_vpn_c), .din(r_ref_vpn[13:10]), .raddr(lookup_set_w1_vpn),    .dout(dout1_vpn_c));
-
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_pfn_a (.clk(clk_l2), .we(we1_pfn_a), .waddr(refill_set_w1_pfn_a), .din(r_ref_pfn[4:0]),   .raddr(lookup_set_w1_pfn_lo), .dout(dout1_pfn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_pfn_b (.clk(clk_l2), .we(we1_pfn_b), .waddr(refill_set_w1_pfn_b), .din(r_ref_pfn[9:5]),   .raddr(lookup_set_w1_pfn_lo), .dout(dout1_pfn_b));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_pfn_c (.clk(clk_l2), .we(we1_pfn_c), .waddr(refill_set_w1_pfn_c), .din(r_ref_pfn[14:10]), .raddr(lookup_set_w1_pfn_hi), .dout(dout1_pfn_c));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w1_pfn_d (.clk(clk_l2), .we(we1_pfn_d), .waddr(refill_set_w1_pfn_d), .din(r_ref_pfn[19:15]), .raddr(lookup_set_w1_pfn_hi), .dout(dout1_pfn_d));
-
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w1_flg_a (.clk(clk_l2), .we(we1_flg_a), .waddr(refill_set_w1_flg_a), .din(r_ref_flags[2:0]), .raddr(lookup_set_w1_flg),    .dout(dout1_flg_a));
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w1_flg_b (.clk(clk_l2), .we(we1_flg_b), .waddr(refill_set_w1_flg_b), .din(r_ref_flags[5:3]), .raddr(lookup_set_w1_flg),    .dout(dout1_flg_b));
 
-	/* Way 2 Slices */
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_vpn_a (.clk(clk_l2), .we(we2_vpn_a), .waddr(refill_set_w2_vpn_a), .din(r_ref_vpn[4:0]),   .raddr(lookup_set_w2_vpn),    .dout(dout2_vpn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_vpn_b (.clk(clk_l2), .we(we2_vpn_b), .waddr(refill_set_w2_vpn_b), .din(r_ref_vpn[9:5]),   .raddr(lookup_set_w2_vpn),    .dout(dout2_vpn_b));
-	atg_ram64x1d_array #(.WIDTH(4)) u_ram_w2_vpn_c (.clk(clk_l2), .we(we2_vpn_c), .waddr(refill_set_w2_vpn_c), .din(r_ref_vpn[13:10]), .raddr(lookup_set_w2_vpn),    .dout(dout2_vpn_c));
-
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_pfn_a (.clk(clk_l2), .we(we2_pfn_a), .waddr(refill_set_w2_pfn_a), .din(r_ref_pfn[4:0]),   .raddr(lookup_set_w2_pfn_lo), .dout(dout2_pfn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_pfn_b (.clk(clk_l2), .we(we2_pfn_b), .waddr(refill_set_w2_pfn_b), .din(r_ref_pfn[9:5]),   .raddr(lookup_set_w2_pfn_lo), .dout(dout2_pfn_b));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_pfn_c (.clk(clk_l2), .we(we2_pfn_c), .waddr(refill_set_w2_pfn_c), .din(r_ref_pfn[14:10]), .raddr(lookup_set_w2_pfn_hi), .dout(dout2_pfn_c));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w2_pfn_d (.clk(clk_l2), .we(we2_pfn_d), .waddr(refill_set_w2_pfn_d), .din(r_ref_pfn[19:15]), .raddr(lookup_set_w2_pfn_hi), .dout(dout2_pfn_d));
-
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w2_flg_a (.clk(clk_l2), .we(we2_flg_a), .waddr(refill_set_w2_flg_a), .din(r_ref_flags[2:0]), .raddr(lookup_set_w2_flg),    .dout(dout2_flg_a));
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w2_flg_b (.clk(clk_l2), .we(we2_flg_b), .waddr(refill_set_w2_flg_b), .din(r_ref_flags[5:3]), .raddr(lookup_set_w2_flg),    .dout(dout2_flg_b));
-
-	/* Way 3 Slices */
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_vpn_a (.clk(clk_l2), .we(we3_vpn_a), .waddr(refill_set_w3_vpn_a), .din(r_ref_vpn[4:0]),   .raddr(lookup_set_w3_vpn),    .dout(dout3_vpn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_vpn_b (.clk(clk_l2), .we(we3_vpn_b), .waddr(refill_set_w3_vpn_b), .din(r_ref_vpn[9:5]),   .raddr(lookup_set_w3_vpn),    .dout(dout3_vpn_b));
-	atg_ram64x1d_array #(.WIDTH(4)) u_ram_w3_vpn_c (.clk(clk_l2), .we(we3_vpn_c), .waddr(refill_set_w3_vpn_c), .din(r_ref_vpn[13:10]), .raddr(lookup_set_w3_vpn),    .dout(dout3_vpn_c));
-
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_pfn_a (.clk(clk_l2), .we(we3_pfn_a), .waddr(refill_set_w3_pfn_a), .din(r_ref_pfn[4:0]),   .raddr(lookup_set_w3_pfn_lo), .dout(dout3_pfn_a));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_pfn_b (.clk(clk_l2), .we(we3_pfn_b), .waddr(refill_set_w3_pfn_b), .din(r_ref_pfn[9:5]),   .raddr(lookup_set_w3_pfn_lo), .dout(dout3_pfn_b));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_pfn_c (.clk(clk_l2), .we(we3_pfn_c), .waddr(refill_set_w3_pfn_c), .din(r_ref_pfn[14:10]), .raddr(lookup_set_w3_pfn_hi), .dout(dout3_pfn_c));
-	atg_ram64x1d_array #(.WIDTH(5)) u_ram_w3_pfn_d (.clk(clk_l2), .we(we3_pfn_d), .waddr(refill_set_w3_pfn_d), .din(r_ref_pfn[19:15]), .raddr(lookup_set_w3_pfn_hi), .dout(dout3_pfn_d));
 
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w3_flg_a (.clk(clk_l2), .we(we3_flg_a), .waddr(refill_set_w3_flg_a), .din(r_ref_flags[2:0]), .raddr(lookup_set_w3_flg),    .dout(dout3_flg_a));
 	atg_ram64x1d_array #(.WIDTH(3)) u_ram_w3_flg_b (.clk(clk_l2), .we(we3_flg_b), .waddr(refill_set_w3_flg_b), .din(r_ref_flags[5:3]), .raddr(lookup_set_w3_flg),    .dout(dout3_flg_b));
@@ -581,17 +579,7 @@ module atg_tlb_l2 #(
 	wire [1:0] read_sess3_hi = sl_sess3_out[{l2_set_w3_sl_hi_b, 2'b10} +: 2];
 	wire [3:0] read_sess3    = {read_sess3_hi, read_sess3_lo};
 
-	/* Combined outputs from RAM slices */
-	wire [13:0] dout0_vpn = {dout0_vpn_c, dout0_vpn_b, dout0_vpn_a};
-	wire [13:0] dout1_vpn = {dout1_vpn_c, dout1_vpn_b, dout1_vpn_a};
-	wire [13:0] dout2_vpn = {dout2_vpn_c, dout2_vpn_b, dout2_vpn_a};
-	wire [13:0] dout3_vpn = {dout3_vpn_c, dout3_vpn_b, dout3_vpn_a};
-
-	wire [19:0] dout0_pfn = {dout0_pfn_d, dout0_pfn_c, dout0_pfn_b, dout0_pfn_a};
-	wire [19:0] dout1_pfn = {dout1_pfn_d, dout1_pfn_c, dout1_pfn_b, dout1_pfn_a};
-	wire [19:0] dout2_pfn = {dout2_pfn_d, dout2_pfn_c, dout2_pfn_b, dout2_pfn_a};
-	wire [19:0] dout3_pfn = {dout3_pfn_d, dout3_pfn_c, dout3_pfn_b, dout3_pfn_a};
-
+	/* Combined flag outputs from RAM slices */
 	wire [5:0] dout0_flags = {dout0_flg_b, dout0_flg_a};
 	wire [5:0] dout1_flags = {dout1_flg_b, dout1_flg_a};
 	wire [5:0] dout2_flags = {dout2_flg_b, dout2_flg_a};
@@ -640,45 +628,32 @@ module atg_tlb_l2 #(
 	end
 
 	/* Stage 2: 4-Way Compare (<= 3 LUT levels) */
-	wire eq0_0 = (r1_tag0[2:0]   == r1_lookup_tag[2:0]);
-	wire eq0_1 = (r1_tag0[5:3]   == r1_lookup_tag[5:3]);
-	wire eq0_2 = (r1_tag0[8:6]   == r1_lookup_tag[8:6]);
-	wire eq0_3 = (r1_tag0[11:9]  == r1_lookup_tag[11:9]);
-	wire eq0_4 = (r1_tag0[14:12] == r1_lookup_tag[14:12]);
-	wire eq0_5 = (r1_tag0[17:15] == r1_lookup_tag[17:15]);
+	localparam N_TEQ    = (TAG_W + 2) / 3;
+	localparam N_TEQ_LO = (N_TEQ + 1) / 2;
+	wire [N_TEQ-1:0] eq0_c, eq1_c, eq2_c, eq3_c;
+	genvar gl2c;
+	generate
+		for (gl2c = 0; gl2c < N_TEQ; gl2c = gl2c + 1) begin : g_l2eq
+			localparam TB = gl2c * 3;
+			localparam TW = (TB + 3 <= TAG_W) ? 3 : (TAG_W - TB);
+			assign eq0_c[gl2c] = (r1_tag0[TB +: TW] == r1_lookup_tag[TB +: TW]);
+			assign eq1_c[gl2c] = (r1_tag1[TB +: TW] == r1_lookup_tag[TB +: TW]);
+			assign eq2_c[gl2c] = (r1_tag2[TB +: TW] == r1_lookup_tag[TB +: TW]);
+			assign eq3_c[gl2c] = (r1_tag3[TB +: TW] == r1_lookup_tag[TB +: TW]);
+		end
+	endgenerate
 
-	wire eq1_0 = (r1_tag1[2:0]   == r1_lookup_tag[2:0]);
-	wire eq1_1 = (r1_tag1[5:3]   == r1_lookup_tag[5:3]);
-	wire eq1_2 = (r1_tag1[8:6]   == r1_lookup_tag[8:6]);
-	wire eq1_3 = (r1_tag1[11:9]  == r1_lookup_tag[11:9]);
-	wire eq1_4 = (r1_tag1[14:12] == r1_lookup_tag[14:12]);
-	wire eq1_5 = (r1_tag1[17:15] == r1_lookup_tag[17:15]);
+	wire m0_lo = &eq0_c[N_TEQ_LO-1:0];
+	wire m0_hi = (&eq0_c[N_TEQ-1:N_TEQ_LO]) & r1_v0;
 
-	wire eq2_0 = (r1_tag2[2:0]   == r1_lookup_tag[2:0]);
-	wire eq2_1 = (r1_tag2[5:3]   == r1_lookup_tag[5:3]);
-	wire eq2_2 = (r1_tag2[8:6]   == r1_lookup_tag[8:6]);
-	wire eq2_3 = (r1_tag2[11:9]  == r1_lookup_tag[11:9]);
-	wire eq2_4 = (r1_tag2[14:12] == r1_lookup_tag[14:12]);
-	wire eq2_5 = (r1_tag2[17:15] == r1_lookup_tag[17:15]);
+	wire m1_lo = &eq1_c[N_TEQ_LO-1:0];
+	wire m1_hi = (&eq1_c[N_TEQ-1:N_TEQ_LO]) & r1_v1;
 
-	wire eq3_0 = (r1_tag3[2:0]   == r1_lookup_tag[2:0]);
-	wire eq3_1 = (r1_tag3[5:3]   == r1_lookup_tag[5:3]);
-	wire eq3_2 = (r1_tag3[8:6]   == r1_lookup_tag[8:6]);
-	wire eq3_3 = (r1_tag3[11:9]  == r1_lookup_tag[11:9]);
-	wire eq3_4 = (r1_tag3[14:12] == r1_lookup_tag[14:12]);
-	wire eq3_5 = (r1_tag3[17:15] == r1_lookup_tag[17:15]);
+	wire m2_lo = &eq2_c[N_TEQ_LO-1:0];
+	wire m2_hi = (&eq2_c[N_TEQ-1:N_TEQ_LO]) & r1_v2;
 
-	wire m0_lo = eq0_0 & eq0_1 & eq0_2;
-	wire m0_hi = eq0_3 & eq0_4 & eq0_5 & r1_v0;
-
-	wire m1_lo = eq1_0 & eq1_1 & eq1_2;
-	wire m1_hi = eq1_3 & eq1_4 & eq1_5 & r1_v1;
-
-	wire m2_lo = eq2_0 & eq2_1 & eq2_2;
-	wire m2_hi = eq2_3 & eq2_4 & eq2_5 & r1_v2;
-
-	wire m3_lo = eq3_0 & eq3_1 & eq3_2;
-	wire m3_hi = eq3_3 & eq3_4 & eq3_5 & r1_v3;
+	wire m3_lo = &eq3_c[N_TEQ_LO-1:0];
+	wire m3_hi = (&eq3_c[N_TEQ-1:N_TEQ_LO]) & r1_v3;
 
 	wire m0_pfn_lo, m0_pfn_hi, m0_flg, m0_hit;
 	wire m1_pfn_lo, m1_pfn_hi, m1_flg, m1_hit;

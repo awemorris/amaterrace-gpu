@@ -236,17 +236,30 @@ localparam MC_LA_W     = MC_ADDR_W - LINE_SHIFT;
 
 ## 7. コンフィグ・プリセット体系
 
+### 7.1 `menuconfig` の先頭スイッチ（`FPGA` / `ASIC`）
+
+`mk/menuconfig.py` の最上位・先頭項目として **`CONFIG_TARGET_PLATFORM` (`fpga` / `asic`)** を配置する：
+
+* **`fpga` 選択時**:
+  * 選択可能な `CONFIG_NSU` を **`1, 2` のみに制限** する。
+  * インターコネクトは自動的に **フラットクロスバー (`USE_NOC_FABRIC = 0`)** に固定される（KC705 等の低遅延・小 LUT 向け）。
+* **`asic` 選択時**:
+  * `CONFIG_NSU` は **`1, 2, 4, 8, 16, 32, 64, 128`** から選択可能とする。
+  * インターコネクトは `NSU = 1, 2` を含め **統一ファットツリー NoC (`USE_NOC_FABRIC = 1`)** を使用する。
+
+### 7.2 プリセット一覧（全 26 構成）
+
 設定重複を防ぐため、共通ベース定義 `config/base/*.mk` と薄いプリセット定義 `config/<name>.mk` の 2 層で構成する：
 
-| 系列・プリセット名 | 用途 | インターコネクト | `MMU` / `CPU` / `PROT` | `VA / PA` | 主な機能ブロック |
+| 系列・プリセット名 | 用途 | ターゲット / インターコネクト | `MMU` / `CPU` / `PROT` | `VA / PA` | 主な機能ブロック |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`gfx-vulkan10-su{1,2,4,8,16,32,64,128}`** | Vulkan 1.0 Core + Compute 基準 | **統一ファットツリー** | ON (`1, 1, 1`) | `32 / 40`（可変） | `VF, RX(MSAA4x,EarlyZ), TU(Bilinear,3D/Array,FFILT), ROP(D24S8,FP16,sRGB,FBlend), BLT, DISP`, LDS=16KB |
-| **`gfx-all-su{1,2,4,8,16,32,64,128}`** | 全拡張フル機能 | **統一ファットツリー** | ON (`1, 1, 1`) | `40 / 48` | `gfx-vulkan10` ＋ `MESH, BC, ETC2, ANISO, TRILINEAR, SEAMLESS_CUBE, ROP_PACK, D32F, LOGICOP` 等全有効（`SA=0` v1） |
-| **`compute-su{1,2,4,8,16,32,64,128}`** | Compute 専用 Vulkan 構成 | **統一ファットツリー** | ON (`1, 1, 1`) | `40 / 48` | `VF=0, RX=0, TU=0, ROP=0, BLT=0, DISP=0, SA=0`, `SU` (FP16/Subgroup/SFU, LDS=16KB) |
-| **`compute-fpga-test-minimal`** | FPGA 最小 Compute テスト | **クロスバー (`atg_mc_tree`)** | OFF (`0, 0, 0`) | `30(実効32) / 40` | `NSU=1`, `VF=RX=TU=ROP=BLT=DISP=0`, 最小キャッシュ |
-| **`gfx-fpga-test-minimal`** | FPGA 最小 Graphics テスト | **クロスバー (`atg_mc_tree`)** | OFF (`0, 0, 0`) | `30(実効32) / 40` | `NSU=1`, 現行 `minimal.mk` 相当（最小 `VF, RX, TU, ROP, DISP=1`） |
+| **`gfx-vulkan10-su{1,2,4,8,16,32,64,128}`** | Vulkan 1.0 Core + Compute 基準 | **`ASIC` / 統一ファットツリー** | ON (`1, 1, 1`) | `32 / 40`（可変） | `VF, RX(MSAA4x,EarlyZ), TU(Bilinear,3D/Array,FFILT), ROP(D24S8,FP16,sRGB,FBlend), BLT, DISP`, LDS=16KB |
+| **`gfx-all-su{1,2,4,8,16,32,64,128}`** | 全拡張フル機能 | **`ASIC` / 統一ファットツリー** | ON (`1, 1, 1`) | `40 / 48` | `gfx-vulkan10` ＋ `MESH, BC, ETC2, ANISO, TRILINEAR, SEAMLESS_CUBE, ROP_PACK, D32F, LOGICOP` 等全有効（`SA=0` v1） |
+| **`compute-su{1,2,4,8,16,32,64,128}`** | Compute 専用 Vulkan 構成 | **`ASIC` / 統一ファットツリー** | ON (`1, 1, 1`) | `40 / 48` | `VF=0, RX=0, TU=0, ROP=0, BLT=0, DISP=0, SA=0`, `SU` (FP16/Subgroup/SFU, LDS=16KB) |
+| **`compute-fpga-test-minimal`** | FPGA 最小 Compute テスト | **`FPGA` / クロスバー (`atg_mc_tree`)** | OFF (`0, 0, 0`) | `30(実効32) / 40` | `NSU=1`, `VF=RX=TU=ROP=BLT=DISP=0`, 最小キャッシュ |
+| **`gfx-fpga-test-minimal`** | FPGA 最小 Graphics テスト | **`FPGA` / クロスバー (`atg_mc_tree`)** | OFF (`0, 0, 0`) | `30(実効32) / 40` | `NSU=1`, 現行 `minimal.mk` 相当（最小 `VF, RX, TU, ROP, DISP=1`） |
 
-`Makefile` および `include/atg_config.vh` へ `CFG_HAS_VF`, `CFG_HAS_RX`, `CFG_HAS_TU`, `CFG_HAS_ROP`, `CFG_HAS_DISP`, `CFG_USE_NOC_FABRIC`, `CFG_NSU` を追加し、`make CFG=<preset>` または `make preset-<name>` で切り替え可能にする。
+`Makefile` および `include/atg_config.vh` へ `CFG_TARGET_ASIC`, `CFG_USE_NOC_FABRIC`, `CFG_NSU`, `CFG_HAS_VF`, `CFG_HAS_RX`, `CFG_HAS_TU`, `CFG_HAS_ROP`, `CFG_HAS_DISP` を追加し、`make CFG=<preset>` または `make preset-<name>` で切り替え可能にする。
 
 ---
 
@@ -264,8 +277,9 @@ localparam MC_LA_W     = MC_ADDR_W - LINE_SHIFT;
 3. **Phase 3: 全 SU グラフィックス両用化（共有 Spine `PT` ＋ 分配/集約木）**
    - `SHARED_PT = 1` 対応の `atg_su` / 共有 `atg_su_pt`、`atg_warp_dist`、`atg_gfx_rt`。
    - 検証: `atg_su` 既存 TB（`SHARED_PT=0`）＋ マルチ SU 描画結合 TB（`NSU=2,4` で `atg_top_raster`/`atg_top_tex` 相当 PASS）。
-4. **Phase 4: `atg_su_fabric_n1..n128` 実装 ＋ 26 プリセット構成整備**
-   - 8 個の個別ファブリックファイル、26 個の `config/*.mk`、`Makefile` / `menuconfig.py` 対応。
+4. **Phase 4: `N=1..128` SVG フロアプランレビュー ＋ `atg_su_fabric_n1..n128` ＋ 26 プリセット構成整備**
+   - **事前レビュー**: `N = 1, 2, 4, 8, 16, 32, 64, 128` の 2D 配置・`atg_rt2/3/4`・`atg_rep`・スパイン配置を描いた **SVG フロアプラン図** を作成し、ユーザーレビュー・承認を得る。
+   - **実装**: 8 個の個別ファブリックファイル、26 個の `config/*.mk`、`Makefile` / `menuconfig.py`（先頭 `FPGA`/`ASIC` 切替、`NSU` 1-128）対応。
    - 検証: Compute-Only TB、`NSU=1,2,4,8` 動作 sim、全 `N=1..128` Verilator Lint / Yosys Elaboration PASS。
 5. **Phase 5: Stage 1（ASIC 5nm 1.5 GHz `cmos3` 是正）完了サインオフ**
    - 残余モジュール（`atg_su_opd`, `am_fpu_core`, `atg_cp_ring`, `atg_su_dcache/icache` 等）および新規 NoC/MMU 論理に対し Yosys `minimal` (`gfx-fpga-test-minimal` / `compute-fpga-test-minimal`) & `high-perf`（`gfx-vulkan10-su*` / `gfx-all-su*`）監査を通過させ、全テストベンチ 100% PASS を達成する。
