@@ -1,5 +1,5 @@
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  *
  * SPDX-License-Identifier: Zlib
@@ -28,8 +28,8 @@
 
 #include "drm-shim/drm_shim.h"
 #include "drm-uapi/ghci_drm.h"
-#include "amaterrace/ghci_cmd.h"
-#include "amaterrace/ghci_regs.h"
+#include "ghci/ghci_cmd.h"
+#include "ghci/ghci_regs.h"
 #include "util/log.h"
 #include "util/u_math.h"
 

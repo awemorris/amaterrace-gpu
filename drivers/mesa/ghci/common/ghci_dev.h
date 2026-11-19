@@ -18,8 +18,8 @@
 #include <stdint.h>
 
 #include "drm-uapi/ghci_drm.h"
-#include "amaterrace/ghci_cmd.h"
-#include "amaterrace/ghci_regs.h"
+#include "ghci/ghci_cmd.h"
+#include "ghci/ghci_regs.h"
 
 #ifdef __cplusplus
 extern "C" {

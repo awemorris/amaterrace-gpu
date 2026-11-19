@@ -40,7 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "amaterrace/gsi1_isa.h"
+#include "ghci/gsi1_isa.h"
 #include "compiler/nir/nir.h"
 #include "util/u_math.h"
 

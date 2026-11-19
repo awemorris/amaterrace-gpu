@@ -22,7 +22,7 @@
 
 #include "util/macros.h"
 
-#include "amaterrace/gsi1_isa.h"
+#include "ghci/gsi1_isa.h"
 
 #include "gsi1_ir.h"
 

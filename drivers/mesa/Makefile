@@ -1,4 +1,4 @@
-# Amaterrace GPU
+# GHCI GPU Driver
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
 #
@@ -11,7 +11,7 @@
 #   2. source: unpacks it into $(SRC), applies patches/$(MESA_VERSION)/ and
 #      links this tree in: ghci/ as src/ghci, the kernel's ghci_drm.h into
 #      include/drm-uapi/ and the GHCI headers (../../include) as
-#      include/amaterrace;
+#      include/ghci;
 #   3. setup: builds wayland-scanner for the build host (mesa.version says
 #      why) and configures Mesa with meson in $(OBJ);
 #   4. all: builds it with ninja;
@@ -94,7 +94,7 @@ $(PREPARED): $(TARBALL) $(PATCHES)
 	ln -sfn $(CURDIR)/ghci $(SRC)/src/ghci
 	ln -sfn $(TOP)/drivers/linux/include/uapi/drm/ghci_drm.h \
 		$(SRC)/include/drm-uapi/ghci_drm.h
-	ln -sfn $(TOP)/include $(SRC)/include/amaterrace
+	ln -sfn $(TOP)/include $(SRC)/include/ghci
 	touch $@
 
 $(WAYLAND_TARBALL):

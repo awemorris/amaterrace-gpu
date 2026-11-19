@@ -1,10 +1,10 @@
-# Amaterrace GPU
+# GHCI GPU Driver
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
 #
 # The GHCI driver inside Mesa's build.  drivers/mesa/Makefile links this
 # directory in as src/ghci, the kernel's ghci_drm.h as
-# include/drm-uapi/ghci_drm.h and the GHCI headers as include/amaterrace.
+# include/drm-uapi/ghci_drm.h and the GHCI headers as include/ghci.
 
 inc_ghci = include_directories('common')
 

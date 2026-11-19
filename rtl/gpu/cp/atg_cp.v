@@ -587,7 +587,7 @@ module atg_cp #(
 	assign hcr_widx = hcr_widx_r;
 	assign hcr_wdata = hcr_wdata_r;
 	assign hcr_wmask = hcr_wmask_r;
-	assign hcr_ridx = hcr_ridx_r;
+	assign hcr_ridx = s_hcr_ridx;
 `else
 	wire [31:0] reg_rdata_raw;
 	assign reg_rdata = reg_rdata_raw;
@@ -616,7 +616,7 @@ module atg_cp #(
 	assign hcr_widx = hcr_widx_r;
 	assign hcr_wdata = hcr_wdata_r;
 	assign hcr_wmask = hcr_wmask_r;
-	assign hcr_ridx = hcr_ridx_r;
+	assign hcr_ridx = s_hcr_ridx;
 `endif
 
 	/* Authoritative capabilities block: single instance in atg_cp */

@@ -33,7 +33,7 @@ modules:
 clean:
 	$(MAKE) -C $(KDIR) M=$(CURDIR) clean
 
-# A tree that does not need the rest of amaterrace-gpu: the GHCI headers
+# A tree that does not need the rest of the repository: the GHCI headers
 # go to hw/.
 dkms-source:
 	mkdir -p $(DKMS_SRC)/hw $(DKMS_SRC)/compat $(DKMS_SRC)/include/uapi/drm

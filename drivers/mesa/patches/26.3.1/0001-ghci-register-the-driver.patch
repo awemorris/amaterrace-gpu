@@ -1,7 +1,7 @@
 Register the GHCI Vulkan driver and the GHCI tools with Mesa's build.
 
 The driver's sources live outside the Mesa tree; the build links them in
-as src/ghci (drivers/mesa/Makefile in amaterrace-gpu).
+as src/ghci (drivers/mesa/Makefile in the driver's tree).
 
 SPDX-License-Identifier: MIT
 ---
