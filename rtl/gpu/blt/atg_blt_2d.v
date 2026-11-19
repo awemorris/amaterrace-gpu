@@ -3218,8 +3218,8 @@ module atg_blt_2d #(
 	);
 `else
 	wire state_d1 = is_s_clip ? (!cx_empty && !cy_empty) : state_d1_nc;
-	wire busy_d   = rst_b2d_high ? 1'b0 : (is_s_clip ? (!cx_empty && !cy_empty) : busy_d_nc);
-	wire done_d   = rst_b2d_high ? 1'b0 : (is_s_clip ? (cx_empty || cy_empty)   : done_d_nc);
+	wire busy_d   = is_s_clip ? (!cx_empty && !cy_empty) : busy_d_nc;
+	wire done_d   = is_s_clip ? (cx_empty || cy_empty)   : done_d_nc;
 `endif
 
 	always @(posedge clk or posedge rst_b2d_high) begin

@@ -284,17 +284,17 @@ module atg_su_opd #(
 	reg [31:0] a_info_r;
 
 	/* Buffered q_info[ATG_WI_FRONT] (6 copies, <= 17 loads each) */
-	(* dont_touch = "true" *) wire qi_front_1a = q_info[ATG_WI_FRONT] && !rst_p;
-	(* dont_touch = "true" *) wire qi_front_1b = q_info[ATG_WI_FRONT] && !rst_p;
-	(* dont_touch = "true" *) wire qi_front_2a = q_info[ATG_WI_FRONT] && !rst_p;
-	(* dont_touch = "true" *) wire qi_front_2b = q_info[ATG_WI_FRONT] && !rst_p;
-	(* dont_touch = "true" *) wire qi_front_3a = q_info[ATG_WI_FRONT] && !rst_p;
-	(* dont_touch = "true" *) wire qi_front_3b = q_info[ATG_WI_FRONT] && !rst_p;
+	(* dont_touch = "true" *) wire qi_front_1a = q_info[ATG_WI_FRONT];
+	(* dont_touch = "true" *) wire qi_front_1b = q_info[ATG_WI_FRONT];
+	(* dont_touch = "true" *) wire qi_front_2a = q_info[ATG_WI_FRONT];
+	(* dont_touch = "true" *) wire qi_front_2b = q_info[ATG_WI_FRONT];
+	(* dont_touch = "true" *) wire qi_front_3a = q_info[ATG_WI_FRONT];
+	(* dont_touch = "true" *) wire qi_front_3b = q_info[ATG_WI_FRONT];
 
 	/* Two-level buffered enables for Stage A precomputation, Stage A->B, and Stage A load */
 	(* dont_touch = "true" *) wire a_pre_en_0 = (REG_IO != 0) && a_act && !a_wait;
 	(* dont_touch = "true" *) wire a_pre_en_1 = (REG_IO != 0) && a_act && !a_wait;
-	wire a_pre_we_raw = a_pre_en_1 && !rst_p;
+	wire a_pre_we_raw = a_pre_en_1;
 	wire a_pre_we_0, a_pre_we_1, a_pre_we_2, a_pre_we_3;
 	wire a_pre_we_4, a_pre_we_5, a_pre_we_6, a_pre_we_7a, a_pre_we_7b;
 
@@ -321,8 +321,8 @@ module atg_su_opd #(
 
 	(* dont_touch = "true" *) wire a_stgb_ctl_0 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
 	(* dont_touch = "true" *) wire a_stgb_ctl_1 = (REG_IO != 0) ? (a_act && a_wait && a_step_done) : (b_adv && a_act && a_step_done);
-	wire b_ctl_we_raw0 = a_stgb_ctl_0 && !rst_p;
-	wire b_ctl_we_raw1 = a_stgb_ctl_1 && !rst_p;
+	wire b_ctl_we_raw0 = a_stgb_ctl_0;
+	wire b_ctl_we_raw1 = a_stgb_ctl_1;
 	wire b_ctl_we_0, b_ctl_we_1, b_ctl_we_2, b_ctl_we_3, b_ctl_we_4, b_ctl_we_5, b_ctl_we_6, b_ctl_we_7;
 	wire b_ctl_we_8, b_ctl_we_9, b_ctl_we_10, b_ctl_we_11, b_ctl_we_12, b_ctl_we_13, b_ctl_we_14;
 
@@ -344,7 +344,7 @@ module atg_su_opd #(
 
 
 	(* dont_touch = "true" *) wire a_load_ctl_0 = !a_act || ((REG_IO != 0) ? a_wait_last : (a_adv && a_last));
-	wire a_load_we_raw = a_load_ctl_0 && !rst_p;
+	wire a_load_we_raw = a_load_ctl_0;
 	wire a_load_we_0, a_load_we_1, a_load_we_2, a_load_we_3, a_load_we_4;
 	wire a_load_we_5, a_load_we_6, a_load_we_7, a_load_we_8, a_load_we_9;
 
@@ -387,7 +387,7 @@ module atg_su_opd #(
 			(* shreg_extract = "no" *) reg [8:0] a_cl_l;
 			wire a_cl_we_l;
 
-			assign a_cl_we_l = a_pre_en_0 && !rst_p;
+			assign a_cl_we_l = a_pre_en_0;
 
 			always @(posedge clk or posedge rst_p) begin
 				if (rst_p)
@@ -462,7 +462,7 @@ module atg_su_opd #(
 				(* dont_touch = "true" *) reg [2:0] a_k1_lo_r, a_k1_hi_r;
 				(* dont_touch = "true" *) reg [2:0] a_k2_lo_r, a_k2_hi_r;
 				(* dont_touch = "true" *) reg [2:0] a_k3_lo_r, a_k3_hi_r;
-				wire a_k_we_raw = ((lb < 4) ? a_pre_en_0 : a_pre_en_1) && !rst_p;
+				wire a_k_we_raw = ((lb < 4) ? a_pre_en_0 : a_pre_en_1);
 				wire a_k_we_lo, a_k_we_hi;
 
 				assign a_k_we_lo = a_k_we_raw;
@@ -538,11 +538,11 @@ module atg_su_opd #(
 				wire b_va_we_h, b_vb_we_h, b_vc_we_h;
 				wire hold1_we_h, hold2_we_h;
 
-				assign b_va_we_h = a_stgb_en_g[lb] && !rst_p;
-				assign b_vb_we_h = a_stgb_en_g[lb] && !rst_p;
-				assign b_vc_we_h = a_stgb_en_g[lb] && !rst_p;
-				assign hold1_we_h = a_hold_en_g[lb] && !rst_p;
-				assign hold2_we_h = a_hold_en_g[lb] && !rst_p;
+				assign b_va_we_h = a_stgb_en_g[lb];
+				assign b_vb_we_h = a_stgb_en_g[lb];
+				assign b_vc_we_h = a_stgb_en_g[lb];
+				assign hold1_we_h = a_hold_en_g[lb];
+				assign hold2_we_h = a_hold_en_g[lb];
 
 				always @(posedge clk or posedge rst_p) begin
 					if (rst_p) begin
@@ -573,7 +573,6 @@ module atg_su_opd #(
 		end
 	endgenerate
 
-	(* dont_touch = "true" *) wire rst_b_rdy = rst_p || (b_adv && !a_wait);
 	wire [7:0] a_cval1_next_lo_b0 = opc_spec_lo_b0(a_n1_opc_0, a_warp, q_info, qi_front_1a);
 	wire [7:0] a_cval1_next_lo_b1 = opc_spec_lo_b1(a_n1_opc_1, a_warp, q_info, qi_front_1a);
 	wire [7:0] a_cval1_next_hi_b0 = opc_spec_hi_b0(a_n1_opc_2, a_warp, q_info, qi_front_1b);

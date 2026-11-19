@@ -182,7 +182,7 @@ module atg_rx_edge (
 	/* Packed snapped coordinates sv[0..9] with 12-bit sliced write enables */
 	(* dont_touch = "true", extract_reset = "no" *) reg [239:0] sv_pk;
 	wire signed [23:0] sv [0:9];
-	wire snap_v_act_raw = !rst_sync && !start && run && r_snap_v;
+	wire snap_v_act_raw = !start && run && r_snap_v;
 	wire [1:0] snap_v_act;
 	assign snap_v_act = {2{snap_v_act_raw}};
 	generate
@@ -263,7 +263,7 @@ module atg_rx_edge (
 	wire signed [23:0] r_c3x = r_c_pk[144 +: 24];
 	wire signed [23:0] r_c3y = r_c_pk[168 +: 24];
 
-	wire c9_raw = !rst_sync && !start && run && (cnt == 6'd9);
+	wire c9_raw = !start && run && (cnt == 6'd9);
 	wire [1:0] c9_mid, tri_c_mid, line_c_mid;
 	generate
 	for (gi = 0; gi < 2; gi = gi + 1) begin : g_c9_mid
@@ -682,7 +682,7 @@ module atg_rx_edge (
 		.co(carry_unused[53]));
 
 	/* Sliced datapath register updates to keep every write-enable and mux select fanout <= 16 */
-	wire c_act = !rst_sync && !start && run;
+	wire c_act = !start && run;
 
 	/* cnt == 1..10: r_snap_shifted (3 x 16-bit) */
 	wire we_snap_raw = c_act && (cnt >= 6'd1 && cnt <= 6'd10);
@@ -995,7 +995,7 @@ module atg_rx_edge (
 		end
 		for (gs = 0; gs < 3; gs = gs + 1) begin : g_ee_s
 			localparam integer HI = 16 * gs;
-			wire wee_raw = !rst_sync && (run && (cnt >= 6'd19 && cnt <= 6'd24) && ce_p[0] && (ek == ge[1:0]));
+			wire wee_raw = run && (cnt >= 6'd19 && cnt <= 6'd24) && ce_p[0] && (ek == ge[1:0]);
 			wire wee_s;
 			assign wee_s = wee_raw;
 			always @(posedge clk) begin

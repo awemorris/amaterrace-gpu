@@ -205,10 +205,18 @@ module am_axi_master #(
 	wire r_other = |(rq_has & ~({{(NID-1){1'b0}}, 1'b1} << q_id));
 `endif
 
+	reg rst_active_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			rst_active_r <= 1'b1;
+		else
+			rst_active_r <= 1'b0;
+	end
+
 	wire wr_can = !halt && aw_skid_in_ready && !w_busy && wq_rdy[q_id] && !w_other;
 	wire rd_can = !halt && ar_skid_in_ready && rq_rdy[q_id] && !r_other;
 
-	assign req_ready = rst_n && (req_write ? wr_can : rd_can);
+	assign req_ready = !rst_active_r && (req_write ? wr_can : rd_can);
 	wire wr_take = req_valid && req_ready && req_write;
 	wire rd_take = req_valid && req_ready && !req_write;
 

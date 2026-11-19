@@ -165,10 +165,10 @@ module atg_su_cbank #(
 
 	assign scrub_busy = sc_on;
 	wire sc_done = ({{(32-CW){1'b0}}, sc_a} == CONST_WORDS - 1);
-	wire cw_we_next = rst_p ? 1'b0 : scrub ? 1'b1 : sc_on ? (!sc_done && ({{(32-CW){1'b0}}, sc_a_next} < 32)) :
+	wire cw_we_next = scrub ? 1'b1 : sc_on ? (!sc_done && ({{(32-CW){1'b0}}, sc_a_next} < 32)) :
 		(st == LWR) ? (wi < 32) : 1'b0;
-	wire [4:0] cw_wa_next = (rst_p || scrub) ? 5'd0 : sc_on ? sc_a_next[4:0] : wi[4:0];
-	wire valid_next = rst_p ? 1'b0 : inv ? 1'b0 :
+	wire [4:0] cw_wa_next = scrub ? 5'd0 : sc_on ? sc_a_next[4:0] : wi[4:0];
+	wire valid_next = inv ? 1'b0 :
 		(st == IDLE && lc_pend && s_region == 32'd0 && s_words != 32'd0) ? 1'b1 : valid;
 
 	/* Sliced distributed RAM cw (8 x 4-bit slices) so each address/WE net drives <= 12 RAM primitives */
@@ -206,17 +206,24 @@ module atg_su_cbank #(
 		wire [4:0] cr_a0_s = cr_idx_sl[4:0];
 		wire [4:0] cr_a1_s = cr_idx_sl[9:5];
 		wire [4:0] cr_a2_s = cr_idx_sl[14:10];
-		wire cw_wa_ce_raw = (rst_p || scrub || sc_on || st == LWR);
+		wire cw_wa_ce_raw = (scrub || sc_on || st == LWR);
 		wire cw_wa_ce_s;
 `ifdef SYNTH_KINTEX7
 		(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_wace (.I0(cw_wa_ce_raw), .O(cw_wa_ce_s));
 `else
 		assign cw_wa_ce_s = cw_wa_ce_raw;
 `endif
+		always @(posedge clk or posedge rst_p) begin
+			if (rst_p) begin
+				cw_we_sl_r <= 1'b0;
+				cw_wa_sl_r <= 5'd0;
+			end else begin
+				cw_we_sl_r <= cw_we_next;
+				if (cw_wa_ce_s)
+					cw_wa_sl_r <= cw_wa_next;
+			end
+		end
 		always @(posedge clk) begin
-			cw_we_sl_r <= cw_we_next;
-			if (cw_wa_ce_s)
-				cw_wa_sl_r <= cw_wa_next;
 			if (cw_we_sl_r)
 				cw_mem[cw_wa_sl_buf] <= b_wd_r[gcs*4 +: 4];
 		end
@@ -267,8 +274,13 @@ module atg_su_cbank #(
 			reg valid_res_h;
 			wire res_clr_h = res_clr_lane[gcl];
 			wire res_we_h = pval_d2 && (pli_d2 == gcl[LW-1:0]);
+			always @(posedge clk or posedge rst_p) begin
+				if (rst_p)
+					valid_res_h <= 1'b0;
+				else
+					valid_res_h <= valid_next;
+			end
 			always @(posedge clk) begin
-				valid_res_h <= valid_next;
 				if (res_clr_h)
 					res_h <= 16'd0;
 				else if (res_we_h)
@@ -290,9 +302,16 @@ module atg_su_cbank #(
 		reg valid_crq_s;
 		reg crq_rdy_s;
 		wire crq_we_s = cr_en && crq_rdy_s;
+		always @(posedge clk or posedge rst_p) begin
+			if (rst_p) begin
+				valid_crq_s <= 1'b0;
+				crq_rdy_s   <= 1'b0;
+			end else begin
+				valid_crq_s <= valid_next;
+				crq_rdy_s   <= 1'b1;
+			end
+		end
 		always @(posedge clk) begin
-			valid_crq_s <= valid_next;
-			crq_rdy_s <= !rst_p;
 			if (crq_we_s)
 				crq_s <= valid_crq_s ? cw_rdata[gcl*16 +: 16] : 16'd0;
 		end
@@ -412,7 +431,7 @@ module atg_su_cbank #(
 		end
 	end
 
-	wire b_wd_we_raw = (st == LWR) && !rst_p;
+	wire b_wd_we_raw = (st == LWR);
 	wire [3:0] b_wd_we_b;
 	wire [3:0] b_wd_zero_b;
 	genvar gbw;
@@ -420,34 +439,38 @@ module atg_su_cbank #(
 		for (gbw = 0; gbw < 4; gbw = gbw + 1) begin : g_bwd_we
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_bwd_we (.O(b_wd_we_b[gbw]), .I0(b_wd_we_raw));
-			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_bwd_z  (.O(b_wd_zero_b[gbw]), .I0(rst_p || scrub || sc_on));
+			(* dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_buf_bwd_z  (.O(b_wd_zero_b[gbw]), .I0(scrub || sc_on));
 `else
 			assign b_wd_we_b[gbw] = b_wd_we_raw;
-			assign b_wd_zero_b[gbw] = rst_p || scrub || sc_on;
+			assign b_wd_zero_b[gbw] = scrub || sc_on;
 `endif
 		end
 	endgenerate
 
-	always @(posedge clk) begin
-		if (b_wd_zero_b[0])
-			b_wd_r[7:0] <= 8'd0;
-		else if (b_wd_we_b[0])
-			b_wd_r[7:0] <= lword[7:0];
+	always @(posedge clk or posedge rst_p) begin
+		if (rst_p) begin
+			b_wd_r <= 32'd0;
+		end else begin
+			if (b_wd_zero_b[0])
+				b_wd_r[7:0] <= 8'd0;
+			else if (b_wd_we_b[0])
+				b_wd_r[7:0] <= lword[7:0];
 
-		if (b_wd_zero_b[1])
-			b_wd_r[15:8] <= 8'd0;
-		else if (b_wd_we_b[1])
-			b_wd_r[15:8] <= lword[15:8];
+			if (b_wd_zero_b[1])
+				b_wd_r[15:8] <= 8'd0;
+			else if (b_wd_we_b[1])
+				b_wd_r[15:8] <= lword[15:8];
 
-		if (b_wd_zero_b[2])
-			b_wd_r[23:16] <= 8'd0;
-		else if (b_wd_we_b[2])
-			b_wd_r[23:16] <= lword[23:16];
+			if (b_wd_zero_b[2])
+				b_wd_r[23:16] <= 8'd0;
+			else if (b_wd_we_b[2])
+				b_wd_r[23:16] <= lword[23:16];
 
-		if (b_wd_zero_b[3])
-			b_wd_r[31:24] <= 8'd0;
-		else if (b_wd_we_b[3])
-			b_wd_r[31:24] <= lword[31:24];
+			if (b_wd_zero_b[3])
+				b_wd_r[31:24] <= 8'd0;
+			else if (b_wd_we_b[3])
+				b_wd_r[31:24] <= lword[31:24];
+		end
 	end
 
 	always @(posedge clk or posedge rst_p) begin

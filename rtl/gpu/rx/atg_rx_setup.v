@@ -77,7 +77,6 @@ module atg_rx_setup #(
 	wire [3:0] cur_vp_idx_w;
 
 	wire rst_setup_high = !rst_n;
-	wire rst_n_setup = rst_n;
 	wire rst_n_edge = rst_n;
 	wire rst_n_fpu = rst_n;
 	wire [31:0] st_wdata_vp_b = st_wdata;
@@ -795,7 +794,7 @@ module atg_rx_setup #(
 	endgenerate
 
 	 wire in_valid_ctrl, in_valid_pl, in_valid_fd, in_valid_fdb_lo, in_valid_fdb_hi;
-	(* keep = "true" *) wire we_idle_in = rst_n_setup && (st_rep_c == S_IDLE) && in_valid_ctrl;
+	(* keep = "true" *) wire we_idle_in = (st_rep_c == S_IDLE) && in_valid_ctrl;
 	 wire we_idle_ctrl, we_idle_fsm, we_idle_keep_lo, we_idle_keep_hi;
 	 wire [4:0] iv_branch;
 	 wire [20:0] we_in_lo, we_in_hi;
@@ -1026,8 +1025,7 @@ module atg_rx_setup #(
 		wire bcl_use_fa_sl = (gs < 4) ? bcl_use_fa_lo : bcl_use_fa_hi;
 
 		always @(posedge clk) begin
-			if (rst_n_setup) begin
-				case (st_fma_s[gs])
+			case (st_fma_s[gs])
 				S_PERSP_XYZ:
 					case (seq_fma_s[gs])
 					5'd0:  fm_a_sl <= R[0][B1:B0];
@@ -1199,7 +1197,6 @@ module atg_rx_setup #(
 					endcase
 				default: ;
 				endcase
-			end
 		end
 	end
 	endgenerate
@@ -1262,7 +1259,7 @@ module atg_rx_setup #(
 		end
 	endgenerate
 
-	wire line_dup_cond = rst_n_setup && (st_R_lo1 == S_RECT) && (kind == 2'd1) &&
+	wire line_dup_cond = (st_R_lo1 == S_RECT) && (kind == 2'd1) &&
 		(((seq_R_lo1 == 5'd1) && fm_o_R_lo && !rm[3]) || ((seq_R_lo1 >= 5'd5) && fa_o_R_lo));
 	 wire we_ldup_r30_lo0, we_ldup_r30_lo1, we_ldup_r30_hi0, we_ldup_r30_hi1;
 	 wire we_ldup_r39_lo0, we_ldup_r39_lo1, we_ldup_r39_hi0, we_ldup_r39_hi1;
@@ -1285,7 +1282,7 @@ module atg_rx_setup #(
 	`RX_BUF1(u_ld57h0, line_dup_cond, we_ldup_r57_hi0);
 	`RX_BUF1(u_ld57h1, line_dup_cond, we_ldup_r57_hi1);
 
-	wire pw_base_cond = rst_n_setup && (st_R_lo0 == S_PERSP_W) && fd_o_w;
+	wire pw_base_cond = (st_R_lo0 == S_PERSP_W) && fd_o_w;
 	 wire we_r28_lo, we_r28_hi, we_r29_lo, we_r29_hi;
 	 wire we_r30_pw_lo0, we_r30_pw_lo1, we_r30_pw_hi0, we_r30_pw_hi1;
 	`RX_BUF1(u_wr28l,  pw_base_cond && (seq_R_lo0 == 5'd0), we_r28_lo);
@@ -1297,10 +1294,10 @@ module atg_rx_setup #(
 	`RX_BUF1(u_wr30h0, pw_base_cond && (seq_R_hi0 >= 5'd2), we_r30_pw_hi0);
 	`RX_BUF1(u_wr30h1, pw_base_cond && (seq_R_hi0 >= 5'd2), we_r30_pw_hi1);
 
-	wire pxyz_fa_lo0 = rst_n_setup && (st_R_lo0 == S_PERSP_XYZ) && fa_o_R_lo;
-	wire pxyz_fa_hi0 = rst_n_setup && (st_R_hi0 == S_PERSP_XYZ) && fa_o_R_hi;
-	wire pxyz_fa_lo1 = rst_n_setup && (st_R_lo1 == S_PERSP_XYZ) && fa_o_R_lo;
-	wire pxyz_fa_hi1 = rst_n_setup && (st_R_hi1 == S_PERSP_XYZ) && fa_o_R_hi;
+	wire pxyz_fa_lo0 = (st_R_lo0 == S_PERSP_XYZ) && fa_o_R_lo;
+	wire pxyz_fa_hi0 = (st_R_hi0 == S_PERSP_XYZ) && fa_o_R_hi;
+	wire pxyz_fa_lo1 = (st_R_lo1 == S_PERSP_XYZ) && fa_o_R_lo;
+	wire pxyz_fa_hi1 = (st_R_hi1 == S_PERSP_XYZ) && fa_o_R_hi;
 	 wire [8:0] we_pxyz_lo0, we_pxyz_lo1, we_pxyz_hi0, we_pxyz_hi1;
 	`RX_BUF1(u_wpx0l0, pxyz_fa_lo0 && (seq_R_lo0 == 5'd3),  we_pxyz_lo0[0]);
 	`RX_BUF1(u_wpx0l1, pxyz_fa_lo0 && (seq_R_lo0 == 5'd3),  we_pxyz_lo1[0]);
@@ -1339,12 +1336,12 @@ module atg_rx_setup #(
 	`RX_BUF1(u_wpx8h0, pxyz_fa_hi1 && (seq_R_hi1 == 5'd31), we_pxyz_hi0[8]);
 	`RX_BUF1(u_wpx8h1, pxyz_fa_hi1 && (seq_R_hi1 == 5'd31), we_pxyz_hi1[8]);
 
-	wire pxyz_fm_lo1 = rst_n_setup && (st_R_lo1 == S_PERSP_XYZ) && fm_o_R_lo;
-	wire pxyz_fm_hi1 = rst_n_setup && (st_R_hi1 == S_PERSP_XYZ) && fm_o_R_hi;
-	wire rect_fm_lo1 = rst_n_setup && (st_R_lo1 == S_RECT) && fm_o_R_lo;
-	wire rect_fm_hi1 = rst_n_setup && (st_R_hi1 == S_RECT) && fm_o_R_hi;
-	wire rect_fa_lo1 = rst_n_setup && (st_R_lo1 == S_RECT) && fa_o_R_lo;
-	wire rect_fa_hi1 = rst_n_setup && (st_R_hi1 == S_RECT) && fa_o_R_hi;
+	wire pxyz_fm_lo1 = (st_R_lo1 == S_PERSP_XYZ) && fm_o_R_lo;
+	wire pxyz_fm_hi1 = (st_R_hi1 == S_PERSP_XYZ) && fm_o_R_hi;
+	wire rect_fm_lo1 = (st_R_lo1 == S_RECT) && fm_o_R_lo;
+	wire rect_fm_hi1 = (st_R_hi1 == S_RECT) && fm_o_R_hi;
+	wire rect_fa_lo1 = (st_R_lo1 == S_RECT) && fa_o_R_lo;
+	wire rect_fa_hi1 = (st_R_hi1 == S_RECT) && fa_o_R_hi;
 
 	 wire we_r52_lo, we_r52_hi, we_r53_lo, we_r53_hi, we_r55_lo, we_r55_hi, we_r56_lo, we_r56_hi;
 	 wire we_r54_fm_lo0, we_r54_fm_lo1, we_r54_fm_hi0, we_r54_fm_hi1;
@@ -1379,8 +1376,8 @@ module atg_rx_setup #(
 	`RX_BUF1(u_wr79l, rect_fa_lo1 && (seq_R_lo1 >= 5'd5), we_r79_lo);
 	`RX_BUF1(u_wr79h, rect_fa_hi1 && (seq_R_hi1 >= 5'd5), we_r79_hi);
 
-	`RX_BUF1(u_wr47l, rst_n_setup && (st_R_lo1 == S_PLANE_DIV) && (kind != 2'd0) && fd_o_plane_lo, we_r47_lo);
-	`RX_BUF1(u_wr47h, rst_n_setup && (st_R_hi1 == S_PLANE_DIV) && (kind != 2'd0) && fd_o_plane_hi, we_r47_hi);
+	`RX_BUF1(u_wr47l, (st_R_lo1 == S_PLANE_DIV) && (kind != 2'd0) && fd_o_plane_lo, we_r47_lo);
+	`RX_BUF1(u_wr47h, (st_R_hi1 == S_PLANE_DIV) && (kind != 2'd0) && fd_o_plane_hi, we_r47_hi);
 
 	always @(posedge clk) begin
 		if (we_r28_lo) R_lo[28] <= fd_r[15:0];
@@ -1542,8 +1539,8 @@ module atg_rx_setup #(
 	end
 
 	/* 5. Plane Registers pl_lo[0:11] and pl_hi[0:11] */
-	wire pl_clr_cond = rst_setup_high || ((st_pl_lo == S_IDLE) && in_valid_pl);
-	wire pl_point_cond = rst_n_setup && (st_pl_lo == S_EDGE) && e_done && !e_empty_buf && (kind == 2'd0);
+	wire pl_clr_cond = (st_pl_lo == S_IDLE) && in_valid_pl;
+	wire pl_point_cond = (st_pl_lo == S_EDGE) && e_done && !e_empty_buf && (kind == 2'd0);
 	 wire [11:0] clr_pl_lo, clr_pl_hi, pt_pl_lo, pt_pl_hi;
 	 wire we_pl8_div_lo, we_pl8_div_hi, we_pl11_div_lo, we_pl11_div_hi;
 	`RX_BUF1(u_wpl8dl,  (st_pl_lo == S_PLANE_DIV) && (kind == 2'd0) && ((seq_pl_lo == 5'd1) || (seq_pl_lo == 5'd2)) && fa_o_pl_lo, we_pl8_div_lo);
@@ -1560,8 +1557,13 @@ module atg_rx_setup #(
 		end
 	endgenerate
 
-	always @(posedge clk) begin
-		if (clr_pl_lo[0] || pt_pl_lo[0]) pl_lo[0] <= 16'd0;
+	always @(posedge clk or posedge rst_setup_high) begin
+		if (rst_setup_high) begin
+			pl_lo[0] <= 16'd0; pl_lo[1] <= 16'd0; pl_lo[2] <= 16'd0; pl_lo[3] <= 16'd0;
+			pl_lo[4] <= 16'd0; pl_lo[5] <= 16'd0; pl_lo[6] <= 16'd0; pl_lo[7] <= 16'd0;
+			pl_lo[8] <= 16'd0; pl_lo[9] <= 16'd0; pl_lo[10] <= 16'd0; pl_lo[11] <= 16'd0;
+		end else begin
+			if (clr_pl_lo[0] || pt_pl_lo[0]) pl_lo[0] <= 16'd0;
 		else if ((st_pl_lo == S_PLANE) && (p_step_pl_lo == 4'd6) && fm_o_pl_lo && (p_plane_pl_l == 2'd0)) pl_lo[0] <= fm_r_pl[15:0];
 
 		if (clr_pl_lo[1] || pt_pl_lo[1]) pl_lo[1] <= 16'd0;
@@ -1603,10 +1605,16 @@ module atg_rx_setup #(
 		if (clr_pl_lo[11]) pl_lo[11] <= 16'd0;
 		else if (we_pl11_div_lo) pl_lo[11] <= fa_r_pl[15:0];
 		else if ((st_pl_lo == S_PLANE) && (p_step_pl_lo >= 4'd14) && fa_o_pl_lo && (p_plane_pl_l == 2'd3)) pl_lo[11] <= fa_r_pl[15:0];
+		end
 	end
 
-	always @(posedge clk) begin
-		if (clr_pl_hi[0] || pt_pl_hi[0]) pl_hi[0] <= 16'd0;
+	always @(posedge clk or posedge rst_setup_high) begin
+		if (rst_setup_high) begin
+			pl_hi[0] <= 16'd0; pl_hi[1] <= 16'd0; pl_hi[2] <= 16'd0; pl_hi[3] <= 16'd0;
+			pl_hi[4] <= 16'd0; pl_hi[5] <= 16'd0; pl_hi[6] <= 16'd0; pl_hi[7] <= 16'd0;
+			pl_hi[8] <= 16'd0; pl_hi[9] <= 16'd0; pl_hi[10] <= 16'd0; pl_hi[11] <= 16'd0;
+		end else begin
+			if (clr_pl_hi[0] || pt_pl_hi[0]) pl_hi[0] <= 16'd0;
 		else if ((st_pl_hi == S_PLANE) && (p_step_pl_hi == 4'd6) && fm_o_pl_hi && (p_plane_pl_h == 2'd0)) pl_hi[0] <= fm_r_pl[31:16];
 
 		if (clr_pl_hi[1] || pt_pl_hi[1]) pl_hi[1] <= 16'd0;
@@ -1648,96 +1656,89 @@ module atg_rx_setup #(
 		if (clr_pl_hi[11]) pl_hi[11] <= 16'd0;
 		else if (we_pl11_div_hi) pl_hi[11] <= fa_r_pl[31:16];
 		else if ((st_pl_hi == S_PLANE) && (p_step_pl_hi >= 4'd14) && fa_o_pl_hi && (p_plane_pl_h == 2'd3)) pl_hi[11] <= fa_r_pl[31:16];
+		end
 	end
 
 	/* 6. Temporary Registers T0, T1, T2 */
 	always @(posedge clk) begin
-		if (rst_n_setup) begin
-			if ((st_T_lo == S_PLANE) && (p_step_T_lo == 4'd1) && fa_o_pl_lo) T0_lo <= fa_r[15:0];
-			else if ((st_T_lo == S_BIAS) && (seq_T_lo == 5'd2) && fm_o_pl_lo) T0_lo <= fm_r[15:0];
+		if ((st_T_lo == S_PLANE) && (p_step_T_lo == 4'd1) && fa_o_pl_lo) T0_lo <= fa_r[15:0];
+		else if ((st_T_lo == S_BIAS) && (seq_T_lo == 5'd2) && fm_o_pl_lo) T0_lo <= fm_r[15:0];
 
-			if ((st_T_lo == S_PLANE) && (p_step_T_lo == 4'd2) && fa_o_pl_lo) T1_lo <= fa_r[15:0];
+		if ((st_T_lo == S_PLANE) && (p_step_T_lo == 4'd2) && fa_o_pl_lo) T1_lo <= fa_r[15:0];
 
-			if ((st_T_lo == S_PLANE) && ((p_step_T_lo == 4'd3) || (p_step_T_lo == 4'd7) || (p_step_T_lo == 4'd11)) && fm_o_pl_lo)
-				T2_lo <= fm_r[15:0];
-		end
+		if ((st_T_lo == S_PLANE) && ((p_step_T_lo == 4'd3) || (p_step_T_lo == 4'd7) || (p_step_T_lo == 4'd11)) && fm_o_pl_lo)
+			T2_lo <= fm_r[15:0];
 	end
 
 	always @(posedge clk) begin
-		if (rst_n_setup) begin
-			if ((st_T_hi == S_PLANE) && (p_step_T_hi == 4'd1) && fa_o_pl_hi) T0_hi <= fa_r[31:16];
-			else if ((st_T_hi == S_BIAS) && (seq_T_hi == 5'd2) && fm_o_pl_hi) T0_hi <= fm_r[31:16];
+		if ((st_T_hi == S_PLANE) && (p_step_T_hi == 4'd1) && fa_o_pl_hi) T0_hi <= fa_r[31:16];
+		else if ((st_T_hi == S_BIAS) && (seq_T_hi == 5'd2) && fm_o_pl_hi) T0_hi <= fm_r[31:16];
 
-			if ((st_T_hi == S_PLANE) && (p_step_T_hi == 4'd2) && fa_o_pl_hi) T1_hi <= fa_r[31:16];
+		if ((st_T_hi == S_PLANE) && (p_step_T_hi == 4'd2) && fa_o_pl_hi) T1_hi <= fa_r[31:16];
 
-			if ((st_T_hi == S_PLANE) && ((p_step_T_hi == 4'd3) || (p_step_T_hi == 4'd7) || (p_step_T_hi == 4'd11)) && fm_o_pl_hi)
-				T2_hi <= fm_r[31:16];
-		end
+		if ((st_T_hi == S_PLANE) && ((p_step_T_hi == 4'd3) || (p_step_T_hi == 4'd7) || (p_step_T_hi == 4'd11)) && fm_o_pl_hi)
+			T2_hi <= fm_r[31:16];
 	end
 
 	/* 7. Divider Operands fd_b_lo/hi (split into 8-bit halves so st_fdb_* fanout <= 16) */
 	always @(posedge clk) begin
-		if (rst_n_setup) begin
-			case (st_fdb_lo0)
-			S_IDLE:
-				if (!in_raw && in_valid_fdb_lo) fd_b_lo[7:0] <= in_tri[103:96];
-			S_PERSP_W:
-				if (fd_o_fdb_lo) begin
-					if (seq_fdb_lo == 5'd0) fd_b_lo[7:0] <= R_lo[7][7:0];
-					else if (seq_fdb_lo == 5'd1) fd_b_lo[7:0] <= R_lo[11][7:0];
-				end
-			S_EDGE:
-				fd_b_lo[7:0] <= R_lo[44][7:0];
-			default: ;
-			endcase
+		case (st_fdb_lo0)
+		S_IDLE:
+			if (!in_raw && in_valid_fdb_lo) fd_b_lo[7:0] <= in_tri[103:96];
+		S_PERSP_W:
+			if (fd_o_fdb_lo) begin
+				if (seq_fdb_lo == 5'd0) fd_b_lo[7:0] <= R_lo[7][7:0];
+				else if (seq_fdb_lo == 5'd1) fd_b_lo[7:0] <= R_lo[11][7:0];
+			end
+		S_EDGE:
+			fd_b_lo[7:0] <= R_lo[44][7:0];
+		default: ;
+		endcase
 
-			case (st_fdb_lo1)
-			S_IDLE:
-				if (!in_raw && in_valid_fdb_lo) fd_b_lo[15:8] <= in_tri[111:104];
-			S_PERSP_W:
-				if (fd_o_fdb_lo) begin
-					if (seq_fdb_lo == 5'd0) fd_b_lo[15:8] <= R_lo[7][15:8];
-					else if (seq_fdb_lo == 5'd1) fd_b_lo[15:8] <= R_lo[11][15:8];
-				end
-			S_EDGE:
-				fd_b_lo[15:8] <= R_lo[44][15:8];
-			default: ;
-			endcase
-		end
+		case (st_fdb_lo1)
+		S_IDLE:
+			if (!in_raw && in_valid_fdb_lo) fd_b_lo[15:8] <= in_tri[111:104];
+		S_PERSP_W:
+			if (fd_o_fdb_lo) begin
+				if (seq_fdb_lo == 5'd0) fd_b_lo[15:8] <= R_lo[7][15:8];
+				else if (seq_fdb_lo == 5'd1) fd_b_lo[15:8] <= R_lo[11][15:8];
+			end
+		S_EDGE:
+			fd_b_lo[15:8] <= R_lo[44][15:8];
+		default: ;
+		endcase
 	end
 
 	always @(posedge clk) begin
-		if (rst_n_setup) begin
-			case (st_fdb_hi0)
-			S_IDLE:
-				if (!in_raw && in_valid_fdb_hi) fd_b_hi[7:0] <= in_tri[119:112];
-			S_PERSP_W:
-				if (fd_o_fdb_hi) begin
-					if (seq_fdb_hi == 5'd0) fd_b_hi[7:0] <= R_hi[7][7:0];
-					else if (seq_fdb_hi == 5'd1) fd_b_hi[7:0] <= R_hi[11][7:0];
-				end
-			S_EDGE:
-				fd_b_hi[7:0] <= R_hi[44][7:0];
-			default: ;
-			endcase
+		case (st_fdb_hi0)
+		S_IDLE:
+			if (!in_raw && in_valid_fdb_hi) fd_b_hi[7:0] <= in_tri[119:112];
+		S_PERSP_W:
+			if (fd_o_fdb_hi) begin
+				if (seq_fdb_hi == 5'd0) fd_b_hi[7:0] <= R_hi[7][7:0];
+				else if (seq_fdb_hi == 5'd1) fd_b_hi[7:0] <= R_hi[11][7:0];
+			end
+		S_EDGE:
+			fd_b_hi[7:0] <= R_hi[44][7:0];
+		default: ;
+		endcase
 
-			case (st_fdb_hi1)
-			S_IDLE:
-				if (!in_raw && in_valid_fdb_hi) fd_b_hi[15:8] <= in_tri[127:120];
-			S_PERSP_W:
-				if (fd_o_fdb_hi) begin
-					if (seq_fdb_hi == 5'd0) fd_b_hi[15:8] <= R_hi[7][15:8];
-					else if (seq_fdb_hi == 5'd1) fd_b_hi[15:8] <= R_hi[11][15:8];
-				end
-			S_EDGE:
-				fd_b_hi[15:8] <= R_hi[44][15:8];
-			default: ;
-			endcase
-		end
+		case (st_fdb_hi1)
+		S_IDLE:
+			if (!in_raw && in_valid_fdb_hi) fd_b_hi[15:8] <= in_tri[127:120];
+		S_PERSP_W:
+			if (fd_o_fdb_hi) begin
+				if (seq_fdb_hi == 5'd0) fd_b_hi[15:8] <= R_hi[7][15:8];
+				else if (seq_fdb_hi == 5'd1) fd_b_hi[15:8] <= R_hi[11][15:8];
+			end
+		S_EDGE:
+			fd_b_hi[15:8] <= R_hi[44][15:8];
+		default: ;
+		endcase
 	end
 
 	/* 8. Depth Bias Clamp Pipeline Registers (fanout <= 16 per enable buffer) */
-	wire bias_s5_raw = rst_n_setup && (st_T_lo == S_BIAS) && (seq_T_lo == 5'd5) && fa_o_c_v;
+	wire bias_s5_raw = (st_T_lo == S_BIAS) && (seq_T_lo == 5'd5) && fa_o_c_v;
 	 wire we_bias_s5_lo, we_bias_s5_hi, we_bias_s5_flg;
 	`RX_BUF1(u_wbs5_l, bias_s5_raw, we_bias_s5_lo);
 	`RX_BUF1(u_wbs5_h, bias_s5_raw, we_bias_s5_hi);
@@ -1794,10 +1795,7 @@ module atg_rx_setup #(
 	(* keep = "true" *) reg [3:0] st_next;
 	always @(*) begin
 		st_next = st;
-		if (rst_setup_high) begin
-			st_next = S_IDLE;
-		end else begin
-			case (st)
+		case (st)
 			S_IDLE:
 				if (we_idle_fsm) st_next = in_raw ? S_EDGE : S_PERSP_W;
 			S_PERSP_W:
@@ -1829,16 +1827,12 @@ module atg_rx_setup #(
 				if (sp_valid && sp_ready) st_next = more ? S_EDGE : S_IDLE;
 			default: ;
 			endcase
-		end
 	end
 
 	(* keep = "true" *) reg [2:0] seq_next_lo;
 	always @(*) begin
 		seq_next_lo = seq_step[2:0];
-		if (rst_setup_high) begin
-			seq_next_lo = 3'd0;
-		end else begin
-			case (st_rep_d)
+		case (st_rep_d)
 			S_IDLE:
 				seq_next_lo = 3'd0;
 			S_PERSP_W:
@@ -1885,16 +1879,12 @@ module atg_rx_setup #(
 				endcase
 			default: ;
 			endcase
-		end
 	end
 
 	(* keep = "true" *) reg [4:3] seq_next_hi;
 	always @(*) begin
 		seq_next_hi = seq_step_hi[4:3];
-		if (rst_setup_high) begin
-			seq_next_hi = 2'd0;
-		end else begin
-			case (st_rep_f)
+		case (st_rep_f)
 			S_IDLE:
 				seq_next_hi = 2'd0;
 			S_PERSP_W:
@@ -1934,7 +1924,6 @@ module atg_rx_setup #(
 				endcase
 			default: ;
 			endcase
-		end
 	end
 	(* keep = "true" *) wire [4:0] seq_next = {seq_next_hi, seq_next_lo};
 
@@ -1961,26 +1950,22 @@ module atg_rx_setup #(
 	(* keep = "true" *) reg [3:0] p_step_next;
 	always @(*) begin
 		p_step_next = p_step_ctrl;
-		if (rst_setup_high) begin
-			p_step_next = 4'd0;
-		end else begin
-			case (st_rep_f)
-			S_PLANE_DIV:
-				if ((kind != 2'd0) && fd_o_plane_ctrl)
-					p_step_next = 4'd0;
-			S_PLANE:
-				case (p_step_ctrl)
-				4'd0: p_step_next = 4'd1;
-				4'd1, 4'd2, 4'd5, 4'd9, 4'd13:
-					if (fa_o_c_ps) p_step_next = p_step_ctrl_inc;
-				4'd3, 4'd4, 4'd6, 4'd7, 4'd8, 4'd10, 4'd11, 4'd12:
-					if (fm_o_c_ps) p_step_next = p_step_ctrl_inc;
-				default:
-					if (fa_o_c_ps) p_step_next = 4'd0;
-				endcase
-			default: ;
+		case (st_rep_f)
+		S_PLANE_DIV:
+			if ((kind != 2'd0) && fd_o_plane_ctrl)
+				p_step_next = 4'd0;
+		S_PLANE:
+			case (p_step_ctrl)
+			4'd0: p_step_next = 4'd1;
+			4'd1, 4'd2, 4'd5, 4'd9, 4'd13:
+				if (fa_o_c_ps) p_step_next = p_step_ctrl_inc;
+			4'd3, 4'd4, 4'd6, 4'd7, 4'd8, 4'd10, 4'd11, 4'd12:
+				if (fm_o_c_ps) p_step_next = p_step_ctrl_inc;
+			default:
+				if (fa_o_c_ps) p_step_next = 4'd0;
 			endcase
-		end
+		default: ;
+		endcase
 	end
 
 	always @(posedge clk or posedge rst_setup_high) begin
