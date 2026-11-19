@@ -1,0 +1,21 @@
+# Amaterrace GPU
+# Copyright (C) 2026 Awe Morris
+# SPDX-License-Identifier: Zlib
+#
+# The Mesa release the GHCI driver is built against.  The glue patches in
+# patches/$(MESA_VERSION)/ are for this release only; a new release needs
+# its own patch directory.  The checksum is the one published in the
+# release notes (docs/relnotes/<version>.rst on docs.mesa3d.org).
+
+MESA_VERSION := 26.3.1
+MESA_SHA256 := 4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961
+MESA_URL := https://archive.mesa3d.org/mesa-$(MESA_VERSION).tar.xz
+
+# Mesa's Wayland platform needs wayland-protocols 1.49 (a meson subproject),
+# whose headers need a wayland-scanner that knows the DTD of wayland 1.25
+# (the "frozen" attribute); Debian 13 has 1.23.  The build makes this
+# scanner for the build host only.  The checksum is the release's
+# wayland-1.25.0.tar.xz.sha256sum.
+WAYLAND_VERSION := 1.25.0
+WAYLAND_SHA256 := c065f040afdff3177680600f249727e41a1afc22fccf27222f15f5306faa1f03
+WAYLAND_URL := https://gitlab.freedesktop.org/wayland/wayland/-/releases/$(WAYLAND_VERSION)/downloads/wayland-$(WAYLAND_VERSION).tar.xz

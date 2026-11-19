@@ -47,7 +47,7 @@ BOARD_SRC := boards/$(BOARD)/$(TOP).v $(sort $(wildcard boards/$(BOARD)/lib/*.v)
 XDC := boards/$(BOARD)/$(TOP).xdc
 FW_IMAGES := $(wildcard fw/cp/images/*.hex)
 
-.PHONY: help menuconfig preset-minimal preset-balanced preset-high-perf test-ghci-presets fw lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
+.PHONY: help menuconfig mesa linux-module preset-minimal preset-balanced preset-high-perf test-ghci-presets fw lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
 .DEFAULT_GOAL := help
 
 help:
@@ -58,6 +58,8 @@ help:
 	@echo '  make preset-balanced   apply balanced preset (default)'
 	@echo '  make preset-high-perf  apply high-performance preset'
 	@echo '  make fw                build CP firmware images (fw/cp)'
+	@echo '  make mesa              build Mesa with the GHCI Vulkan driver and Zink (drivers/mesa)'
+	@echo '  make linux-module      build the GHCI Linux kernel module (drivers/linux)'
 	@echo '  make lint              Verilator lint of every module and top (mk/lint.sh)'
 	@echo '  make sim          the iverilog testbenches (sim/run.sh, about 17 minutes)'
 	@echo '  make sim-quick    the short run of the testbenches (sim/run.sh -q, a few minutes)'
@@ -77,6 +79,12 @@ help:
 
 menuconfig:
 	python3 mk/menuconfig.py
+
+mesa:
+	$(MAKE) -C drivers/mesa
+
+linux-module:
+	$(MAKE) -C drivers/linux
 
 fw:
 	$(MAKE) -C fw/cp

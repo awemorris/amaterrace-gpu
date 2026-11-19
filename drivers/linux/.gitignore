@@ -1,0 +1,11 @@
+# Kernel build outputs (the module is built in this directory).
+*.o
+*.ko
+*.mod
+*.mod.c
+*.cmd
+.*.cmd
+.*.d
+Module.symvers
+modules.order
+.module-common.o

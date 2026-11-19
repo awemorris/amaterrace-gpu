@@ -1,0 +1,49 @@
+Register the GHCI Vulkan driver and the GHCI tools with Mesa's build.
+
+The driver's sources live outside the Mesa tree; the build links them in
+as src/ghci (drivers/mesa/Makefile in amaterrace-gpu).
+
+SPDX-License-Identifier: MIT
+---
+--- a/meson.build
++++ b/meson.build
+@@ -314,6 +314,7 @@
+ with_asahi_vk = _vulkan_drivers.contains('asahi')
+ with_gfxstream_vk = _vulkan_drivers.contains('gfxstream')
+ with_kosmickrisp_vk = _vulkan_drivers.contains('kosmickrisp')
++with_ghci_vk = _vulkan_drivers.contains('ghci')
+ with_any_vk = _vulkan_drivers.length() != 0
+ 
+ with_llvm = with_llvm \
+--- a/meson.options
++++ b/meson.options
+@@ -195,7 +195,7 @@
+   choices : ['auto', 'amd', 'broadcom', 'freedreno', 'intel', 'intel_hasvk',
+              'panfrost', 'swrast', 'virtio', 'imagination',
+              'microsoft-experimental', 'nouveau', 'asahi', 'gfxstream',
+-             'kosmickrisp', 'all'],
++             'kosmickrisp', 'ghci', 'all'],
+   description : 'List of vulkan drivers to build. If this is set to auto ' +
+                 'all drivers applicable to the target OS/architecture ' +
+                 'will be built'
+@@ -552,7 +552,7 @@
+   type : 'array',
+   value : [],
+   choices : ['amd', 'asahi', 'dlclose-skip', 'drm-shim', 'etnaviv', 'freedreno',  
+-             'gamma', 'glsl', 'imagination', 'intel', 'intel-ui', 'lima', 'nir',
++             'gamma', 'ghci', 'glsl', 'imagination', 'intel', 'intel-ui', 'lima', 'nir',
+              'nouveau', 'panfrost', 'zink', 'all'],
+   description : 'List of tools to build. (Note: `intel-ui` selects `intel`)',
+ )
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -124,6 +124,9 @@
+ if with_kosmickrisp_vk
+   subdir('kosmickrisp')
+ endif
++if with_ghci_vk or with_tools.contains('ghci')
++  subdir('ghci')
++endif
+ if with_gallium
+   subdir('mesa')
+ endif
