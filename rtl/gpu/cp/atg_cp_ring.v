@@ -773,7 +773,7 @@ module atg_cp_ring #(
 	end
 	wire [22:0] rem_sub_a = nwords_act_r;
 `else
-	wire [21:0] avail_check = avail;
+	wire [21:0] avail_check = avail_r;
 	wire [22:0] rem_sub_a = nwords_act;
 `endif
 
@@ -815,8 +815,20 @@ module atg_cp_ring #(
 	wire h_bad_avail = ({7'd0, h_n} >= {1'b0, avail_check});
 	wire h_bad = h_bad_words || h_bad_avail;
 `else
-	wire h_novf_words = h_end > nwords_act;
-	wire h_bad = h_novf_words || ({7'd0, h_n} >= {1'b0, avail_check});
+	wire rem_hi_nz   = |rem_words_r[22:16];
+	wire rem_hi8_nz  = |rem_words_r[22:8];
+	wire av_hi_nz    = |avail_check[21:16];
+	wire av_hi8_nz   = |avail_check[21:8];
+	wire h_bad_ghci_w  = !rem_hi8_nz && ({1'b0, ghci_n} > {1'b0, rem_words_r[7:0]});
+	wire h_bad_c2_w    = !rem_hi_nz  && (hdr_data[15:0] > rem_words_r[15:0]);
+	wire h_bad_lo_w    = !rem_hi8_nz && (hdr_data[7:0] > rem_words_r[7:0]);
+	wire h_bad_ghci_av = !av_hi8_nz  && ({1'b0, ghci_n} >= {1'b0, avail_check[7:0]});
+	wire h_bad_c2_av   = !av_hi_nz   && (hdr_data[15:0] >= avail_check[15:0]);
+	wire h_bad_lo_av   = !av_hi8_nz  && (hdr_data[7:0] >= avail_check[7:0]);
+	wire h_novf_words  = rem_words_bo_r ||
+		(is_ghci ? h_bad_ghci_w : (hdr_data[31] ? h_bad_c2_w : h_bad_lo_w));
+	wire h_bad_avail_c = is_ghci ? h_bad_ghci_av : (hdr_data[31] ? h_bad_c2_av : h_bad_lo_av);
+	wire h_bad = h_novf_words || h_bad_avail_c;
 `endif
 	wire h_novf = (h_class == 2'd2) && (CLASS_V == 0);
 	wire [21:0] p_end = p_end_s[21:0] & mask_act;
@@ -1607,8 +1619,8 @@ module atg_cp_ring #(
 				end
 `else
 				if (rsp_valid && (rsp_tag == 8'd1)) begin
+					buf_data[pf_idx] <= rsp_rdata;
 					if (!rsp_error) begin
-						buf_data[pf_idx]  <= rsp_rdata;
 						buf_tag[pf_idx]   <= pf_line;
 						buf_valid[pf_idx] <= 1'b1;
 					end
@@ -1818,6 +1830,7 @@ module atg_cp_ring #(
 				end
 `else
 				if (rsp_valid && (rsp_tag == 8'd0)) begin
+					buf_data[want_idx] <= rsp_rdata;
 					if (rsp_error) begin
 						f_pulse <= 1'b1;
 						f_kind  <= GHCI_FAULT_KIND_AXI_ERROR;
@@ -1826,7 +1839,6 @@ module atg_cp_ring #(
 					end else begin
 						buf_valid[want_idx] <= 1'b1;
 						buf_tag[want_idx]   <= want_line;
-						buf_data[want_idx]  <= rsp_rdata;
 						st <= ret_n ? R_N : R_HDR;
 					end
 				end

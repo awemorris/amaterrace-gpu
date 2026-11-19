@@ -522,13 +522,14 @@ module atg_top #(
 	assign j_busy = j_busy_q;
 `else
 	wire a_busy = a_reg_wr || a_reg_rd;
-	wire j_go = HAS_JTAG != 0 && !a_busy;
-	assign reg_wr = a_reg_wr || (j_go && j_wr);
-	assign reg_waddr = a_busy ? a_reg_waddr : j_waddr;
-	assign reg_wdata = a_busy ? a_reg_wdata : j_wdata;
-	assign reg_wstrb = a_busy ? a_reg_wstrb : j_wstrb;
-	assign reg_rd = a_reg_rd || (j_go && j_rd);
-	assign reg_raddr = a_busy ? a_reg_raddr : j_raddr;
+	wire j_go_wr = HAS_JTAG != 0 && !a_reg_wr;
+	wire j_go_rd = HAS_JTAG != 0 && !a_reg_rd;
+	assign reg_wr = a_reg_wr || (j_go_wr && j_wr);
+	assign reg_waddr = a_reg_wr ? a_reg_waddr : j_waddr;
+	assign reg_wdata = a_reg_wr ? a_reg_wdata : j_wdata;
+	assign reg_wstrb = a_reg_wr ? a_reg_wstrb : j_wstrb;
+	assign reg_rd = a_reg_rd || (j_go_rd && j_rd);
+	assign reg_raddr = a_reg_rd ? a_reg_raddr : j_raddr;
 	assign j_rdata = reg_rdata;
 	assign j_busy = a_busy;
 `endif

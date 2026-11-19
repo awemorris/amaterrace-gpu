@@ -255,7 +255,14 @@ module atg_cp_ctl #(
 	end
 	wire wdt_fire = wdt_fire_r;
 `else
-	wire wdt_fire = ctrl_wdt_en && cmd_active && wdt_count >= wdt_cycles && st != S_FAULTED;
+	reg wdt_fire_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			wdt_fire_r <= 1'b0;
+		else
+			wdt_fire_r <= ctrl_wdt_en && cmd_active && (wdt_count >= wdt_cycles) && (st != S_FAULTED);
+	end
+	wire wdt_fire = wdt_fire_r;
 `endif
 
 	/* The first fault of this cycle. */

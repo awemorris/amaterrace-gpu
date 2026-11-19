@@ -278,6 +278,7 @@ module atg_mc_tree #(
 	end
 	endgenerate
 
+`ifdef SYNTH_KINTEX7
 	reg locked;
 	reg [CW-1:0] locked_client;
 	reg [CW-1:0] rr_ptr;
@@ -324,7 +325,6 @@ module atg_mc_tree #(
 	wire skid_in_ready;
 	wire skid_fire = grant_v && skid_in_ready;
 
-`ifdef SYNTH_KINTEX7
 	wire [FW-1:0] grant_data;
 	reg grant_last_mux;
 	integer mxi;
@@ -365,23 +365,6 @@ module atg_mc_tree #(
 			assign grant_data[gs_m*16 +: 16] = slice_mux;
 		end
 	endgenerate
-`else
-	reg [FW-1:0] grant_data_mux;
-	reg grant_last_mux;
-	integer mxi;
-	always @(*) begin
-		grant_data_mux = {FW{1'b0}};
-		grant_last_mux = 1'b0;
-		for (mxi = 0; mxi < NX; mxi = mxi + 1) begin
-			if (grant_idx == mxi[CW-1:0]) begin
-				grant_data_mux = leaf_req_data[mxi*FW +: FW];
-				grant_last_mux = leaf_req_last[mxi];
-			end
-		end
-	end
-	wire [FW-1:0] grant_data = grant_data_mux;
-	wire grant_last = grant_last_mux;
-`endif
 
 	generate
 	for (j = 0; j < NX; j = j + 1) begin : g_rdy
@@ -408,6 +391,92 @@ module atg_mc_tree #(
 			end
 		end
 	end
+`else
+	reg locked;
+	reg [NX-1:0] locked_oh;
+	reg [NX-1:0] rr_ge_r;
+
+	wire [NX-1:0] norm_hi = norm_req & rr_ge_r;
+	wire [NX-1:0] prio_1h, norm_hi_1h, norm_lo_1h;
+
+	generate
+		for (j = 0; j < NX; j = j + 1) begin : g_arb_1h
+			if (j == 0) begin : g_j0
+				assign prio_1h[0]    = prio_req[0];
+				assign norm_hi_1h[0] = norm_hi[0];
+				assign norm_lo_1h[0] = norm_req[0];
+			end else begin : g_jn
+				assign prio_1h[j]    = prio_req[j] && !(|prio_req[j-1:0]);
+				assign norm_hi_1h[j] = norm_hi[j]  && !(|norm_hi[j-1:0]);
+				assign norm_lo_1h[j] = norm_req[j] && !(|norm_req[j-1:0]);
+			end
+		end
+	endgenerate
+
+	wire has_prio    = |prio_req;
+	wire has_norm_hi = |norm_hi;
+	wire has_norm_lo = |norm_req;
+
+	wire [NX-1:0] new_oh   = has_prio ? prio_1h : (has_norm_hi ? norm_hi_1h : norm_lo_1h);
+	wire [NX-1:0] grant_oh = locked ? locked_oh : new_oh;
+	wire grant_v = locked ? (|(locked_oh & leaf_req_valid)) : (has_prio || has_norm_lo);
+
+	wire [NX-1:0] next_rr_ge;
+	generate
+		for (j = 0; j < NX; j = j + 1) begin : g_nrr
+			if (j == 0) begin : g_nrr0
+				assign next_rr_ge[0] = grant_oh[NX-1];
+			end else begin : g_nrrn
+				assign next_rr_ge[j] = grant_oh[NX-1] || (|grant_oh[j-1:0]);
+			end
+		end
+	endgenerate
+
+	wire skid_in_ready;
+	wire skid_fire = grant_v && skid_in_ready;
+
+	wire [FW-1:0] gd_term [0:NX-1];
+	wire [FW-1:0] gd_accum [0:NX-1];
+	generate
+		for (j = 0; j < NX; j = j + 1) begin : g_gd
+			assign gd_term[j] = {FW{grant_oh[j]}} & leaf_req_data[j*FW +: FW];
+			if (j == 0) begin : g_gd0
+				assign gd_accum[0] = gd_term[0];
+			end else begin : g_gdn
+				assign gd_accum[j] = gd_accum[j-1] | gd_term[j];
+			end
+		end
+	endgenerate
+	wire [FW-1:0] grant_data = gd_accum[NX-1];
+
+	wire grant_last = |(grant_oh & leaf_req_last);
+
+	generate
+		for (j = 0; j < NX; j = j + 1) begin : g_rdy
+			assign leaf_req_ready[j] = grant_oh[j] && (!locked || leaf_req_valid[j]) && skid_in_ready;
+		end
+	endgenerate
+
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			locked    <= 1'b0;
+			locked_oh <= {NX{1'b0}};
+			rr_ge_r   <= {NX{1'b1}};
+		end else if (flush) begin
+			locked    <= 1'b0;
+			locked_oh <= {NX{1'b0}};
+			rr_ge_r   <= {NX{1'b1}};
+		end else if (skid_fire) begin
+			if (!grant_last) begin
+				locked    <= 1'b1;
+				locked_oh <= grant_oh;
+			end else begin
+				locked  <= 1'b0;
+				rr_ge_r <= next_rr_ge;
+			end
+		end
+	end
+`endif
 
 	/* Flat crossbar request path with skid buffer */
 `ifdef SYNTH_KINTEX7
@@ -535,7 +604,11 @@ module atg_mc_tree #(
 	end
 	endgenerate
 
+`ifdef SYNTH_KINTEX7
 	wire unused_co = &{1'b0, rr_co, leaf_rsp_ready};
+`else
+	wire unused_co = &{1'b0, leaf_rsp_ready};
+`endif
 endmodule
 
 `default_nettype wire

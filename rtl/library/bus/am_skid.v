@@ -37,36 +37,82 @@ module am_skid #(
 	(* max_fanout = 24 *) reg [WIDTH-1:0] skid_data;
 	reg skid_valid;
 
-	wire load_out = skid_valid ? out_ready : (in_valid && (out_ready || !out_valid));
-	wire [WIDTH-1:0] next_out = skid_valid ? skid_data : in_data;
+	localparam integer SL_W = 16;
+	localparam integer FULL_SL = (WIDTH > 32) ? (WIDTH / SL_W) : 0;
+	localparam integer REM_W   = (WIDTH > 32) ? (WIDTH - FULL_SL * SL_W) : WIDTH;
+	localparam integer SKID_SL = FULL_SL + ((REM_W > 0) ? 1 : 0);
 
+	(* keep = "true", dont_touch = "true" *) reg [SKID_SL-1:0] skid_valid_sl;
+	(* keep = "true", dont_touch = "true" *) reg [SKID_SL-1:0] out_valid_sl;
+	(* keep = "true", dont_touch = "true" *) reg [SKID_SL-1:0] in_ready_sl;
+
+	wire [SKID_SL-1:0] load_out_v;
+	wire [SKID_SL-1:0] load_skid_v;
+	wire [WIDTH-1:0]   next_out_v;
+
+	genvar gs;
+	generate
+		for (gs = 0; gs < FULL_SL; gs = gs + 1) begin : g_full
+			assign load_out_v[gs] = skid_valid_sl[gs] ? out_ready :
+				(in_valid && (out_ready || !out_valid_sl[gs]));
+			assign load_skid_v[gs] = in_valid && in_ready_sl[gs];
+			assign next_out_v[gs*SL_W +: SL_W] = skid_valid_sl[gs] ?
+				skid_data[gs*SL_W +: SL_W] : in_data[gs*SL_W +: SL_W];
+		end
+		if (REM_W > 0) begin : g_rem
+			localparam integer R0 = FULL_SL * SL_W;
+			localparam integer RS = FULL_SL;
+			assign load_out_v[RS] = skid_valid_sl[RS] ? out_ready :
+				(in_valid && (out_ready || !out_valid_sl[RS]));
+			assign load_skid_v[RS] = in_valid && in_ready_sl[RS];
+			assign next_out_v[R0 +: REM_W] = skid_valid_sl[RS] ?
+				skid_data[R0 +: REM_W] : in_data[R0 +: REM_W];
+		end
+	endgenerate
+
+	integer gi;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			in_ready   <= 1'b1;
-			out_valid  <= 1'b0;
-			out_data   <= {WIDTH{1'b0}};
-			skid_valid <= 1'b0;
-			skid_data  <= {WIDTH{1'b0}};
+			in_ready      <= 1'b1;
+			out_valid     <= 1'b0;
+			out_data      <= {WIDTH{1'b0}};
+			skid_valid    <= 1'b0;
+			skid_data     <= {WIDTH{1'b0}};
+			skid_valid_sl <= {SKID_SL{1'b0}};
+			out_valid_sl  <= {SKID_SL{1'b0}};
+			in_ready_sl   <= {SKID_SL{1'b1}};
 		end else begin
 			if (skid_valid) begin
 				if (out_ready) begin
-					out_valid  <= 1'b1;
-					skid_valid <= 1'b0;
-					in_ready   <= 1'b1;
+					out_valid     <= 1'b1;
+					skid_valid    <= 1'b0;
+					in_ready      <= 1'b1;
+					out_valid_sl  <= {SKID_SL{1'b1}};
+					skid_valid_sl <= {SKID_SL{1'b0}};
+					in_ready_sl   <= {SKID_SL{1'b1}};
 				end
 			end else begin
 				if (out_ready || !out_valid) begin
-					out_valid <= in_valid;
+					out_valid    <= in_valid;
+					out_valid_sl <= {SKID_SL{in_valid}};
 				end else if (in_valid && in_ready) begin
-					skid_valid <= 1'b1;
-					in_ready   <= 1'b0;
+					skid_valid    <= 1'b1;
+					in_ready      <= 1'b0;
+					skid_valid_sl <= {SKID_SL{1'b1}};
+					in_ready_sl   <= {SKID_SL{1'b0}};
 				end
 			end
-			if (load_out) begin
-				out_data <= next_out;
+			for (gi = 0; gi < FULL_SL; gi = gi + 1) begin
+				if (load_out_v[gi])
+					out_data[gi*SL_W +: SL_W] <= next_out_v[gi*SL_W +: SL_W];
+				if (load_skid_v[gi])
+					skid_data[gi*SL_W +: SL_W] <= in_data[gi*SL_W +: SL_W];
 			end
-			if (in_valid && in_ready) begin
-				skid_data <= in_data;
+			if (REM_W > 0) begin
+				if (load_out_v[FULL_SL])
+					out_data[FULL_SL*SL_W +: REM_W] <= next_out_v[FULL_SL*SL_W +: REM_W];
+				if (load_skid_v[FULL_SL])
+					skid_data[FULL_SL*SL_W +: REM_W] <= in_data[FULL_SL*SL_W +: REM_W];
 			end
 		end
 	end
