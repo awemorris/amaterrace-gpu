@@ -424,8 +424,14 @@ module atg_top #(
 	localparam NCLIENT = C_SU + 2 * NSU;
 	localparam [NCLIENT-1:0] HIGH = {{(NCLIENT-1){1'b0}}, 1'b1} |
 		({{(NCLIENT-1){1'b0}}, HAS_EXT} << C_EXT);
-	localparam LA_W = 32 - LINE_SHIFT;
+	localparam UNIT_ADDR_W = (HAS_HW_WALKER != 0) ? VA_BITS : ((VA_BITS < 32) ? 32 : VA_BITS);
+	localparam MC_ADDR_W = PA_BITS;
+	localparam UNIT_LA_W = UNIT_ADDR_W - LINE_SHIFT;
+	localparam MC_LA_W = MC_ADDR_W - LINE_SHIFT;
+	localparam LA_W = MC_LA_W;
 	localparam LINE_BITS = LINE_BYTES * 8;
+	localparam [63:0] P_LOCAL_BASE_64 = {32'd0, LOCAL_BASE};
+	localparam [63:0] P_LOCAL_BYTES_64 = {32'd0, LOCAL_BYTES};
 	wire unused_addr_params = &{1'b0, VA_BITS[15:0], PA_BITS[15:0]};
 
 	/* The register bus. */
@@ -678,12 +684,12 @@ module atg_top #(
 	wire l2_flush;
 	wire l2_flush_done;
 	wire l2_idle;
-	wire [31:0] aperture_base;
-	wire [31:0] aperture_limit;
+	wire [MC_ADDR_W-1:0] aperture_base;
+	wire [MC_ADDR_W-1:0] aperture_limit;
 	wire mc_idle;
 	wire mc_fault;
 	wire [7:0] mc_fault_client;
-	wire [31:0] mc_fault_addr;
+	wire [MC_ADDR_W-1:0] mc_fault_addr;
 	wire mc_fault_write;
 	/*
 	 * The MC's clients whose requests unit_idle counts: all but the CP's
@@ -702,8 +708,9 @@ module atg_top #(
 	wire [7:0] mc_fault_req_tag;
 	wire [NCLIENT-1:0] c_req_chk, c_req_tbl;
 	wire [NCLIENT*6-1:0] c_req_slot;
-	wire [31:0] prot_tbase, prot_inv_n;
-	wire [19:0] prot_inv_g;
+	wire [MC_ADDR_W-1:0] prot_tbase;
+	wire [31:0] prot_inv_n;
+	wire [MC_ADDR_W-13:0] prot_inv_g;
 	wire prot_inv_valid, prot_gw_valid;
 	wire [PROT_GIDX_W-1:0] prot_gw_idx;
 	wire [49:0] prot_gw_data;
@@ -774,7 +781,7 @@ module atg_top #(
 	assign occ_clear = cp_occ_clear || prot_sw_inv;
 
 	atg_cp #(
-		.ADDR_W(32),
+		.ADDR_W(MC_ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
 		.GCLK_HZ(GCLK_HZ),
@@ -975,8 +982,11 @@ module atg_top #(
 
 	generate
 	if (HAS_BLT != 0) begin : gen_blt
+		wire [UNIT_LA_W-1:0] blt_req_line;
+		wire [63:0] blt_req_line64 = {{(64-UNIT_LA_W){1'b0}}, blt_req_line};
+		assign c_req_line[1*LA_W +: LA_W] = blt_req_line64[LA_W-1:0];
 		atg_blt #(
-			.ADDR_W(32),
+			.ADDR_W(UNIT_ADDR_W),
 			.LINE_BYTES(LINE_BYTES),
 			.LINE_SHIFT(LINE_SHIFT),
 			.MS4(MS4),
@@ -997,7 +1007,7 @@ module atg_top #(
 			.req_valid(c_req_valid[1]),
 			.req_ready(c_req_ready[1]),
 			.req_write(c_req_write[1]),
-			.req_line(c_req_line[1*LA_W +: LA_W]),
+			.req_line(blt_req_line),
 			.req_be(c_req_be[1*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[1*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[1*8 +: 8]),
@@ -1030,9 +1040,9 @@ module atg_top #(
 	end
 	endgenerate
 
-	wire [31:0] mc_awaddr, mc_araddr;
-	assign m_awaddr = { 32'd0, mc_awaddr };
-	assign m_araddr = { 32'd0, mc_araddr };
+	wire [MC_ADDR_W-1:0] mc_awaddr, mc_araddr;
+	assign m_awaddr = {{(64-MC_ADDR_W){1'b0}}, mc_awaddr};
+	assign m_araddr = {{(64-MC_ADDR_W){1'b0}}, mc_araddr};
 
 	atg_mc #(
 		.NCLIENT(NCLIENT),
@@ -1043,13 +1053,14 @@ module atg_top #(
 			(HAS_DISP != 0 ? {{(NCLIENT-1){1'b0}}, 1'b1} << C_DC : {NCLIENT{1'b0}})),
 		.ROOT_CLIENT(HAS_EXT ? C_EXT : -1),
 		.ROOT_KEEP(HAS_DISP != 0 ? 1 : 0),	/* flush and axi_idle leave the DC alone */
-		.ADDR_W(32),
+		.ADDR_W(MC_ADDR_W),
+		.VRAM_AW(MC_ADDR_W),
 		.LINE_BYTES(LINE_BYTES),
 		.LINE_SHIFT(LINE_SHIFT),
 		.DATA_W(DATA_W),
 		.OUTSTANDING_LOG2(2),
-		.LOCAL_BASE(LOCAL_BASE),
-		.LOCAL_BYTES(LOCAL_BYTES),
+		.LOCAL_BASE(P_LOCAL_BASE_64[MC_ADDR_W-1:0]),
+		.LOCAL_BYTES(P_LOCAL_BYTES_64[MC_ADDR_W-1:0]),
 		.UNIT_MASK(MC_UNITS),
 		.HAS_PROT(PROT),
 		.RMW_MASK(RMW),
@@ -1148,7 +1159,7 @@ module atg_top #(
 	generate
 	if (HAS_CPU != 0) begin : g_cpu
 		atg_cpu #(
-			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.ADDR_W(MC_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.IMEM_WORDS(CPU_IMEM_WORDS), .DMEM_WORDS(CPU_DMEM_WORDS),
 			.IMEM_INIT(CPU_IMEM_INIT), .DMEM_INIT(CPU_DMEM_INIT)
 		) cpu (
@@ -1240,7 +1251,7 @@ module atg_top #(
 
 	if (PROT) begin : g_prot
 		atg_cp_prot #(
-			.ADDR_W(32), .SLOTS(PROT_SLOTS[7:0]), .GRANTS(PROT_GRANTS[15:0]),
+			.ADDR_W(MC_ADDR_W), .SLOTS(PROT_SLOTS[7:0]), .GRANTS(PROT_GRANTS[15:0]),
 			.GIDX_W(PROT_GIDX_W)
 		) prot (
 			.clk(clk), .rst_n(core_rst_n),
@@ -1286,9 +1297,9 @@ module atg_top #(
 		assign prot_sw_inv = 1'b0;
 		assign prot_scrub = 1'b0;
 		assign prot_unit = 6'd0;
-		assign prot_tbase = 32'd0;
+		assign prot_tbase = {MC_ADDR_W{1'b0}};
 		assign prot_inv_valid = 1'b0;
-		assign prot_inv_g = 20'd0;
+		assign prot_inv_g = {(MC_ADDR_W-12){1'b0}};
 		assign prot_inv_n = 32'd0;
 		assign prot_gw_valid = 1'b0;
 		assign prot_gw_idx = {PROT_GIDX_W{1'b0}};
@@ -1395,7 +1406,10 @@ module atg_top #(
 
 	generate
 	if (HAS_VF != 0) begin : g_vf
-		atg_vf #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) vf (
+		wire [UNIT_LA_W-1:0] vf_req_line;
+		wire [63:0] vf_req_line64 = {{(64-UNIT_LA_W){1'b0}}, vf_req_line};
+		assign c_req_line[C_VF*LA_W +: LA_W] = vf_req_line64[LA_W-1:0];
+		atg_vf #(.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT)) vf (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.draw_kick(draw_kick), .busy(vf_busy), .fsm(vf_fsm),
 			.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_ptbase(vl_ptbase), .vl_go(vl_go),
@@ -1404,7 +1418,7 @@ module atg_top #(
 			.prim_valid(prim_valid), .prim_ready(prim_ready), .prim_vtx(prim_vtx),
 			.prim_free(prim_free), .prim_last(prim_last),
 			.req_valid(c_req_valid[C_VF]), .req_ready(c_req_ready[C_VF]),
-			.req_write(c_req_write[C_VF]), .req_line(c_req_line[C_VF*LA_W +: LA_W]),
+			.req_write(c_req_write[C_VF]), .req_line(vf_req_line),
 			.req_be(c_req_be[C_VF*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_VF*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_VF*8 +: 8]),
@@ -1490,8 +1504,11 @@ module atg_top #(
 	end
 
 	if (HAS_TU != 0) begin : g_tu
+		wire [UNIT_LA_W-1:0] tu_req_line;
+		wire [63:0] tu_req_line64 = {{(64-UNIT_LA_W){1'b0}}, tu_req_line};
+		assign c_req_line[C_TU*LA_W +: LA_W] = tu_req_line64[LA_W-1:0];
 		atg_tu #(
-			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.ENABLE_BILINEAR(TU_BILINEAR != 0),
 			.ENABLE_FFILT(HAS_FFILT != 0),
 			.ENABLE_ETC2(HAS_ETC != 0),
@@ -1512,7 +1529,7 @@ module atg_top #(
 			.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
 			.tr_last(tr_last),
 			.req_valid(c_req_valid[C_TU]), .req_ready(c_req_ready[C_TU]),
-			.req_write(c_req_write[C_TU]), .req_line(c_req_line[C_TU*LA_W +: LA_W]),
+			.req_write(c_req_write[C_TU]), .req_line(tu_req_line),
 			.req_be(c_req_be[C_TU*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_TU*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_TU*8 +: 8]),
@@ -1531,8 +1548,11 @@ module atg_top #(
 	end
 
 	if (HAS_ROP != 0) begin : g_rop
+		wire [UNIT_LA_W-1:0] rop_req_line;
+		wire [63:0] rop_req_line64 = {{(64-UNIT_LA_W){1'b0}}, rop_req_line};
+		assign c_req_line[C_ROP*LA_W +: LA_W] = rop_req_line64[LA_W-1:0];
 		atg_rop #(
-			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.STENCIL(ROP_STENCIL),
 			.MRT_COUNT(MRT_COUNT),
 			.ENABLE_MSAA(RX_ENABLE_MSAA),
@@ -1552,7 +1572,7 @@ module atg_top #(
 			.ord_valid(ord_valid), .ord_seq(ord_seq),
 			.occ_count(occ_count), .occ_clear(occ_clear),
 			.req_valid(c_req_valid[C_ROP]), .req_ready(c_req_ready[C_ROP]),
-			.req_write(c_req_write[C_ROP]), .req_line(c_req_line[C_ROP*LA_W +: LA_W]),
+			.req_write(c_req_write[C_ROP]), .req_line(rop_req_line),
 			.req_be(c_req_be[C_ROP*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_ROP*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_ROP*8 +: 8]),
@@ -1571,7 +1591,10 @@ module atg_top #(
 	end
 
 	if (HAS_SA != 0) begin : g_sa
-		atg_sa #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NPHYS(SU_NPHYS)) sa (
+		wire [UNIT_LA_W-1:0] sa_req_line;
+		wire [63:0] sa_req_line64 = {{(64-UNIT_LA_W){1'b0}}, sa_req_line};
+		assign c_req_line[C_SA*LA_W +: LA_W] = sa_req_line64[LA_W-1:0];
+		atg_sa #(.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NPHYS(SU_NPHYS)) sa (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.hcr_we(hcr_we), .hcr_widx(hcr_widx), .hcr_wdata(hcr_wdata), .hcr_wmask(hcr_wmask),
 			.hcr_ridx(hcr_ridx), .hcr_rdata(sa_hcr_rdata),
@@ -1580,7 +1603,7 @@ module atg_top #(
 			.ctl_valid(sa_ctl_valid), .ctl_data(sa_ctl_data),
 			.qstat(sa_qstat), .sastat(sa_stat), .qtag(sa_qtag), .busy(sa_busy),
 			.req_valid(c_req_valid[C_SA]), .req_ready(c_req_ready[C_SA]),
-			.req_write(c_req_write[C_SA]), .req_line(c_req_line[C_SA*LA_W +: LA_W]),
+			.req_write(c_req_write[C_SA]), .req_line(sa_req_line),
 			.req_be(c_req_be[C_SA*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_SA*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_SA*8 +: 8]),
@@ -1610,6 +1633,7 @@ module atg_top #(
 		 * and takes its events.
 		 */
 		atg_dc #(
+			.ADDR_W(MC_ADDR_W),
 			.HAS_I2C(DC_HAS_I2C), .HAS_CURSOR(DC_HAS_CURSOR), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.FIFO_LOG2(DC_FIFO_LOG2), .PX_FMT(DC_PX_FMT), .TEST_MODE(DC_TEST_MODE)
 		) dc (
@@ -1664,7 +1688,8 @@ module atg_top #(
 		assign c_req_valid[C_EXT] = x_req_valid;
 		assign x_req_ready = c_req_ready[C_EXT];
 		assign c_req_write[C_EXT] = x_req_write;
-		assign c_req_line[C_EXT*LA_W +: LA_W] = x_req_line;
+		wire [63:0] ext_req_line64 = {{(64-(32-LINE_SHIFT)){1'b0}}, x_req_line};
+		assign c_req_line[C_EXT*LA_W +: LA_W] = ext_req_line64[LA_W-1:0];
 		assign c_req_be[C_EXT*LINE_BYTES +: LINE_BYTES] = x_req_be;
 		assign c_req_wdata[C_EXT*LINE_BITS +: LINE_BITS] = x_req_wdata;
 		assign c_req_tag[C_EXT*8 +: 8] = x_req_tag;
@@ -1712,6 +1737,12 @@ module atg_top #(
 		wire [154:0] s_ex_aux;
 		wire [DW-1:0] s_sa_push_data;
 		wire g0 = k == 0;
+		wire [UNIT_LA_W-1:0] su_d_req_line;
+		wire [UNIT_LA_W-1:0] su_i_req_line;
+		wire [63:0] su_d_req_line64 = {{(64-UNIT_LA_W){1'b0}}, su_d_req_line};
+		wire [63:0] su_i_req_line64 = {{(64-UNIT_LA_W){1'b0}}, su_i_req_line};
+		assign c_req_line[CD*LA_W +: LA_W] = su_d_req_line64[LA_W-1:0];
+		assign c_req_line[CI*LA_W +: LA_W] = su_i_req_line64[LA_W-1:0];
 
 		atg_su #(
 			.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
@@ -1720,7 +1751,7 @@ module atg_top #(
 			.PK_SHARED(SU_PK_SHARED), .SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4),
 			.HAS_MESH(HAS_MESH),
 			.LDS_BYTES(SU_LDS_BYTES), .VARY_WORDS(SU_VARY_WORDS),
-			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 			.MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(ROP_DUAL_SOURCE)
 		) su (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
@@ -1747,14 +1778,14 @@ module atg_top #(
 			.mesh_valid(s_mesh_valid), .mesh_ready(g0 ? su_mesh_ready : 1'b1), .mesh_tri(s_mesh_tri),
 			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
 			.d_req_valid(c_req_valid[CD]), .d_req_ready(c_req_ready[CD]),
-			.d_req_write(c_req_write[CD]), .d_req_line(c_req_line[CD*LA_W +: LA_W]),
+			.d_req_write(c_req_write[CD]), .d_req_line(su_d_req_line),
 			.d_req_be(c_req_be[CD*LINE_BYTES +: LINE_BYTES]),
 			.d_req_wdata(c_req_wdata[CD*LINE_BITS +: LINE_BITS]),
 			.d_req_tag(c_req_tag[CD*8 +: 8]),
 			.d_rsp_valid(rsp_valid[CD]), .d_rsp_write(rsp_write_v[CD]), .d_rsp_tag(rsp_tag_v[CD*8 +: 8]),
 			.d_rsp_rdata(rsp_rdata_v[CD*LINE_BITS +: LINE_BITS]), .d_rsp_error(rsp_error_v[CD]),
 			.i_req_valid(c_req_valid[CI]), .i_req_ready(c_req_ready[CI]),
-			.i_req_write(c_req_write[CI]), .i_req_line(c_req_line[CI*LA_W +: LA_W]),
+			.i_req_write(c_req_write[CI]), .i_req_line(su_i_req_line),
 			.i_req_be(c_req_be[CI*LINE_BYTES +: LINE_BYTES]),
 			.i_req_wdata(c_req_wdata[CI*LINE_BITS +: LINE_BITS]),
 			.i_req_tag(c_req_tag[CI*8 +: 8]),
@@ -1845,8 +1876,11 @@ module atg_top #(
 		assign su_fault_addr = fault_pc;
 		assign su_fault_stage = fault_stg;
 
+		wire [UNIT_LA_W-1:0] atom_req_line;
+		wire [63:0] atom_req_line64 = {{(64-UNIT_LA_W){1'b0}}, atom_req_line};
+		assign c_req_line[C_ATOM*LA_W +: LA_W] = atom_req_line64[LA_W-1:0];
 		atg_mc_atom #(
-			.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
+			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
 			.AW(NSU > 1 ? $clog2(NSU) : 1)
 		) atom (
 			.clk(clk), .rst_n(core_rst_n),
@@ -1854,7 +1888,7 @@ module atg_top #(
 			.at_a(at_a), .at_b(at_b), .at_stage(su_at_stage), .at_rsp_valid(at_rsp_valid), .at_old(at_old),
 			.at_error(at_error), .busy(atom_busy),
 			.req_valid(c_req_valid[C_ATOM]), .req_ready(c_req_ready[C_ATOM]),
-			.req_write(c_req_write[C_ATOM]), .req_line(c_req_line[C_ATOM*LA_W +: LA_W]),
+			.req_write(c_req_write[C_ATOM]), .req_line(atom_req_line),
 			.req_be(c_req_be[C_ATOM*LINE_BYTES +: LINE_BYTES]),
 			.req_wdata(c_req_wdata[C_ATOM*LINE_BITS +: LINE_BITS]),
 			.req_tag(c_req_tag[C_ATOM*8 +: 8]),

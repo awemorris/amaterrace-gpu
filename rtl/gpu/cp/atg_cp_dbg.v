@@ -138,9 +138,10 @@ module atg_cp_dbg #(
 	endgenerate
 `endif
 
+	wire [63:0] addr_ext = {32'd0, addr};
 	assign req_valid = q_valid;
 	assign req_write = q_write;
-	assign req_line = addr[ADDR_W-1:LINE_SHIFT];
+	assign req_line = addr_ext[ADDR_W-1:LINE_SHIFT];
 	assign req_wdata = {(LINE_BYTES / 4){q_word}};
 	/* The word's byte enables in the line: q_strb at word (a constant place per word). */
 	reg [LINE_BYTES-1:0] be_w;

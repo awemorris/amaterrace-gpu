@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: Zlib
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
- *
- * SPDX-License-Identifier: Zlib
  */
 
 /*
@@ -76,6 +75,7 @@ struct drm_ghci_obj_array {
 enum drm_ghci_dev_query_type {
 	/* struct drm_ghci_dev_info */
 	DRM_GHCI_DEV_QUERY_INFO = 0,
+
 	/*
 	 * The capability block that CMD_QUERY_CAPS wrote at attach
 	 * (ghci.md section 3.2.5): GHCI_CAPS_TOTAL_BYTES bytes, little-endian
@@ -88,6 +88,7 @@ enum drm_ghci_dev_query_type {
 enum drm_ghci_address_mode {
 	/* Bus addresses (IOVA); the kernel chooses buffer addresses. */
 	DRM_GHCI_ADDRESS_FLAT = 0,
+
 	/* Per-session GPU virtual addresses; user space chooses them. */
 	DRM_GHCI_ADDRESS_MMU = 1,
 };
@@ -100,10 +101,13 @@ enum drm_ghci_address_mode {
 enum drm_ghci_protection {
 	/* Nothing: the GPU reaches every host address below HOST_LIMIT. */
 	DRM_GHCI_PROTECTION_NONE = 0,
+
 	/* The system IOMMU limits the GPU to mapped buffer objects. */
 	DRM_GHCI_PROTECTION_IOMMU = 1,
+
 	/* The PROT unit isolates sessions by physical granule. */
 	DRM_GHCI_PROTECTION_PROT = 2,
+
 	/* The GPU MMU isolates sessions by page table. */
 	DRM_GHCI_PROTECTION_MMU = 3,
 };
@@ -173,8 +177,10 @@ struct drm_ghci_dev_query {
 
 /* User space never maps the object with mmap(). */
 #define DRM_GHCI_BO_NO_MMAP	(1u << 0)
+
 /* The object may be scanned out by the display controller. */
 #define DRM_GHCI_BO_SCANOUT	(1u << 1)
+
 /* Reserved for objects in the GPU's local memory (not yet supported). */
 #define DRM_GHCI_BO_LOCAL	(1u << 2)
 #define DRM_GHCI_BO_FLAGS	(DRM_GHCI_BO_NO_MMAP | DRM_GHCI_BO_SCANOUT)
@@ -254,8 +260,10 @@ struct drm_ghci_vm_destroy {
 
 enum drm_ghci_vm_state {
 	DRM_GHCI_VM_USABLE = 0,
+
 	/* A job of this VM faulted or hung; the VM takes no more jobs. */
 	DRM_GHCI_VM_GUILTY = 1,
+
 	/* A reset caused by another VM lost jobs of this VM. */
 	DRM_GHCI_VM_INNOCENT = 2,
 };

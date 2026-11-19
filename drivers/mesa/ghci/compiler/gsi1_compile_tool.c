@@ -1,5 +1,5 @@
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  *
  * SPDX-License-Identifier: Zlib
@@ -44,20 +44,26 @@ read_file(const char *path, size_t *words)
       fprintf(stderr, "ghci-gsi1c: %s: %s\n", path, strerror(errno));
       exit(1);
    }
+
    fseek(f, 0, SEEK_END);
+
    long size = ftell(f);
    fseek(f, 0, SEEK_SET);
    if (size <= 0 || size % 4) {
       fprintf(stderr, "ghci-gsi1c: %s: not SPIR-V\n", path);
       exit(1);
    }
+
    uint32_t *data = malloc(size);
    if (!data || fread(data, 1, size, f) != (size_t)size) {
       fprintf(stderr, "ghci-gsi1c: %s: read failed\n", path);
       exit(1);
    }
+
    fclose(f);
+
    *words = size / 4;
+
    return data;
 }
 
@@ -150,6 +156,8 @@ main(int argc, char **argv)
    gsi1_binary_finish(&bin);
    ralloc_free(nir);
    free(spirv);
+
    glsl_type_singleton_decref();
+
    return 0;
 }

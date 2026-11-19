@@ -135,33 +135,36 @@ module atg_blt_rsv #(
 	 * bits below four pixels), 4 ps and 12 ps (a tiled row's step and the
 	 * step back from the fourth row of a tile).
 	 */
-	function [31:0] by_size;
+	function [63:0] by_size;
 		input [2:0] pl;
 		input [1:0] which;	/* 0: 4 ps - 1, 1: 4 ps, 2: 12 ps */
-		reg [31:0] four, low;
+		reg [63:0] four, low;
 		begin
 			case (pl)
-			3'd0: begin four = 32'd4; low = 32'd3; end
-			3'd1: begin four = 32'd8; low = 32'd7; end
-			3'd2: begin four = 32'd16; low = 32'd15; end
-			3'd3: begin four = 32'd32; low = 32'd31; end
-			3'd4: begin four = 32'd64; low = 32'd63; end
-			3'd5: begin four = 32'd128; low = 32'd127; end
-			3'd6: begin four = 32'd256; low = 32'd255; end
-			default: begin four = 32'd512; low = 32'd511; end
+			3'd0: begin four = 64'd4; low = 64'd3; end
+			3'd1: begin four = 64'd8; low = 64'd7; end
+			3'd2: begin four = 64'd16; low = 64'd15; end
+			3'd3: begin four = 64'd32; low = 64'd31; end
+			3'd4: begin four = 64'd64; low = 64'd63; end
+			3'd5: begin four = 64'd128; low = 64'd127; end
+			3'd6: begin four = 64'd256; low = 64'd255; end
+			default: begin four = 64'd512; low = 64'd511; end
 			endcase
 			case (which)
 			2'd0: by_size = low;
 			2'd1: by_size = four;
-			default: by_size = {four[30:0], 1'b0} | four;
+			default: by_size = {four[62:0], 1'b0} | four;
 			endcase
 		end
 	endfunction
 
 	/* The source's base and stride lose their bits below 4 ps. */
-	wire [ADDR_W-1:0] smask = ~by_size(psl, 2'd0);
-	wire [ADDR_W-1:0] sbase = sbase_p & smask;
-	wire [ADDR_W-1:0] sstride = sstride_p & smask;
+	wire [63:0] by_low64 = by_size(psl, 2'd0);
+	wire [63:0] sbase_p64 = {32'd0, sbase_p};
+	wire [63:0] sstride_p64 = {32'd0, sstride_p};
+	wire [ADDR_W-1:0] smask = ~by_low64[ADDR_W-1:0];
+	wire [ADDR_W-1:0] sbase = sbase_p64[ADDR_W-1:0] & smask;
+	wire [ADDR_W-1:0] sstride = sstride_p64[ADDR_W-1:0] & smask;
 
 	localparam [2:0] S_IDLE = 3'd0;
 	localparam [2:0] S_CLIP = 3'd1;		/* size, source origin, multiplier */
@@ -214,16 +217,20 @@ module atg_blt_rsv #(
 		rows != 17'd0;
 
 	/* The tiled destination's next row. */
-	wire [ADDR_W-1:0] tile_step = by_size(psl, 2'd1);
-	wire [ADDR_W-1:0] tile_back = by_size(psl, 2'd2);
+	wire [63:0] by_step64 = by_size(psl, 2'd1);
+	wire [63:0] by_back64 = by_size(psl, 2'd2);
+	wire [63:0] dstride_ext64 = {32'd0, dstride};
+	wire [ADDR_W-1:0] ext_dstride = dstride_ext64[ADDR_W-1:0];
+	wire [ADDR_W-1:0] tile_step = by_step64[ADDR_W-1:0];
+	wire [ADDR_W-1:0] tile_back = by_back64[ADDR_W-1:0];
 	wire [ADDR_W-1:0] dst_back;
 	wire [16:0] c_dy, sy0;
 	wire [31:0] d_in_tile, d_first;
 	wire [3:0] st_co_unused;
 
-	am_sub #(.W(ADDR_W)) s_back (.a(dstride), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(st_co_unused[0]));
+	am_sub #(.W(ADDR_W)) s_back (.a(ext_dstride), .b(tile_back), .bi(1'b0), .d(dst_back), .bo(st_co_unused[0]));
 	wire [ADDR_W-1:0] dst_step = m_tiled ? (ydl == 2'd3 ? dst_back : tile_step) :
-		dstride;
+		ext_dstride;
 	am_sub #(.W(17)) s_cdy (.a(y0), .b(dy), .bi(1'b0), .d(c_dy), .bo(st_co_unused[1]));
 	am_add #(.W(17)) a_sy0 (.a({1'b0, s_src_xy[31:16]}), .b(c_dy), .ci(1'b0), .s(sy0), .co(st_co_unused[2]));
 
@@ -232,12 +239,13 @@ module atg_blt_rsv #(
 		.arith(1'b0), .y(d_in_tile));
 	am_add #(.W(32)) a_df (.a(dbase), .b(d_in_tile), .ci(1'b0), .s(d_first), .co(st_co_unused[3]));
 
-	atg_blt_acc dacc (
+	wire [63:0] dfirst_ext64 = {32'd0, d_first};
+	atg_blt_acc #(.W(ADDR_W)) dacc (
 		.clk(clk), .rst_n(rst_n), .go(row_go), .y(m_tiled ? {2'b00, y0[16:2]} : y0),
-		.s(dstride), .b(d_first),
+		.s(ext_dstride), .b(dfirst_ext64[ADDR_W-1:0]),
 		.add(row_add), .d(dst_step), .r(dst_row), .idle(d_idle)
 	);
-	atg_blt_acc sacc (
+	atg_blt_acc #(.W(ADDR_W)) sacc (
 		.clk(clk), .rst_n(rst_n), .go(row_go), .y(sy0), .s(sstride), .b(sbase),
 		.add(row_add), .d(sstride), .r(src_row), .idle(s_idle)
 	);

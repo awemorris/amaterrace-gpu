@@ -1,5 +1,5 @@
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  *
  * SPDX-License-Identifier: Zlib
@@ -27,9 +27,11 @@ ghci_dev_query(struct ghci_dev *dev, uint32_t type, void *buf, uint32_t size)
       .size = size,
       .pointer = (uint64_t)(uintptr_t)buf,
    };
+
    int ret = ghci_ioctl(dev->fd, DRM_IOCTL_GHCI_DEV_QUERY, &q);
    if (ret)
       return ret;
+
    /* An older kernel may answer with less; the rest stays zero. */
    return 0;
 }
@@ -43,6 +45,7 @@ ghci_dev_init(struct ghci_dev *dev, int fd)
    drmVersionPtr version = drmGetVersion(fd);
    if (!version)
       return -ENODEV;
+
    bool ours = strcmp(version->name, DRM_GHCI_DRIVER_NAME) == 0;
    drmFreeVersion(version);
    if (!ours)
@@ -73,6 +76,7 @@ ghci_dev_format_caps(const struct ghci_dev *dev, unsigned vk_format)
 
    if (vk_format >= count || first + vk_format >= GHCI_CAPS_TOTAL_DWORDS)
       return 0;
+
    return dev->caps[first + vk_format];
 }
 
@@ -84,6 +88,7 @@ ghci_bo_create(struct ghci_dev *dev, uint64_t size, uint32_t flags,
       .size = size,
       .flags = flags,
    };
+
    int ret = ghci_ioctl(dev->fd, DRM_IOCTL_GHCI_BO_CREATE, &req);
    if (ret)
       return ret;
@@ -94,6 +99,7 @@ ghci_bo_create(struct ghci_dev *dev, uint64_t size, uint32_t flags,
       .size = size,
       .gpu_addr = req.gpu_addr,
    };
+
    return 0;
 }
 
@@ -112,7 +118,9 @@ ghci_bo_map(struct ghci_dev *dev, struct ghci_bo *bo)
                     dev->fd, req.offset);
    if (map == MAP_FAILED)
       return -errno;
+
    bo->map = map;
+
    return 0;
 }
 
@@ -129,9 +137,11 @@ int
 ghci_bo_close(struct ghci_dev *dev, struct ghci_bo *bo)
 {
    ghci_bo_unmap(bo);
+
    struct drm_gem_close req = { .handle = bo->handle };
    int ret = ghci_ioctl(dev->fd, DRM_IOCTL_GEM_CLOSE, &req);
    bo->handle = 0;
+
    return ret;
 }
 
@@ -142,7 +152,9 @@ ghci_vm_create(struct ghci_dev *dev, uint32_t *vm_id)
    int ret = ghci_ioctl(dev->fd, DRM_IOCTL_GHCI_VM_CREATE, &req);
    if (ret)
       return ret;
+
    *vm_id = req.vm_id;
+
    return 0;
 }
 

@@ -242,6 +242,9 @@ module atg_cpu_dma #(
 				wline[k*32 +: 32] <= x_rdata;
 	end
 
+	wire [63:0] dma_amb_ext = {32'd0, dma_amb};
+	wire [63:0] ld_paddr_ext = {32'd0, ld_paddr};
+
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
@@ -355,7 +358,7 @@ module atg_cpu_dma #(
 `endif
 					j_tbl <= sb_wdata[18];
 					j_slot <= dma_slot;
-					j_line <= dma_amb[ADDR_W-1:LINE_SHIFT];
+					j_line <= dma_amb_ext[ADDR_W-1:LINE_SHIFT];
 					j_mem <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
 					if (sb_wdata[16])
 						x_addr_r <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
@@ -372,7 +375,7 @@ module atg_cpu_dma #(
 					j_tbl <= 1'b0;
 					j_slot <= 6'd0;
 					j_imem <= ld_pimem;
-					j_line <= ld_paddr[ADDR_W-1:LINE_SHIFT];
+					j_line <= ld_paddr_ext[ADDR_W-1:LINE_SHIFT];
 					j_mem <= 32'd0;
 					j_rem <= ld_pwords;
 					j_rem_nz_r <= (ld_pwords != 32'd0);

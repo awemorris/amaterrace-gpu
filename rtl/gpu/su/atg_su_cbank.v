@@ -515,8 +515,9 @@ module atg_su_cbank #(
 	assign busy = st == LREQ || st == LWAIT || st == LWR || lc_pend || (b_we_r && !sc_on);
 	assign req_valid = req_valid_r;
 	wire [1:0] cur_stage = warp_stage[rwarp * 2 +: 2];
+	wire [63:0] ladr_ext = {32'd0, ladr};
 	assign req_write = 1'b0;
-	assign req_line = ladr[ADDR_W-1:LINE_SHIFT];
+	assign req_line = ladr_ext[ADDR_W-1:LINE_SHIFT];
 	assign req_be = {LINE_BYTES{1'b0}};
 	assign req_wdata = {LB{1'b0}};
 	assign req_tag = {6'd0, cur_stage};

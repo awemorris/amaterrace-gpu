@@ -123,6 +123,7 @@ module atg_mc_atom #(
 				pick_addr = at_addr[i*30 +: 30];
 	end
 	wire [31:0] badr = {pick_addr, 2'b00};
+	wire [63:0] badr_ext = {32'd0, badr};
 	genvar g;
 	generate
 		for (g = 0; g < NATOM; g = g + 1) begin : g_ready
@@ -159,8 +160,8 @@ module atg_mc_atom #(
 				rk <= pick;
 				rstage <= at_stage[pick*2 +: 2];
 				rop <= at_op[pick*4 +: 4];
-				rline <= badr[ADDR_W-1:LINE_SHIFT];
-				rwi <= badr[LINE_SHIFT-1:2];
+				rline <= badr_ext[ADDR_W-1:LINE_SHIFT];
+				rwi <= badr_ext[LINE_SHIFT-1:2];
 				ra <= at_a[pick*32 +: 32];
 				rb <= at_b[pick*32 +: 32];
 				st <= RREQ;

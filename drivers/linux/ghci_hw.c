@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Zlib
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  */
 
@@ -57,8 +57,10 @@ static u32 ghci_period_ms(struct ghci_device *gdev, u32 periods)
 
 	if (!gclk_hz)
 		return GHCI_WAIT_UNKNOWN_MS;
+
 	ms = div_u64((u64)periods * gdev->wdt_cycles * 1000, gclk_hz);
 	ms += GHCI_WAIT_MARGIN_MS;
+
 	return clamp_t(u64, ms, GHCI_WAIT_MIN_MS, U32_MAX);
 }
 
@@ -80,6 +82,7 @@ static int ghci_identify(struct ghci_device *gdev)
 			magic, gdev->version);
 		return -ENODEV;
 	}
+
 	return 0;
 }
 
@@ -106,7 +109,9 @@ static int ghci_read_boot_caps(struct ghci_device *gdev)
 
 		if ((ptr & 3) || ptr + 8 > GHCI_WINDOW_BYTES)
 			break;
+
 		w0 = ghci_read(gdev, ptr);
+
 		regs = ghci_read(gdev, ptr + 4);
 		if (regs < GHCI_CANONICAL_MMIO_BYTES ||
 		    regs >= GHCI_WINDOW_BYTES || (regs & 3))
@@ -125,8 +130,10 @@ static int ghci_read_boot_caps(struct ghci_device *gdev)
 		default:
 			break;
 		}
+
 		if (!GHCI_XCAP_NEXT(w0))
 			break;
+
 		ptr += GHCI_XCAP_NEXT(w0) * 4;
 	}
 
@@ -138,6 +145,7 @@ static int ghci_read_boot_caps(struct ghci_device *gdev)
 		gdev->host_limit = ghci_read(gdev, gdev->mem_regs +
 					     GHCI_MEM_HOST_LIMIT);
 	}
+
 	return 0;
 }
 
@@ -154,18 +162,22 @@ static int ghci_set_dma_mask(struct ghci_device *gdev)
 
 	if (gdev->host_limit)
 		bits = min_t(unsigned int, bits, fls64(gdev->host_limit - 1));
+
 	gdev->dma_bits = bits;
 
 	ret = dma_set_mask(&gdev->pdev->dev, DMA_BIT_MASK(bits));
 	if (ret)
 		return ret;
+
 	ret = dma_set_coherent_mask(&gdev->pdev->dev,
 				    DMA_BIT_MASK(min(bits, 32u)));
 	if (ret)
 		return ret;
+
 	/* One buffer object is one run of bus addresses where the system
 	 * IOMMU can make it so. */
 	dma_set_max_seg_size(&gdev->pdev->dev, UINT_MAX);
+
 	return 0;
 }
 
@@ -191,6 +203,7 @@ static int ghci_reset(struct ghci_device *gdev)
 			ghci_read(gdev, GHCI_REG_STATUS));
 		return -EIO;
 	}
+
 	return 0;
 }
 
@@ -207,6 +220,7 @@ static int ghci_check_scratch(struct ghci_device *gdev)
 			second);
 		return -EIO;
 	}
+
 	return 0;
 }
 
@@ -219,17 +233,25 @@ static void ghci_free_memory(struct ghci_device *gdev)
 {
 	struct device *dev = &gdev->pdev->dev;
 
-	if (gdev->cp_heap)
+	if (gdev->cp_heap) {
 		dma_free_coherent(dev, GHCI_CP_HEAP_BYTES, gdev->cp_heap,
 				  gdev->cp_heap_dma);
-	if (gdev->caps_buf)
+	}
+
+	if (gdev->caps_buf) {
 		dma_free_coherent(dev, GHCI_CAPS_TOTAL_BYTES, gdev->caps_buf,
 				  gdev->caps_dma);
-	if (gdev->fence)
+	}
+
+	if (gdev->fence) {
 		dma_free_coherent(dev, PAGE_SIZE, gdev->fence, gdev->fence_dma);
-	if (gdev->ring)
+	}
+
+	if (gdev->ring) {
 		dma_free_coherent(dev, gdev->ring_bytes, gdev->ring,
 				  gdev->ring_dma);
+	}
+
 	gdev->cp_heap = NULL;
 	gdev->caps_buf = NULL;
 	gdev->fence = NULL;
@@ -242,19 +264,25 @@ static int ghci_alloc_memory(struct ghci_device *gdev)
 
 	gdev->ring = dma_alloc_coherent(dev, gdev->ring_bytes, &gdev->ring_dma,
 					GFP_KERNEL);
+
 	gdev->fence = dma_alloc_coherent(dev, PAGE_SIZE, &gdev->fence_dma,
 					 GFP_KERNEL);
+
 	gdev->caps_buf = dma_alloc_coherent(dev, GHCI_CAPS_TOTAL_BYTES,
 					    &gdev->caps_dma, GFP_KERNEL);
-	if (ghci_has_walker(gdev))
+
+	if (ghci_has_walker(gdev)) {
 		gdev->cp_heap = dma_alloc_coherent(dev, GHCI_CP_HEAP_BYTES,
 						   &gdev->cp_heap_dma,
 						   GFP_KERNEL);
+	}
+
 	if (!gdev->ring || !gdev->fence || !gdev->caps_buf ||
 	    (ghci_has_walker(gdev) && !gdev->cp_heap)) {
 		ghci_free_memory(gdev);
 		return -ENOMEM;
 	}
+
 	return 0;
 }
 
@@ -334,12 +362,14 @@ static bool ghci_cp_stop(struct ghci_device *gdev)
 	if (ghci_wait_reg(gdev, GHCI_REG_STATUS, GHCI_STATUS_HALTED,
 			  GHCI_STATUS_HALTED, gdev->halt_wait_ms))
 		drm_warn(&gdev->drm, "the CP did not halt; resetting it\n");
+
 	if (ghci_reset(gdev))
 		stopped = false;
 
 	ghci_write(gdev, GHCI_REG_CTRL, 0);
 	pci_clear_master(gdev->pdev);
 	gdev->running = false;
+
 	return stopped;
 }
 
@@ -351,10 +381,13 @@ u32 ghci_protection(const struct ghci_device *gdev)
 {
 	if (ghci_has_walker(gdev))
 		return DRM_GHCI_PROTECTION_MMU;
+
 	if (gdev->boot_caps & GHCI_BOOT_CAP_PROT)
 		return DRM_GHCI_PROTECTION_PROT;
+
 	if (device_iommu_mapped(&gdev->pdev->dev))
 		return DRM_GHCI_PROTECTION_IOMMU;
+
 	return DRM_GHCI_PROTECTION_NONE;
 }
 
@@ -365,10 +398,12 @@ irqreturn_t ghci_irq_handler(int irq, void *arg)
 
 	if (!status)
 		return IRQ_NONE;
+
 	ghci_write(gdev, GHCI_REG_IRQ_STATUS, status);
 
 	if (status & GHCI_IRQ_FENCE)
 		wake_up_all(&gdev->fence_wq);
+
 	if (status & (GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG)) {
 		drm_err_ratelimited(&gdev->drm,
 				    "fault: IRQ_STATUS %08x FAULT_INFO %08x\n",
@@ -376,6 +411,7 @@ irqreturn_t ghci_irq_handler(int irq, void *arg)
 				    ghci_read(gdev, GHCI_REG_FAULT_INFO));
 		wake_up_all(&gdev->fence_wq);
 	}
+
 	return IRQ_HANDLED;
 }
 
@@ -400,13 +436,15 @@ static void ghci_log_caps(struct ghci_device *gdev)
 		 ghci_has_walker(gdev) ? "GPU MMU" : "flat addresses",
 		 gdev->polled ? "polled" : "interrupt", gdev->dma_bits,
 		 prot[ghci_protection(gdev)]);
+
 	drm_dbg_driver(&gdev->drm, "DEVICE_CAPS %08x EXT_CAP_FEATURE %08x\n",
 		       dc, feat);
-	if (ghci_protection(gdev) == DRM_GHCI_PROTECTION_NONE)
+
+	if (ghci_protection(gdev) == DRM_GHCI_PROTECTION_NONE) {
 		drm_warn(&gdev->drm,
 			 "neither a GPU MMU nor a system IOMMU: a client of the GPU can reach all host memory below %#llx\n",
-			 gdev->host_limit ? gdev->host_limit :
-					    DMA_BIT_MASK(gdev->dma_bits));
+			 gdev->host_limit ? gdev->host_limit : DMA_BIT_MASK(gdev->dma_bits));
+	}
 }
 
 int ghci_hw_init(struct ghci_device *gdev)
@@ -421,9 +459,11 @@ int ghci_hw_init(struct ghci_device *gdev)
 	ret = ghci_identify(gdev);
 	if (ret)
 		return ret;
+
 	ret = ghci_read_boot_caps(gdev);
 	if (ret)
 		return ret;
+
 	ret = ghci_set_dma_mask(gdev);
 	if (ret)
 		return ret;
@@ -434,9 +474,11 @@ int ghci_hw_init(struct ghci_device *gdev)
 	ret = ghci_reset(gdev);
 	if (ret)
 		return ret;
+
 	ret = ghci_check_scratch(gdev);
 	if (ret)
 		return ret;
+
 	ret = ghci_alloc_memory(gdev);
 	if (ret)
 		return ret;
@@ -470,6 +512,7 @@ int ghci_hw_init(struct ghci_device *gdev)
 	/* The clock is known now. */
 	ghci_set_waits(gdev);
 	ghci_log_caps(gdev);
+
 	return 0;
 
 fail:
@@ -479,10 +522,11 @@ fail:
 
 void ghci_hw_fini(struct ghci_device *gdev)
 {
-	if (ghci_cp_stop(gdev))
+	if (ghci_cp_stop(gdev)) {
 		ghci_free_memory(gdev);
-	else
+	} else {
 		/* The GPU may still write the ring and the fence page: they
 		 * stay allocated for the life of the system. */
 		drm_err(&gdev->drm, "the GPU did not stop; its memory is kept\n");
+	}
 }

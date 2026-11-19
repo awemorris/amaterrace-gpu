@@ -330,11 +330,18 @@ module atg_mc_prot #(
 			.inv_valid(inv_valid), .inv_g(inv_g), .inv_n(inv_n), .w_tag(p_tag), .w_inv(p_inv)
 		);
 
+		wire s_cam_lo;
+		wire [63:0] sg_ext = {{(64-GW){1'b0}}, s_g};
 		atg_mc_grant #(.NGRANT(NGRANT), .IDX_W(GIDX_W)) cam (
 			.clk(clk), .rst_n(rst_n), .flush(flush),
 			.w_valid(P && gw_valid), .w_idx(gw_idx), .w_data(gw_data),
-			.slot(s_slot), .g(s_g), .write(s_write), .hit(s_cam)
+			.slot(s_slot), .g(sg_ext[19:0]), .write(s_write), .hit(s_cam_lo)
 		);
+		if (GW > 20) begin : g_cam_hi
+			assign s_cam = (s_g[GW-1:20] == {(GW-20){1'b0}}) && s_cam_lo;
+		end else begin : g_cam_eq
+			assign s_cam = s_cam_lo;
+		end
 	end else begin : g_no_prot
 		assign pl_hit = 1'b0;
 		assign s_b = 8'd0;

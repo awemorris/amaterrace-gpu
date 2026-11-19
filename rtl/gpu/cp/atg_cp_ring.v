@@ -1012,27 +1012,36 @@ module atg_cp_ring #(
 		end
 	endfunction
 
-	function [35:0] fn_inc36;
-		input [35:0] v;
-		reg [8:0] g4, c4;
-		reg sg0, sg1;
+	function [47:0] fn_inc48;
+		input [47:0] v;
+		reg [11:0] g4, c4;
+		reg sg0, sg1, sg2;
 		begin
-			g4 = {&v[35:32], &v[31:28], &v[27:24], &v[23:20], &v[19:16], &v[15:12], &v[11:8], &v[7:4], &v[3:0]};
+			g4 = {
+				&v[47:44], &v[43:40], &v[39:36], &v[35:32],
+				&v[31:28], &v[27:24], &v[23:20], &v[19:16],
+				&v[15:12], &v[11:8],  &v[7:4],   &v[3:0]
+			};
 			sg0 = &g4[2:0];
 			sg1 = &g4[5:3];
-			c4[0] = 1'b1;
-			c4[1] = g4[0];
-			c4[2] = g4[0] & g4[1];
-			c4[3] = sg0;
-			c4[4] = sg0 & g4[3];
-			c4[5] = sg0 & g4[3] & g4[4];
-			c4[6] = sg0 & sg1;
-			c4[7] = sg0 & sg1 & g4[6];
-			c4[8] = sg0 & sg1 & g4[6] & g4[7];
-			fn_inc36 = {
-				fn_inc4(v[35:32], c4[8]), fn_inc4(v[31:28], c4[7]), fn_inc4(v[27:24], c4[6]),
-				fn_inc4(v[23:20], c4[5]), fn_inc4(v[19:16], c4[4]), fn_inc4(v[15:12], c4[3]),
-				fn_inc4(v[11:8],  c4[2]), fn_inc4(v[7:4],   c4[1]), fn_inc4(v[3:0],   c4[0])
+			sg2 = &g4[8:6];
+			c4[0]  = 1'b1;
+			c4[1]  = g4[0];
+			c4[2]  = g4[0] & g4[1];
+			c4[3]  = sg0;
+			c4[4]  = sg0 & g4[3];
+			c4[5]  = sg0 & g4[3] & g4[4];
+			c4[6]  = sg0 & sg1;
+			c4[7]  = sg0 & sg1 & g4[6];
+			c4[8]  = sg0 & sg1 & g4[6] & g4[7];
+			c4[9]  = sg0 & sg1 & sg2;
+			c4[10] = sg0 & sg1 & sg2 & g4[9];
+			c4[11] = sg0 & sg1 & sg2 & g4[9] & g4[10];
+			fn_inc48 = {
+				fn_inc4(v[47:44], c4[11]), fn_inc4(v[43:40], c4[10]), fn_inc4(v[39:36], c4[9]),
+				fn_inc4(v[35:32], c4[8]),  fn_inc4(v[31:28], c4[7]),  fn_inc4(v[27:24], c4[6]),
+				fn_inc4(v[23:20], c4[5]),  fn_inc4(v[19:16], c4[4]),  fn_inc4(v[15:12], c4[3]),
+				fn_inc4(v[11:8],  c4[2]),  fn_inc4(v[7:4],   c4[1]),  fn_inc4(v[3:0],   c4[0])
 			};
 		end
 	endfunction
@@ -1042,14 +1051,14 @@ module atg_cp_ring #(
 	wire pa_4_co = 1'b0;
 	wire pa_hdr_co, k_co;
 
-	reg [35:0] pa_w_pad, base_hi_pad;
+	reg [47:0] pa_w_pad, base_hi_pad;
 	always @(*) begin
-		pa_w_pad = 36'd0;
+		pa_w_pad = 48'd0;
 		pa_w_pad[ADDR_W-3:0] = pa[ADDR_W-1:2];
-		base_hi_pad = 36'd0;
+		base_hi_pad = 48'd0;
 		base_hi_pad[ADDR_W-25:0] = base_act[ADDR_W-1:24];
 	end
-	wire [35:0] pa_w_inc = fn_inc36(pa_w_pad);
+	wire [47:0] pa_w_inc = fn_inc48(pa_w_pad);
 	assign pa_4 = {pa_w_inc[ADDR_W-3:0], pa[1:0]};
 
 	/* pa_hdr: base_act + {rptr_act, 2'b00} via 8+8+6 carry-select + parallel upper increment. */
@@ -1063,7 +1072,7 @@ module atg_cp_ring #(
 	am_add #(.W(6)) pa_hdr_21 (.a(base_act[23:18]), .b(rptr_act[21:16]), .ci(1'b1), .s(ph_s2_1), .co(ph_c2_1));
 	wire ph_c1 = ph_c0 ? ph_c1_1 : ph_c1_0;
 	wire ph_c2 = ph_c1 ? ph_c2_1 : ph_c2_0;
-	wire [35:0] base_hi_inc = fn_inc36(base_hi_pad);
+	wire [47:0] base_hi_inc = fn_inc48(base_hi_pad);
 	assign pa_hdr = {
 		ph_c2 ? base_hi_inc[ADDR_W-25:0] : base_act[ADDR_W-1:24],
 		ph_c1 ? ph_s2_1 : ph_s2_0,
@@ -1084,12 +1093,12 @@ module atg_cp_ring #(
 	 */
 	wire [LA_W-1:0] next_line;
 	wire unused_nl_co = 1'b0;
-	reg [35:0] want_line_pad;
+	reg [47:0] want_line_pad;
 	always @(*) begin
-		want_line_pad = 36'd0;
+		want_line_pad = 48'd0;
 		want_line_pad[LA_W-1:0] = want_line;
 	end
-	wire [35:0] next_line_inc = fn_inc36(want_line_pad);
+	wire [47:0] next_line_inc = fn_inc48(want_line_pad);
 	assign next_line = next_line_inc[LA_W-1:0];
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) reg [LA_W-1:0] next_line_r;
@@ -1315,14 +1324,17 @@ module atg_cp_ring #(
 	assign n_last = (k == n);
 `endif
 
+	wire [63:0] pa_4_ext = {{(64-ADDR_W){1'b0}}, pa_4};
+	wire [63:0] ctx_base_ext = {32'd0, ctx_base};
+	wire [63:0] want_addr_ext = {{(64-ADDR_W){1'b0}}, want_addr};
 	assign v_valid = (st == R_V);
-	assign v_addr = pa_4[31:0];
+	assign v_addr = pa_4_ext[31:0];
 	assign v_dwords = n;
 	assign v_tag = tag;
 
 	// AMB port multiplexing
 	wire demand_req = (st == R_REQ);
-	wire [LA_W-1:0] ctx_line = ctx_base[31:LINE_SHIFT];
+	wire [LA_W-1:0] ctx_line = ctx_base_ext[ADDR_W-1:LINE_SHIFT];
 	wire [LINE_BYTES*8-1:0] ctx_save_wdata =
 		{{(LINE_BYTES*8 > 80 ? LINE_BYTES*8 - 80 : 1){1'b0}}, 10'd0, saved_rptr, 14'd0, interrupted_qid, 32'h43545853};
 
@@ -1894,7 +1906,7 @@ module atg_cp_ring #(
 `ifndef SYNTH_KINTEX7
 				tag       <= hdr_data[23:16];
 				n         <= h_n;
-				f_addr    <= want_addr[31:0];
+				f_addr    <= want_addr_ext[31:0];
 				h_bad_r   <= h_bad;
 				h_novf_r  <= h_novf;
 				h_class_r <= h_class;
@@ -2001,7 +2013,7 @@ module atg_cp_ring #(
 						dm_err_pend <= 1'b0;
 						f_pulse     <= 1'b1;
 						f_kind      <= GHCI_FAULT_KIND_AXI_ERROR;
-						f_addr      <= want_addr[31:0];
+						f_addr      <= want_addr_ext[31:0];
 						st          <= R_FAULT;
 					end else begin
 						buf_valid[dm_wr_idx_r] <= 1'b1;

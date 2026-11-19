@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Zlib
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  */
 
@@ -24,14 +24,7 @@
 
 #include "ghci_drv.h"
 
-static void ghci_bo_free(struct drm_gem_object *obj)
-{
-	struct ghci_bo *bo = to_ghci_bo(obj);
-
-	mutex_destroy(&bo->lock);
-	/* Frees the object too: the shmem object is the first member. */
-	drm_gem_shmem_free(&bo->base);
-}
+static void ghci_bo_free(struct drm_gem_object *obj);
 
 static const struct drm_gem_object_funcs ghci_gem_funcs = {
 	.free = ghci_bo_free,
@@ -45,6 +38,17 @@ static const struct drm_gem_object_funcs ghci_gem_funcs = {
 	.vm_ops = &drm_gem_shmem_vm_ops,
 };
 
+static void ghci_bo_free(struct drm_gem_object *obj)
+{
+	struct ghci_bo *bo = to_ghci_bo(obj);
+
+	mutex_destroy(&bo->lock);
+
+	/* Frees the object too: the shmem object is the first member. */
+	drm_gem_shmem_free(&bo->base);
+}
+
+
 struct drm_gem_object *ghci_gem_create_object(struct drm_device *drm,
 					      size_t size)
 {
@@ -55,9 +59,11 @@ struct drm_gem_object *ghci_gem_create_object(struct drm_device *drm,
 	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
 	if (!bo)
 		return ERR_PTR(-ENOMEM);
+
 	mutex_init(&bo->lock);
 	bo->base.base.funcs = &ghci_gem_funcs;
 	bo->base.map_wc = false;
+
 	return &bo->base.base;
 }
 
@@ -70,8 +76,10 @@ struct ghci_bo *ghci_bo_create(struct ghci_device *gdev, size_t size,
 	shmem = drm_gem_shmem_create(&gdev->drm, size);
 	if (IS_ERR(shmem))
 		return ERR_CAST(shmem);
+
 	bo = to_ghci_bo(&shmem->base);
 	bo->flags = flags;
+
 	return bo;
 }
 
@@ -123,7 +131,9 @@ int ghci_bo_gpu_addr(struct ghci_device *gdev, struct ghci_bo *bo, u64 *addr)
 	bo->gpu_addr = start;
 	bo->gpu_mapped = true;
 	*addr = start;
+
 out:
 	mutex_unlock(&bo->lock);
+
 	return ret;
 }

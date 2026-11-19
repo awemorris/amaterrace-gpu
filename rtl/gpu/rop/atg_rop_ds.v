@@ -842,6 +842,7 @@ module atg_rop_ds #(
 	wire u_max_w = (test_zl[30:23] >= 8'd127);
 	wire [31:0] eval_wword_pre = d16_buf[7] ? {eval_wword[15:0], eval_wword[15:0]} : eval_wword;
 
+	wire [63:0] addr_ext = {32'd0, addr};
 	/* Free-running datapath registers for row base setup and S_TEST0..S_TEST2B pipeline */
 	always @(posedge clk) begin
 		row_base0 <= row_a;
@@ -850,8 +851,8 @@ module atg_rop_ds #(
 
 		if (en_addr_buf[0]) addr[15:0]  <= row_addr[15:0];
 		if (en_addr_buf[1]) addr[31:16] <= row_addr[31:16];
-		if (en_rline_buf[0]) req_line[13:0] <= addr[LINE_SHIFT + 13 : LINE_SHIFT];
-		if (en_rline_buf[1]) req_line[ADDR_W - LINE_SHIFT - 1 : 14] <= addr[ADDR_W - 1 : LINE_SHIFT + 14];
+		if (en_rline_buf[0]) req_line[13:0] <= addr_ext[LINE_SHIFT + 13 : LINE_SHIFT];
+		if (en_rline_buf[1]) req_line[ADDR_W - LINE_SHIFT - 1 : 14] <= addr_ext[ADDR_W - 1 : LINE_SHIFT + 14];
 
 		/* S_TEST0 latches (inputs stationary throughout S_TEST0..S_TEST3) */
 		test_stored[15:0] <= stored_lo;

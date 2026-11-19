@@ -216,8 +216,11 @@ module atg_rop_wb #(
 	wire tag_x0_co, tag_x1_co;
 	/* Both inputs are registered FFs, and outputs go directly to unconditional FFs tag_x0_r/tag_x1_r
 	 * -> 1 Pre-CARRY4 LUT, 0 Post-CARRY4 LUTs! */
-	am_sub #(.W(LA_W)) u_tag_x0 (.a(etag[0]), .b(wb_row_base0[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x0_comb), .bo(tag_x0_co));
-	am_sub #(.W(LA_W)) u_tag_x1 (.a(etag[1]), .b(wb_row_base1[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x1_comb), .bo(tag_x1_co));
+	wire [63:0] wb_rb0_ext = {32'd0, wb_row_base0};
+	wire [63:0] wb_rb1_ext = {32'd0, wb_row_base1};
+	wire [63:0] addr_ext = {32'd0, addr};
+	am_sub #(.W(LA_W)) u_tag_x0 (.a(etag[0]), .b(wb_rb0_ext[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x0_comb), .bo(tag_x0_co));
+	am_sub #(.W(LA_W)) u_tag_x1 (.a(etag[1]), .b(wb_rb1_ext[ADDR_W-1:LINE_SHIFT]), .bi(1'b0), .d(tag_x1_comb), .bo(tag_x1_co));
 	reg [LA_W-1:0] tag_x0_r, tag_x1_r;
 	reg rb0_aligned_r, rb1_aligned_r;
 	always @(posedge clk) begin
@@ -511,20 +514,22 @@ module atg_rop_wb #(
 
 	wire p_ready = (p_path == 2'd2 && bwait_d1) || (p_path == 2'd0 && b_rvalid) || f_done;
 
-	/* Pure-LUT 27-bit tag equality and dirty check for FSM (0 CARRY4s, <= 3 LUT levels) */
-	(* keep = "true" *) wire [8:0] hit_eq3;
+	/* Pure-LUT LA_W-bit tag equality and dirty check for FSM (0 CARRY4s, <= 3 LUT levels) */
+	localparam integer N_HEQ = (LA_W + 2) / 3;
+	localparam integer H_CMP_W = N_HEQ * 3;
+	wire [63:0] et_pad = {{(64-LA_W){1'b0}}, etag[r]};
+	wire [63:0] ad_pad = {{(64-LA_W){1'b0}}, addr_ext[LINE_SHIFT +: LA_W]};
+	wire [H_CMP_W-1:0] et_cmp = et_pad[H_CMP_W-1:0];
+	wire [H_CMP_W-1:0] ad_cmp = ad_pad[H_CMP_W-1:0];
+	(* keep = "true" *) wire [N_HEQ-1:0] hit_eq3;
 	genvar gh;
 	generate
-	for (gh = 0; gh < 9; gh = gh + 1) begin : g_hit_eq3
-		localparam integer H_LO = 3 * gh;
-		localparam integer H_W  = (H_LO + 3 <= LA_W) ? 3 : (LA_W - H_LO);
-		wire [H_W-1:0] et_s = etag[r][H_LO +: H_W];
-		wire [H_W-1:0] ad_s = addr[LINE_SHIFT + H_LO +: H_W];
-		assign hit_eq3[gh] = (et_s == ad_s);
+	for (gh = 0; gh < N_HEQ; gh = gh + 1) begin : g_hit_eq3
+		assign hit_eq3[gh] = (et_cmp[3*gh +: 3] == ad_cmp[3*gh +: 3]);
 	end
 	endgenerate
-	(* keep = "true" *) wire hit_g0 = &hit_eq3[4:0];
-	(* keep = "true" *) wire hit_g1 = &hit_eq3[8:5];
+	(* keep = "true" *) wire hit_g0 = &hit_eq3[N_HEQ/2-1:0];
+	(* keep = "true" *) wire hit_g1 = &hit_eq3[N_HEQ-1:N_HEQ/2];
 	wire hit = ev[r] && hit_g0 && hit_g1 && (erd[r] || !p_read);
 
 	localparam integer N_DGRP = (LINE_BYTES + 5) / 6;
@@ -976,10 +981,10 @@ module atg_rop_wb #(
 		if (en_s_row_buf[0]) addr[15:0]  <= wb_addr_comb[15:0];
 		if (en_s_row_buf[1]) addr[31:16] <= wb_addr_comb[31:16];
 
-		if (etag0_we_buf[0]) etag[0][15:0]      <= addr[LINE_SHIFT +: 16];
-		if (etag0_we_buf[1]) etag[0][LA_W-1:16] <= addr[ADDR_W-1 : LINE_SHIFT+16];
-		if (etag1_we_buf[0]) etag[1][15:0]      <= addr[LINE_SHIFT +: 16];
-		if (etag1_we_buf[1]) etag[1][LA_W-1:16] <= addr[ADDR_W-1 : LINE_SHIFT+16];
+		if (etag0_we_buf[0]) etag[0][15:0]      <= addr_ext[LINE_SHIFT +: 16];
+		if (etag0_we_buf[1]) etag[0][LA_W-1:16] <= addr_ext[ADDR_W-1 : LINE_SHIFT+16];
+		if (etag1_we_buf[0]) etag[1][15:0]      <= addr_ext[LINE_SHIFT +: 16];
+		if (etag1_we_buf[1]) etag[1][LA_W-1:16] <= addr_ext[ADDR_W-1 : LINE_SHIFT+16];
 
 `ifdef SYNTH_KINTEX7
 		for (l = 0; l < N_BE16; l = l + 1) begin
@@ -1342,9 +1347,9 @@ module atg_rop_wb #(
 			if (req_go_w)
 				req_write <= req_wr_go_w;
 			if (req_go_leaf[N_BE16 + 0])
-				req_line[15:0] <= req_wr_leaf[N_BE16 + 0] ? etag[r][15:0] : addr[LINE_SHIFT +: 16];
+				req_line[15:0] <= req_wr_leaf[N_BE16 + 0] ? etag[r][15:0] : addr_ext[LINE_SHIFT +: 16];
 			if (req_go_leaf[N_BE16 + 1])
-				req_line[LA_W-1:16] <= req_wr_leaf[N_BE16 + 1] ? etag[r][LA_W-1:16] : addr[ADDR_W-1 : LINE_SHIFT+16];
+				req_line[LA_W-1:16] <= req_wr_leaf[N_BE16 + 1] ? etag[r][LA_W-1:16] : addr_ext[ADDR_W-1 : LINE_SHIFT+16];
 			for (l = 0; l < N_BE16; l = l + 1) begin
 				if (req_go_leaf[l])
 					req_be[16 * l +: 16] <= req_wr_leaf[l] ? (r ? edirty[1][16 * l +: 16] : edirty[0][16 * l +: 16]) : 16'd0;

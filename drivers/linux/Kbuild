@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: Zlib
-# Amaterrace GPU
+
+#
+# GHCI GPU Driver
 # Copyright (C) 2026 Awe Morris
+#
+
 #
 # The ghci kernel module.  The GHCI headers (ghci_regs.h, ghci_cmd.h) come
 # from the tree's include/ directory, or from hw/ in a DKMS source tree
 # (make dkms-source copies them there).
+#
 
 obj-m += ghci.o
 ghci-y := ghci_drv.o ghci_gem.o ghci_hw.o ghci_ioctl.o ghci_ring.o

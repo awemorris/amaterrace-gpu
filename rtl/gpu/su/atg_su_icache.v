@@ -94,7 +94,7 @@ module atg_su_icache #(
 			st_mwait_f_r <= {N_SL{st_mwait_nxt_f}};
 	end
 
-	wire [31:0] ic_addr_tag = ic_addr;
+	wire [63:0] ic_addr_tag = {32'd0, ic_addr};
 	wire [31:0] ic_addr_ram_lo = ic_addr;
 	wire [31:0] ic_addr_ram_hi = ic_addr;
 

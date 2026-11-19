@@ -368,6 +368,9 @@ module atg_dc_dma #(
 			req_line_hi <= rq_cur_hi;
 	end
 
+	wire [63:0] fb_base_ext = {32'd0, fb_base};
+	wire [63:0] fb_stride_ext = {32'd0, fb_stride};
+
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 			rq_cur_lo <= 14'd0;
@@ -385,7 +388,7 @@ module atg_dc_dma #(
 		else if (clear)
 			rq_cur_hi <= {(AW-14){1'b0}};
 		else if (start)
-			rq_cur_hi <= fb_base[LINE_SHIFT + 14 +: AW - 14];
+			rq_cur_hi <= fb_base_ext[LINE_SHIFT + 14 +: AW - 14];
 		else if (issue_step_curh)
 			rq_cur_hi <= k_is_nl_b1 ? rq_next_row[AW-1:14] : rq_cur_inc[AW-1:14];
 	end
@@ -407,7 +410,7 @@ module atg_dc_dma #(
 		else if (clear)
 			rq_row_line_hi <= {(AW-14){1'b0}};
 		else if (start)
-			rq_row_line_hi <= fb_base[LINE_SHIFT + 14 +: AW - 14];
+			rq_row_line_hi <= fb_base_ext[LINE_SHIFT + 14 +: AW - 14];
 		else if (issue_step_rowh && k_is_nl_b1)
 			rq_row_line_hi <= rq_next_row[AW-1:14];
 	end
@@ -427,7 +430,7 @@ module atg_dc_dma #(
 		else if (clear)
 			f_stride_hi <= {(AW-14){1'b0}};
 		else if (start)
-			f_stride_hi <= fb_stride[LINE_SHIFT + 14 +: AW - 14];
+			f_stride_hi <= fb_stride_ext[LINE_SHIFT + 14 +: AW - 14];
 	end
 
 	localparam NUM_L_SLICES = LW / 16;

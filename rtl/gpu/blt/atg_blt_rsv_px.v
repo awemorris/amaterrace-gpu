@@ -196,11 +196,12 @@ module atg_blt_rsv_px #(
 		(psl == 3'd2) ? {2'd0, x_t_in, 2'b00} :
 		(psl == 3'd3) ? {1'b0, x_t_in, 3'b000} : {x_t_in, 4'b0000};
 	assign x_b = {{(ADDR_W - 23){1'b0}}, x_t_sh};
-	wire [15:0] da_lo, da_hi0, da_hi1;
+	wire [15:0] da_lo;
+	wire [ADDR_W-17:0] da_hi0, da_hi1;
 	wire da_c0, da_c10, da_c11;
-	am_add #(.W(16)) a_da_lo  (.a(drow[15:0]),  .b(x_b[15:0]),  .ci(1'b0), .s(da_lo),  .co(da_c0));
-	am_add #(.W(16)) a_da_hi0 (.a(drow[31:16]), .b(x_b[31:16]), .ci(1'b0), .s(da_hi0), .co(da_c10));
-	am_add #(.W(16)) a_da_hi1 (.a(drow[31:16]), .b(x_b[31:16]), .ci(1'b1), .s(da_hi1), .co(da_c11));
+	am_add #(.W(16))        a_da_lo  (.a(drow[15:0]),        .b(x_b[15:0]),        .ci(1'b0), .s(da_lo),  .co(da_c0));
+	am_add #(.W(ADDR_W-16)) a_da_hi0 (.a(drow[ADDR_W-1:16]), .b(x_b[ADDR_W-1:16]), .ci(1'b0), .s(da_hi0), .co(da_c10));
+	am_add #(.W(ADDR_W-16)) a_da_hi1 (.a(drow[ADDR_W-1:16]), .b(x_b[ADDR_W-1:16]), .ci(1'b1), .s(da_hi1), .co(da_c11));
 	assign daddr = {da_c0 ? da_hi1 : da_hi0, da_lo};
 	assign grp_co_unused[1] = da_c0 ? da_c11 : da_c10;
 	assign grp_co_unused[2] = 1'b0;

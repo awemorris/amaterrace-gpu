@@ -283,7 +283,7 @@ module atg_cp_fence #(
 					f_wide_r <= f_64;
 `ifdef SYNTH_KINTEX7
 					if (f_val_b[0]) addr[15:0] <= (f_64 || f_op == 2'd1) ? {f_addr[15:3], 3'b000} : {f_addr[15:2], 2'b00};
-					if (f_val_b[1]) addr[31:16] <= f_addr[31:16];
+					if (f_val_b[1]) addr[ADDR_W-1:16] <= {{(ADDR_W-32){1'b0}}, f_addr[31:16]};
 					if (f_val_b[2]) value[15:0] <= f_value[15:0];
 					if (f_val_b[3]) value[31:16] <= f_value[31:16];
 					if (f_val_b[4]) aux[15:0] <= f_aux[15:0];

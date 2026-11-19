@@ -309,7 +309,7 @@ module atg_blt_2d #(
 	reg [ADDR_W-1:0] r_tile_step;
 	reg [31:0] r_dstride, r_sstride, r_dbase, r_sbase;
 	reg r_seg_last;
-	reg [31:0] r_d_first, r_s_first;
+	reg [ADDR_W-1:0] r_d_first, r_s_first;
 	reg [16:0] r_yd_start, r_ys_start;
 	reg [ADDR_W-1:0] r_dst_delta_norm, r_dst_delta_back;
 	reg [ADDR_W-1:0] r_src_delta_norm, r_src_delta_back;
@@ -1748,9 +1748,16 @@ module atg_blt_2d #(
 	wire [2:0] bst_wr_line_2_hi = br_bank_l2 ? meta_dline_1_2[br_seg_idx_l2_hi][6:4] : meta_dline_0_2[br_seg_idx_l2_hi][6:4];
 	wire [6:0] bst_wr_line_2 = {bst_wr_line_2_hi, bst_wr_line_2_lo};
 
-	wire [3:0] bst_wr_line_3_lo = br_bank_l3 ? meta_dline_1_3[br_seg_idx_l3_lo][3:0] : meta_dline_0_3[br_seg_idx_l3_lo][3:0];
-	wire [LA_W-26:0] bst_wr_line_3_hi = br_bank_l3 ? meta_dline_1_3[br_seg_idx_l3_hi][LA_W-22:4] : meta_dline_0_3[br_seg_idx_l3_hi][LA_W-22:4];
-	wire [LA_W-22:0] bst_wr_line_3 = {bst_wr_line_3_hi, bst_wr_line_3_lo};
+	wire [LA_W-22:0] bst_wr_line_3;
+	generate
+		if (LA_W > 25) begin : g_bwl3_hi
+			wire [3:0] bst_wr_line_3_lo = br_bank_l3 ? meta_dline_1_3[br_seg_idx_l3_lo][3:0] : meta_dline_0_3[br_seg_idx_l3_lo][3:0];
+			wire [LA_W-26:0] bst_wr_line_3_hi = br_bank_l3 ? meta_dline_1_3[br_seg_idx_l3_hi][LA_W-22:4] : meta_dline_0_3[br_seg_idx_l3_hi][LA_W-22:4];
+			assign bst_wr_line_3 = {bst_wr_line_3_hi, bst_wr_line_3_lo};
+		end else begin : g_bwl3_lo
+			assign bst_wr_line_3 = br_bank_l3 ? meta_dline_1_3[br_seg_idx_l3_lo] : meta_dline_0_3[br_seg_idx_l3_lo];
+		end
+	endgenerate
 	wire [LA_W-1:0] bst_wr_line_raw = {bst_wr_line_3, bst_wr_line_2, bst_wr_line_1, bst_wr_line_0};
 
 	wire [3:0] bst_wr_be_0_lo = br_bank_b0 ? meta_be_1_0[br_seg_idx_b0_lo][3:0] : meta_be_0_0[br_seg_idx_b0_lo][3:0];
@@ -2129,8 +2136,10 @@ module atg_blt_2d #(
 	/* The segment's end: the next pixel, or the next row. */
 	wire [16:0] sn17 = {{(16 - US){1'b0}}, sn};
 	wire seg_last = r_seg_last;
-	wire [ADDR_W-1:0] ext_dstride = r_dstride;
-	wire [ADDR_W-1:0] ext_sstride = r_sstride;
+	wire [63:0] r_dstride_ext = {32'd0, r_dstride};
+	wire [63:0] r_sstride_ext = {32'd0, r_sstride};
+	wire [ADDR_W-1:0] ext_dstride = r_dstride_ext[ADDR_W-1:0];
+	wire [ADDR_W-1:0] ext_sstride = r_sstride_ext[ADDR_W-1:0];
 	wire [ADDR_W-1:0] tile_step = tile_bytes(psl_leg, 1'b0);
 	wire [ADDR_W-1:0] tile_back = tile_bytes(psl_leg, 1'b1);
 	wire [ADDR_W-1:0] dst_back, src_back, dst_neg, src_neg;
@@ -2170,7 +2179,7 @@ module atg_blt_2d #(
 	wire d_idle, s_idle;
 
 	/* The first row's address within its tile row: (y mod 4) x 4 pixels, in bytes. */
-	wire [31:0] d_first, s_first;
+	wire [ADDR_W-1:0] d_first, s_first;
 	wire [1:0] first_co_unused;
 
 	wire [7:0] dt_base = mdt_h ? {4'b0000, y0[1:0], 2'b00} : 8'd0;
@@ -2207,36 +2216,38 @@ module atg_blt_2d #(
 	wire [7:0] s_in_tile_8 = s_in_tile_8_comb;
 `endif
 
+	wire [63:0] r_dbase_ext = {32'd0, r_dbase};
+	wire [63:0] r_sbase_ext = {32'd0, r_sbase};
 	wire d_first_co, s_first_co;
-	am_add #(.W(8))  a_df_lo (.a(r_dbase[7:0]), .b(d_in_tile_8), .ci(1'b0), .s(d_first[7:0]), .co(d_first_co));
-	am_add #(.W(24)) a_df_hi (.a(r_dbase[31:8]), .b(24'd0), .ci(d_first_co), .s(d_first[31:8]), .co(first_co_unused[0]));
-	am_add #(.W(8))  a_sf_lo (.a(r_sbase[7:0]), .b(s_in_tile_8), .ci(1'b0), .s(s_first[7:0]), .co(s_first_co));
-	am_add #(.W(24)) a_sf_hi (.a(r_sbase[31:8]), .b(24'd0), .ci(s_first_co), .s(s_first[31:8]), .co(first_co_unused[1]));
+	am_add #(.W(8))          a_df_lo (.a(r_dbase_ext[7:0]),        .b(d_in_tile_8),        .ci(1'b0),       .s(d_first[7:0]),        .co(d_first_co));
+	am_add #(.W(ADDR_W-8))   a_df_hi (.a(r_dbase_ext[ADDR_W-1:8]), .b({(ADDR_W-8){1'b0}}), .ci(d_first_co), .s(d_first[ADDR_W-1:8]), .co(first_co_unused[0]));
+	am_add #(.W(8))          a_sf_lo (.a(r_sbase_ext[7:0]),        .b(s_in_tile_8),        .ci(1'b0),       .s(s_first[7:0]),        .co(s_first_co));
+	am_add #(.W(ADDR_W-8))   a_sf_hi (.a(r_sbase_ext[ADDR_W-1:8]), .b({(ADDR_W-8){1'b0}}), .ci(s_first_co), .s(s_first[ADDR_W-1:8]), .co(first_co_unused[1]));
 
-	reg [31:0] r_dacc_step, r_sacc_step;
+	reg [ADDR_W-1:0] r_dacc_step, r_sacc_step;
 	always @(posedge clk or posedge rst_b2d_high) begin
 		if (rst_b2d_high) begin
-			r_dacc_step <= 32'd0;
-			r_sacc_step <= 32'd0;
+			r_dacc_step <= {ADDR_W{1'b0}};
+			r_sacc_step <= {ADDR_W{1'b0}};
 		end else begin
-			r_dacc_step <= {mr_dacc_hi ? r_dst_neg[31:16] : dst_step[31:16], mr_dacc_m0 ? r_dst_neg[15:8] : dst_step[15:8], mr_dacc_lo ? r_dst_neg[7:0] : dst_step[7:0]};
+			r_dacc_step <= {mr_dacc_hi ? r_dst_neg[ADDR_W-1:16] : dst_step[ADDR_W-1:16], mr_dacc_m0 ? r_dst_neg[15:8] : dst_step[15:8], mr_dacc_lo ? r_dst_neg[7:0] : dst_step[7:0]};
 `ifdef SYNTH_KINTEX7
-			r_sacc_step <= {mr_sacc_h1 ? r_src_neg[31:24] : src_step[31:24], mr_sacc_h0 ? r_src_neg[23:16] : src_step[23:16], mr_sacc_m0 ? r_src_neg[15:8] : src_step[15:8], mr_sacc_lo ? r_src_neg[7:0] : src_step[7:0]};
+			r_sacc_step <= {mr_sacc_h1 ? r_src_neg[ADDR_W-1:24] : src_step[ADDR_W-1:24], mr_sacc_h0 ? r_src_neg[23:16] : src_step[23:16], mr_sacc_m0 ? r_src_neg[15:8] : src_step[15:8], mr_sacc_lo ? r_src_neg[7:0] : src_step[7:0]};
 `else
-			r_sacc_step <= {mr_sacc_hi ? r_src_neg[31:16] : src_step[31:16], mr_sacc_m0 ? r_src_neg[15:8] : src_step[15:8], mr_sacc_lo ? r_src_neg[7:0] : src_step[7:0]};
+			r_sacc_step <= {mr_sacc_hi ? r_src_neg[ADDR_W-1:16] : src_step[ADDR_W-1:16], mr_sacc_m0 ? r_src_neg[15:8] : src_step[15:8], mr_sacc_lo ? r_src_neg[7:0] : src_step[7:0]};
 `endif
 		end
 	end
 
-	atg_blt_acc dacc (
+	atg_blt_acc #(.W(ADDR_W)) dacc (
 		.clk(clk), .rst_n(rst_n), .go(d_row_go),
-		.y(r_yd_start), .s(r_dstride),
+		.y(r_yd_start), .s(ext_dstride),
 		.b(r_d_first),
 		.add(row_add), .d(r_dacc_step), .r(dst_row), .idle(d_idle)
 	);
-	atg_blt_acc sacc (
+	atg_blt_acc #(.W(ADDR_W)) sacc (
 		.clk(clk), .rst_n(rst_n), .go(s_row_go),
-		.y(r_ys_start), .s(r_sstride),
+		.y(r_ys_start), .s(ext_sstride),
 		.b(r_s_first),
 		.add(row_add), .d(r_sacc_step), .r(src_row), .idle(s_idle)
 	);
@@ -3361,8 +3372,8 @@ module atg_blt_2d #(
 			r_sstride <= 32'd0;
 			r_dbase <= 32'd0;
 			r_sbase <= 32'd0;
-			r_d_first <= 32'd0;
-			r_s_first <= 32'd0;
+			r_d_first <= {ADDR_W{1'b0}};
+			r_s_first <= {ADDR_W{1'b0}};
 			r_yd_start <= 17'd0;
 			r_ys_start <= 17'd0;
 			width <= 17'd0;
@@ -3448,9 +3459,9 @@ module atg_blt_2d #(
 					r_ys_start <= mst_acc ? {2'b00, ys_start[16:2]} : ys_start;
 				end
 				if (st_df0) r_d_first[15:0] <= d_first[15:0];
-				if (st_df1) r_d_first[31:16] <= d_first[31:16];
+				if (st_df1) r_d_first[ADDR_W-1:16] <= d_first[ADDR_W-1:16];
 				if (st_sf0) r_s_first[15:0] <= s_first[15:0];
-				if (st_sf1) r_s_first[31:16] <= s_first[31:16];
+				if (st_sf1) r_s_first[ADDR_W-1:16] <= s_first[ADDR_W-1:16];
 				if (st_db0) r_dst_back[15:0] <= dst_back[15:0];
 				if (st_db1) r_dst_back[ADDR_W-1:16] <= dst_back[ADDR_W-1:16];
 				if (st_sb0) r_src_back[15:0] <= src_back[15:0];

@@ -215,15 +215,22 @@ module atg_su_lsu #(
 	wire [LW-1:0] lead_ll1 = ~pend_ll1_n;
 	wire [LW-1:0] lead_ll2 = ~pend_ll2_n;
 	wire [LW-1:0] lead_ll3 = ~pend_ll3_n;
+	wire [NPHYS*64-1:0] radr64;
+	genvar ge;
+	generate
+		for (ge = 0; ge < NPHYS; ge = ge + 1) begin : g_radr64
+			assign radr64[ge*64 +: 64] = {32'd0, radr[ge*32 +: 32]};
+		end
+	endgenerate
 	localparam integer LL_Q0 = LA_W / 4;
 	localparam integer LL_Q1 = LA_W / 4;
 	localparam integer LL_Q2 = LA_W / 4;
 	localparam integer LL_Q3 = LA_W - (LL_Q0 + LL_Q1 + LL_Q2);
 	wire [LA_W-1:0] lline = {
-		radr[lead_ll3*32 + LINE_SHIFT + LL_Q0 + LL_Q1 + LL_Q2 +: LL_Q3],
-		radr[lead_ll2*32 + LINE_SHIFT + LL_Q0 + LL_Q1         +: LL_Q2],
-		radr[lead_ll1*32 + LINE_SHIFT + LL_Q0                 +: LL_Q1],
-		radr[lead_ll0*32 + LINE_SHIFT                         +: LL_Q0]
+		radr64[lead_ll3*64 + LINE_SHIFT + LL_Q0 + LL_Q1 + LL_Q2 +: LL_Q3],
+		radr64[lead_ll2*64 + LINE_SHIFT + LL_Q0 + LL_Q1         +: LL_Q2],
+		radr64[lead_ll1*64 + LINE_SHIFT + LL_Q0                 +: LL_Q1],
+		radr64[lead_ll0*64 + LINE_SHIFT                         +: LL_Q0]
 	};
 	wire unused_ll_nz = &{1'b0, pend_ll0_nz, pend_ll1_nz, pend_ll2_nz, pend_ll3_nz};
 
@@ -257,7 +264,7 @@ module atg_su_lsu #(
 			for (gleq = 0; gleq < N_LEQ; gleq = gleq + 1) begin : g_leq
 				localparam LB_B = gleq * 3;
 				localparam LW_C = (LB_B + 3 <= LA_W) ? 3 : (LA_W - LB_B);
-				assign leq_g[gleq] = (radr[la*32 + LINE_SHIFT + LB_B +: LW_C] == cline[LB_B +: LW_C]);
+				assign leq_g[gleq] = (radr64[la*64 + LINE_SHIFT + LB_B +: LW_C] == cline[LB_B +: LW_C]);
 			end
 			(* keep = "true" *) wire leq_lo = &leq_g[N_LEQ/2-1:0];
 			(* keep = "true" *) wire leq_hi = &leq_g[N_LEQ-1:N_LEQ/2];

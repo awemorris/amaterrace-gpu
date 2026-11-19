@@ -46,6 +46,7 @@
 `default_nettype none
 
 module atg_cp_ctl #(
+	parameter ADDR_W = 32,
 	parameter NSRC = 8,	/* Number of fault sources (0 ring, 1 seq, 2 state, 3 fence, 4 SU, 5 CPU, 6 BLT, 7 other blocks, 8 DISP) */
 	parameter WDT_RESET = 32'h10000000,	/* WDT_CYCLES after reset (2^28) */
 	parameter LINE_SHIFT = 5,	/* log2 of the line size */
@@ -87,7 +88,7 @@ module atg_cp_ctl #(
 	input wire f_busy,
 	input wire mc_fault,
 	input wire [7:0] mc_fault_client,
-	input wire [31:0] mc_fault_addr,
+	input wire [ADDR_W-1:0] mc_fault_addr,
 	input wire mc_fault_write,
 	input wire mc_fault_prot,	/* refused for session protection: FAULT_INFO[9] */
 	input wire mc_fault_mem,	/* a protection table read failed: kind 5 */
@@ -117,8 +118,8 @@ module atg_cp_ctl #(
 	output wire ev_wdt,
 	output wire fault_session_clear,
 	output wire [7:0] fault_session_tag,
-	output wire [31:0] aperture_base,
-	output wire [31:0] aperture_limit
+	output wire [ADDR_W-1:0] aperture_base,
+	output wire [ADDR_W-1:0] aperture_limit
 );
 	`include "ghci_regs.vh"
 
@@ -155,6 +156,7 @@ module atg_cp_ctl #(
 	reg [31:0] heap_base;
 	reg [31:0] heap_limit;
 	(* max_fanout = 16 *) reg [31:0] fault_addr;
+	reg [31:0] fault_addr_hi;
 	(* max_fanout = 16 *) reg [31:0] fault_info;
 	reg [31:0] wdt_count;
 	reg [33:0] stuck_count;
@@ -219,10 +221,13 @@ module atg_cp_ctl #(
 	                           cp_is_decode ? GHCI_ST_DECODE :
 	                           cp_is_fetch ? GHCI_ST_FETCH :
 	                           GHCI_ST_IDLE;
+	wire [63:0] mc_fault_addr_ext = {{(64-ADDR_W){1'b0}}, mc_fault_addr};
+	wire [63:0] ap_base_ext = {32'd0, ap_base};
+	wire [63:0] ap_limit_ext = {(&ap_limit ? 32'hFFFF_FFFF : 32'd0), ap_limit};
 	assign cp_state = cp_is_wait_halt_mc ? GHCI_ST_WAIT_MEM : cp_state_nomc;
 	assign lc_state = resetting ? GHCI_LC_RESETTING : st;
-	assign aperture_base = ap_base;
-	assign aperture_limit = ap_limit;
+	assign aperture_base = ap_base_ext[ADDR_W-1:0];
+	assign aperture_limit = ap_limit_ext[ADDR_W-1:0];
 
 	/* Host writes. */
 	wire w0 = hcr_we && hcr_wmask[0];
@@ -392,7 +397,7 @@ module atg_cp_ctl #(
 
 	(* DONT_TOUCH = "TRUE" *) reg [7:0] f_mc_v_r, f_host_v_r, f_s0_v_r, f_s1_v_r, f_s2_v_r;
 	reg f_wdt_only_r;
-	reg [31:0] f_mc_info_r, f_mc_addr_r;
+	reg [31:0] f_mc_info_r, f_mc_addr_r, f_mc_addr_hi_r;
 	reg [3:0] f_host_kind_r;
 	reg [7:0] f_host_tag_r;
 	reg [31:0] f_s0_info_r, f_s1_info_r, f_s2_info_r;
@@ -408,6 +413,7 @@ module atg_cp_ctl #(
 			f_wdt_only_r <= 1'b0;
 			f_mc_info_r <= 32'd0;
 			f_mc_addr_r <= 32'd0;
+			f_mc_addr_hi_r <= 32'd0;
 			f_host_kind_r <= 4'd0;
 			f_host_tag_r <= 8'd0;
 			f_s0_info_r <= 32'd0;
@@ -423,7 +429,8 @@ module atg_cp_ctl #(
 				mc_fault_tag, mc_client_to_unit(mc_fault_client),
 				mc_fault_mem ? GHCI_FAULT_KIND_AXI_ERROR :
 				(mc_fault_prot ? GHCI_FAULT_KIND_PERM_FAULT : GHCI_FAULT_KIND_PAGE_FAULT)};
-			f_mc_addr_r <= mc_fault_addr;
+			f_mc_addr_r <= mc_fault_addr_ext[31:0];
+			f_mc_addr_hi_r <= mc_fault_addr_ext[63:32];
 
 			f_host_v_r <= {8{kick_bad || kick_absent || locked_bad || wdt_fire}};
 			f_wdt_only_r <= wdt_fire && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
@@ -548,7 +555,8 @@ module atg_cp_ctl #(
 	wire [31:0] n_info_mux = (p_mc ? mc_info_w : 32'd0) |
 	                         (p_host ? host_info_w : 32'd0) |
 	                         (p_src ? sf_info : 32'd0);
-	wire [31:0] n_addr_mux = (p_mc ? mc_fault_addr : 32'd0) |
+	wire [31:0] n_addr_hi_mux = (p_mc ? mc_fault_addr_ext[63:32] : 32'd0);
+	wire [31:0] n_addr_mux = (p_mc ? mc_fault_addr_ext[31:0] : 32'd0) |
 	                         (p_src ? sf_addr : 32'd0);
 	wire any_mux = mc_gpu || kick_absent || kick_bad || locked_bad || wdt_fire || any_src_fault;
 	wire unused_n_c = &{1'b0, any, n_info, n_addr, k};
@@ -633,6 +641,7 @@ module atg_cp_ctl #(
 		if (rst_ctl_int) begin
 			fault_info  <= 32'd0;
 			fault_addr  <= 32'd0;
+			fault_addr_hi <= 32'd0;
 			wdt_count   <= 32'd0;
 			stuck_count <= 34'd0;
 		end else begin
@@ -657,6 +666,9 @@ module atg_cp_ctl #(
 
 			if (fault_rst_b[5]) fault_addr[31:16] <= 16'd0;
 			else if (tf_buf[5]) fault_addr[31:16] <= n_addr[31:16];
+
+			if (fault_rst_b[5]) fault_addr_hi <= 32'd0;
+			else if (tf_buf[5]) fault_addr_hi <= f_mc_v_r[7] ? f_mc_addr_hi_r : 32'd0;
 
 			if (wdt_cnt_rst_b[0]) wdt_count[15:0] <= 16'd0;
 			else if (wdt_cnt_en_b[0]) wdt_count[15:0] <= wdt_count_n[15:0];
@@ -693,6 +705,7 @@ module atg_cp_ctl #(
 			heap_limit <= 32'd0;
 `ifndef SYNTH_KINTEX7
 			fault_addr <= 32'd0;
+			fault_addr_hi <= 32'd0;
 			fault_info <= 32'd0;
 			wdt_count <= 32'd0;
 			stuck_count <= 34'd0;
@@ -758,8 +771,10 @@ module atg_cp_ctl #(
 				fault_info <= n_info_mux;
 			else if (wr_fault_info)
 				fault_info <= fault_info & ~(hcr_wdata & hcr_wmask);
-			if (take_fault_addr)
+			if (take_fault_addr) begin
 				fault_addr <= n_addr_mux;
+				fault_addr_hi <= n_addr_hi_mux;
+			end
 `endif
 
 			/* The state. */
@@ -903,7 +918,7 @@ module atg_cp_ctl #(
 		I_CTRL:          rd = {25'd0, irq_global, ctrl_wdt_en, 1'b0, 1'b0, ctrl_halt, ctrl_run, resetting};
 		I_FAULT_INFO:    rd = fault_info;
 		I_FAULT_ADDR:    rd = fault_addr;
-		I_FAULT_ADDR_HI: rd = 32'd0;
+		I_FAULT_ADDR_HI: rd = fault_addr_hi;
 		I_WDT:           rd = wdt_cycles;
 		I_HEAP_BASE:     rd = heap_base;
 		I_HEAP_LIMIT:    rd = heap_limit;

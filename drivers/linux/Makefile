@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Zlib
-# Amaterrace GPU
+
+#
+# GHCI GPU Driver
 # Copyright (C) 2026 Awe Morris
+#
+
 #
 # Builds the ghci kernel module out of the kernel tree:
 #

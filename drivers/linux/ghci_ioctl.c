@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Zlib
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  */
 
@@ -75,7 +75,9 @@ static int ghci_ioctl_dev_query(struct drm_device *drm, void *data,
 	if (q->size &&
 	    copy_to_user(u64_to_user_ptr(q->pointer), src, min(q->size, size)))
 		return -EFAULT;
+
 	q->size = size;
+
 	return 0;
 }
 
@@ -105,9 +107,11 @@ static int ghci_ioctl_bo_create(struct drm_device *drm, void *data,
 	ret = drm_gem_handle_create(file, &bo->base.base, &args->handle);
 	if (!ret)
 		args->gpu_addr = addr;
+
 out:
 	/* The handle holds the object now, or nothing does. */
 	drm_gem_object_put(&bo->base.base);
+
 	return ret;
 }
 
@@ -120,18 +124,23 @@ static int ghci_ioctl_bo_mmap_offset(struct drm_device *drm, void *data,
 
 	if (args->pad)
 		return -EINVAL;
+
 	obj = drm_gem_object_lookup(file, args->handle);
 	if (!obj)
 		return -ENOENT;
+
 	if (to_ghci_bo(obj)->flags & DRM_GHCI_BO_NO_MMAP) {
 		ret = -EPERM;
 		goto out;
 	}
+
 	ret = drm_gem_create_mmap_offset(obj);
 	if (!ret)
 		args->offset = drm_vma_node_offset_addr(&obj->vma_node);
+
 out:
 	drm_gem_object_put(obj);
+
 	return ret;
 }
 
@@ -147,14 +156,18 @@ static int ghci_ioctl_bo_info(struct drm_device *drm, void *data,
 	obj = drm_gem_object_lookup(file, args->handle);
 	if (!obj)
 		return -ENOENT;
+
 	if (!ghci_has_walker(gdev))
 		ret = ghci_bo_gpu_addr(gdev, to_ghci_bo(obj), &addr);
+
 	if (!ret) {
 		args->flags = to_ghci_bo(obj)->flags;
 		args->size = obj->size;
 		args->gpu_addr = addr;
 	}
+
 	drm_gem_object_put(obj);
+
 	return ret;
 }
 
@@ -170,17 +183,21 @@ static int ghci_ioctl_bo_wait(struct drm_device *drm, void *data,
 		return -EINVAL;
 
 	timeout = drm_timeout_abs_to_jiffies(args->timeout_ns);
+
 	obj = drm_gem_object_lookup(file, args->handle);
 	if (!obj)
 		return -ENOENT;
+
 	ret = dma_resv_wait_timeout(obj->resv,
 				    (args->flags & DRM_GHCI_BO_WAIT_WRITE) ?
 					    DMA_RESV_USAGE_WRITE :
 					    DMA_RESV_USAGE_READ,
 				    true, timeout);
+
 	drm_gem_object_put(obj);
 	if (ret == 0)
 		return timeout ? -ETIMEDOUT : -EBUSY;
+
 	return ret < 0 ? ret : 0;
 }
 
@@ -195,18 +212,23 @@ static int ghci_ioctl_vm_create(struct drm_device *drm, void *data,
 
 	if (args->flags)
 		return -EINVAL;
+
 	vm = kzalloc(sizeof(*vm), GFP_KERNEL);
 	if (!vm)
 		return -ENOMEM;
+
 	vm->state = DRM_GHCI_VM_USABLE;
+
 	ret = xa_alloc(&gfile->vms, &id, vm, XA_LIMIT(1, GHCI_VMS_PER_FILE),
 		       GFP_KERNEL);
 	if (ret) {
 		kfree(vm);
 		return ret == -EBUSY ? -ENOSPC : ret;
 	}
+
 	vm->id = id;
 	args->vm_id = id;
+
 	return 0;
 }
 
@@ -219,10 +241,13 @@ static int ghci_ioctl_vm_destroy(struct drm_device *drm, void *data,
 
 	if (args->pad)
 		return -EINVAL;
+
 	vm = xa_erase(&gfile->vms, args->vm_id);
 	if (!vm)
 		return -ENOENT;
+
 	kfree(vm);
+
 	return 0;
 }
 
@@ -238,6 +263,7 @@ static int ghci_ioctl_vm_get_state(struct drm_device *drm, void *data,
 	if (vm)
 		args->state = READ_ONCE(vm->state);
 	xa_unlock(&gfile->vms);
+
 	return vm ? 0 : -ENOENT;
 }
 
@@ -269,9 +295,11 @@ int ghci_file_open(struct drm_device *drm, struct drm_file *file)
 
 	if (!gfile)
 		return -ENOMEM;
+
 	gfile->gdev = to_ghci(drm);
 	xa_init_flags(&gfile->vms, XA_FLAGS_ALLOC1);
 	file->driver_priv = gfile;
+
 	return 0;
 }
 

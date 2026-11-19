@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Zlib
 /*
- * Amaterrace GPU
+ * GHCI GPU Driver
  * Copyright (C) 2026 Awe Morris
  */
 
@@ -85,7 +85,9 @@ static void ghci_setup_irq(struct ghci_device *gdev)
 		drm_info(&gdev->drm, "no interrupt (%d); polling\n", ret);
 		return;
 	}
+
 	gdev->irq = pci_irq_vector(pdev, 0);
+
 	ret = devm_request_irq(&pdev->dev, gdev->irq, ghci_irq_handler,
 			       IRQF_SHARED, DRM_GHCI_DRIVER_NAME, gdev);
 	if (ret) {
@@ -93,6 +95,7 @@ static void ghci_setup_irq(struct ghci_device *gdev)
 			 gdev->irq, ret);
 		return;
 	}
+
 	gdev->polled = false;
 }
 
@@ -104,6 +107,7 @@ static int ghci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = pcim_enable_device(pdev);
 	if (ret)
 		return ret;
+
 	if (!(pci_resource_flags(pdev, 0) & IORESOURCE_MEM) ||
 	    pci_resource_len(pdev, 0) < GHCI_WINDOW_BYTES)
 		return -ENODEV;
@@ -112,12 +116,14 @@ static int ghci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 				  struct ghci_device, drm);
 	if (IS_ERR(gdev))
 		return PTR_ERR(gdev);
+
 	gdev->pdev = pdev;
 	pci_set_drvdata(pdev, gdev);
 
 	ret = pcim_iomap_regions(pdev, BIT(0), DRM_GHCI_DRIVER_NAME);
 	if (ret)
 		return ret;
+
 	gdev->mmio = pcim_iomap_table(pdev)[0];
 
 	gdev->ring_bytes = ghci_ring_kib << 10;
@@ -140,6 +146,7 @@ static int ghci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		ghci_hw_fini(gdev);
 		return ret;
 	}
+
 	return 0;
 }
 
@@ -159,7 +166,7 @@ static void ghci_shutdown(struct pci_dev *pdev)
 		ghci_hw_fini(gdev);
 }
 
-/* The KC705 board (boards/kc705/ip.tcl). */
+/* ATG1 reference board. */
 static const struct pci_device_id ghci_pci_ids[] = {
 	{ PCI_DEVICE(0x10ee, 0x7024) },
 	{ }
@@ -176,11 +183,11 @@ static struct pci_driver ghci_pci_driver = {
 
 module_pci_driver(ghci_pci_driver);
 
-MODULE_AUTHOR("Awe Morris");
-MODULE_DESCRIPTION("DRM driver for GHCI 1.0 GPUs");
 /*
  * The source is under the Zlib license (see each file's SPDX line), which
  * is compatible with the GPL: the module as a whole is distributed under
  * the GPL v2 with that additional permission.
  */
+MODULE_AUTHOR("Awe Morris");
+MODULE_DESCRIPTION("DRM driver for GHCI 1.0 GPUs");
 MODULE_LICENSE("GPL and additional rights");

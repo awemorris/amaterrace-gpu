@@ -262,24 +262,30 @@ module atg_vf_index #(
 		end
 	endgenerate
 
-	/* Carry-free 27-bit equality checks: l0 == lend and rq_l == lend_m1 */
-	wire [26:0] l0_ext = {{(27-LA_W){1'b0}}, l0};
-	wire [26:0] lend_ext = {{(27-LA_W){1'b0}}, lend};
-	wire [26:0] rql_ext = {{(27-LA_W){1'b0}}, rq_l};
-	wire [26:0] lend_m1_ext = {{(27-LA_W){1'b0}}, lend_m1};
-	(* keep = "true" *) wire [8:0] l0_eq_c;
-	(* keep = "true" *) wire [8:0] rql_eq_c;
+	/* Carry-free LA_W-bit equality checks: l0 == lend and rq_l == lend_m1 */
+	localparam integer L_CHUNKS = (LA_W + 2) / 3;
+	localparam integer L_CMP_W = L_CHUNKS * 3;
+	wire [63:0] l0_pad      = {{(64-LA_W){1'b0}}, l0};
+	wire [63:0] lend_pad    = {{(64-LA_W){1'b0}}, lend};
+	wire [63:0] rql_pad     = {{(64-LA_W){1'b0}}, rq_l};
+	wire [63:0] lend_m1_pad = {{(64-LA_W){1'b0}}, lend_m1};
+	wire [L_CMP_W-1:0] l0_ext      = l0_pad[L_CMP_W-1:0];
+	wire [L_CMP_W-1:0] lend_ext    = lend_pad[L_CMP_W-1:0];
+	wire [L_CMP_W-1:0] rql_ext     = rql_pad[L_CMP_W-1:0];
+	wire [L_CMP_W-1:0] lend_m1_ext = lend_m1_pad[L_CMP_W-1:0];
+	(* keep = "true" *) wire [L_CHUNKS-1:0] l0_eq_c;
+	(* keep = "true" *) wire [L_CHUNKS-1:0] rql_eq_c;
 	genvar ge;
 	generate
-		for (ge = 0; ge < 9; ge = ge + 1) begin : g_eq27
+		for (ge = 0; ge < L_CHUNKS; ge = ge + 1) begin : g_eq_chunks
 			assign l0_eq_c[ge]  = (l0_ext[3*ge +: 3]   == lend_ext[3*ge +: 3]);
 			assign rql_eq_c[ge] = (rql_ext[3*ge +: 3] == lend_m1_ext[3*ge +: 3]);
 		end
 	endgenerate
-	(* keep = "true" *) wire l0_eq_lo  = &l0_eq_c[4:0];
-	(* keep = "true" *) wire l0_eq_hi  = &l0_eq_c[8:5];
-	(* keep = "true" *) wire rql_eq_lo = &rql_eq_c[4:0];
-	(* keep = "true" *) wire rql_eq_hi = &rql_eq_c[8:5];
+	(* keep = "true" *) wire l0_eq_lo  = &l0_eq_c[L_CHUNKS/2-1:0];
+	(* keep = "true" *) wire l0_eq_hi  = &l0_eq_c[L_CHUNKS-1:L_CHUNKS/2];
+	(* keep = "true" *) wire rql_eq_lo = &rql_eq_c[L_CHUNKS/2-1:0];
+	(* keep = "true" *) wire rql_eq_hi = &rql_eq_c[L_CHUNKS-1:L_CHUNKS/2];
 	wire l0_eq_lend_w  = l0_eq_lo && l0_eq_hi;
 	wire rql_eq_lm1_w  = rql_eq_lo && rql_eq_hi;
 
@@ -558,9 +564,11 @@ module atg_vf_index #(
 		sel_eil_b[1] ? s_icount[31:16] : eileft_next[31:16],
 		sel_eil_b[0] ? s_icount[15:0]  : eileft_next[15:0]
 	};
+	wire [63:0] ka0_ext = {32'd0, k_a0_r};
+	wire [63:0] kalast_ext = {32'd0, k_alast};
 	wire [LA_W-1:0] next_rql_val = {
-		sel_rql_b[1] ? k_a0_r[ADDR_W-1:LINE_SHIFT+14] : (rq_wrap_b[1] ? l0[LA_W-1:14] : rql_next[LA_W-1:14]),
-		sel_rql_b[0] ? k_a0_r[LINE_SHIFT+13:LINE_SHIFT] : (rq_wrap_b[0] ? l0[13:0] : rql_next[13:0])
+		sel_rql_b[1] ? ka0_ext[ADDR_W-1:LINE_SHIFT+14] : (rq_wrap_b[1] ? l0[LA_W-1:14] : rql_next[LA_W-1:14]),
+		sel_rql_b[0] ? ka0_ext[LINE_SHIFT+13:LINE_SHIFT] : (rq_wrap_b[0] ? l0[13:0] : rql_next[13:0])
 	};
 	wire [31:0] next_rqi_val = {
 		sel_rqi_b[1] ? s_icount[31:16] : rqileft_next[31:16],
@@ -660,10 +668,10 @@ module atg_vf_index #(
 
 			if (ce_a0_b[0])   a0[15:0]         <= k_a0_r[15:0];
 			if (ce_a0_b[1])   a0[31:16]        <= k_a0_r[31:16];
-			if (ce_l0_b[0])   l0[13:0]         <= k_a0_r[LINE_SHIFT+13:LINE_SHIFT];
-			if (ce_l0_b[1])   l0[LA_W-1:14]    <= k_a0_r[ADDR_W-1:LINE_SHIFT+14];
-			if (ce_lend_b[0]) lend[13:0]       <= k_alast[LINE_SHIFT+13:LINE_SHIFT];
-			if (ce_lend_b[1]) lend[LA_W-1:14]  <= k_alast[ADDR_W-1:LINE_SHIFT+14];
+			if (ce_l0_b[0])   l0[13:0]         <= ka0_ext[LINE_SHIFT+13:LINE_SHIFT];
+			if (ce_l0_b[1])   l0[LA_W-1:14]    <= ka0_ext[ADDR_W-1:LINE_SHIFT+14];
+			if (ce_lend_b[0]) lend[13:0]       <= kalast_ext[LINE_SHIFT+13:LINE_SHIFT];
+			if (ce_lend_b[1]) lend[LA_W-1:14]  <= kalast_ext[ADDR_W-1:LINE_SHIFT+14];
 			if (ce_lm1_b[0])  lend_m1[13:0]    <= lend_m1_w[13:0];
 			if (ce_lm1_b[1])  lend_m1[LA_W-1:14] <= lend_m1_w[LA_W-1:14];
 

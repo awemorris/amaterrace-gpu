@@ -62,11 +62,13 @@ module atg_blt_acc #(
 	(* max_fanout = 16 *) reg idle_q;
 	assign idle = idle_q;
 
-	(* equivalent_register_removal = "no" *) reg [15:0] ms_lo, ms_hi;
+	localparam WHI = W - 16;
+	(* equivalent_register_removal = "no" *) reg [15:0] ms_lo;
+	(* equivalent_register_removal = "no" *) reg [WHI-1:0] ms_hi;
 	wire [W-1:0] ms = {ms_hi, ms_lo};
 
 	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [15:0] r_lo;
-	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [15:0] r_hi;
+	(* equivalent_register_removal = "no", max_fanout = 16 *) reg [WHI-1:0] r_hi;
 	assign r = {r_hi, r_lo};
 
 	wire step = !idle_q;
@@ -88,7 +90,7 @@ module atg_blt_acc #(
 	/* One adder for both sums (a step of the multiply, or the final add: never in one cycle). */
 	wire [W-1:0] sum;
 	wire sum_co_unused;
-	wire [W-1:0] b_mux = {idle_hi ? d[31:16] : ms[31:16], idle_lo ? d[15:0] : ms[15:0]};
+	wire [W-1:0] b_mux = {idle_hi ? d[W-1:16] : ms[W-1:16], idle_lo ? d[15:0] : ms[15:0]};
 
 	am_add #(.W(W)) a_sum (.a(r), .b(b_mux), .ci(1'b0), .s(sum), .co(sum_co_unused));
 
@@ -115,22 +117,22 @@ module atg_blt_acc #(
 	always @(posedge clk or posedge rst_acc_high) begin
 		if (rst_acc_high) begin
 			ms_lo <= 16'd0;
-			ms_hi <= 16'd0;
+			ms_hi <= {WHI{1'b0}};
 			r_lo  <= 16'd0;
-			r_hi  <= 16'd0;
+			r_hi  <= {WHI{1'b0}};
 		end else begin
 			if (ce_ms1)
 				ms_lo[15:1] <= go_ms1 ? s[15:1] : ms_lo[14:0];
 			ms_lo[0] <= go_ms1 ? s[0] : (step ? 1'b0 : ms_lo[0]);
 
 			if (ce_hi)
-				ms_hi <= go_hi ? s[31:16] : {ms_hi[14:0], ms_lo[15]};
+				ms_hi <= go_hi ? s[W-1:16] : {ms_hi[WHI-2:0], ms_lo[15]};
 
 			if (ce_r0)
 				r_lo <= go_r0 ? b[15:0] : sum[15:0];
 
 			if (ce_r1)
-				r_hi <= go_r1 ? b[31:16] : sum[31:16];
+				r_hi <= go_r1 ? b[W-1:16] : sum[W-1:16];
 		end
 	end
 

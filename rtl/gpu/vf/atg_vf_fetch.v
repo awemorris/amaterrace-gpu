@@ -449,7 +449,8 @@ module atg_vf_fetch #(
 	wire [LA_W-1:0] l2_w;
 	wire [LINE_SHIFT:0] osum_w;
 	wire l2_co_unused, osum_co_unused;
-	am_add #(.W(LA_W)) nl (.a(addr[ADDR_W-1:LINE_SHIFT]), .b({LA_W{1'b0}}), .ci(1'b1), .s(l2_w), .co(l2_co_unused));
+	wire [63:0] addr_ext = {32'd0, addr};
+	am_add #(.W(LA_W)) nl (.a(addr_ext[ADDR_W-1:LINE_SHIFT]), .b({LA_W{1'b0}}), .ci(1'b1), .s(l2_w), .co(l2_co_unused));
 	am_add #(.W(LINE_SHIFT + 1)) os (.a({1'b0, addr[LINE_SHIFT-1:0]}), .b({{(LINE_SHIFT-4){1'b0}}, cur_size}),
 		.ci(1'b0), .s(osum_w), .co(osum_co_unused));
 	wire xline_w = osum_w[LINE_SHIFT] && (osum_w[LINE_SHIFT-1:0] != {LINE_SHIFT{1'b0}});
@@ -484,25 +485,30 @@ module atg_vf_fetch #(
 	endgenerate
 
 	/* Tag match results (latched in ST_TAG) */
+	localparam integer STAG_CHUNKS = (LA_W + 2) / 3;
+	localparam integer STAG_CMP_W = STAG_CHUNKS * 3;
 	wire [7:0] tag_m1_8_w, tag_m2_8_w;
 	generate
 		for (gb = 0; gb < 8; gb = gb + 1) begin : g_stag_cmp
 			wire [LA_W-1:0] ref_l1 = (gb < 4) ? l1_r0 : l1_r1;
 			wire [LA_W-1:0] ref_l2 = (gb < 4) ? l2_r0 : l2_r1;
-			wire [26:0] cur_stag_ext = {{(27-LA_W){1'b0}}, cur_stag[gb]};
-			wire [26:0] ref_l1_ext = {{(27-LA_W){1'b0}}, ref_l1};
-			wire [26:0] ref_l2_ext = {{(27-LA_W){1'b0}}, ref_l2};
-			(* keep = "true" *) wire [8:0] c1_p;
-			(* keep = "true" *) wire [8:0] c2_p;
+			wire [63:0] cur_stag_pad = {{(64-LA_W){1'b0}}, cur_stag[gb]};
+			wire [63:0] ref_l1_pad = {{(64-LA_W){1'b0}}, ref_l1};
+			wire [63:0] ref_l2_pad = {{(64-LA_W){1'b0}}, ref_l2};
+			wire [STAG_CMP_W-1:0] cur_stag_ext = cur_stag_pad[STAG_CMP_W-1:0];
+			wire [STAG_CMP_W-1:0] ref_l1_ext = ref_l1_pad[STAG_CMP_W-1:0];
+			wire [STAG_CMP_W-1:0] ref_l2_ext = ref_l2_pad[STAG_CMP_W-1:0];
+			(* keep = "true" *) wire [STAG_CHUNKS-1:0] c1_p;
+			(* keep = "true" *) wire [STAG_CHUNKS-1:0] c2_p;
 			genvar gp;
-			for (gp = 0; gp < 9; gp = gp + 1) begin : g_p
+			for (gp = 0; gp < STAG_CHUNKS; gp = gp + 1) begin : g_p
 				assign c1_p[gp] = (cur_stag_ext[3*gp +: 3] == ref_l1_ext[3*gp +: 3]);
 				assign c2_p[gp] = (cur_stag_ext[3*gp +: 3] == ref_l2_ext[3*gp +: 3]);
 			end
-			(* keep = "true" *) wire m1_lo = &c1_p[4:0];
-			(* keep = "true" *) wire m1_hi = &c1_p[8:5];
-			(* keep = "true" *) wire m2_lo = &c2_p[4:0];
-			(* keep = "true" *) wire m2_hi = &c2_p[8:5];
+			(* keep = "true" *) wire m1_lo = &c1_p[STAG_CHUNKS/2-1:0];
+			(* keep = "true" *) wire m1_hi = &c1_p[STAG_CHUNKS-1:STAG_CHUNKS/2];
+			(* keep = "true" *) wire m2_lo = &c2_p[STAG_CHUNKS/2-1:0];
+			(* keep = "true" *) wire m2_hi = &c2_p[STAG_CHUNKS-1:STAG_CHUNKS/2];
 			assign tag_m1_8_w[gb] = m1_lo && m1_hi;
 			assign tag_m2_8_w[gb] = m2_lo && m2_hi;
 		end
@@ -1202,10 +1208,10 @@ module atg_vf_fetch #(
 			if (ce_bnd_b[1])  bend32_r[31:16] <= bend32_s[31:16];
 			if (st_is_addr)   boff_hi_nz_r   <= boff_hi_nz_w;
 
-			if (ce_l1_0_b[0]) l1_r0[13:0]      <= addr[LINE_SHIFT+13:LINE_SHIFT];
-			if (ce_l1_0_b[1]) l1_r0[LA_W-1:14] <= addr[ADDR_W-1:LINE_SHIFT+14];
-			if (ce_l1_1_b[0]) l1_r1[13:0]      <= addr[LINE_SHIFT+13:LINE_SHIFT];
-			if (ce_l1_1_b[1]) l1_r1[LA_W-1:14] <= addr[ADDR_W-1:LINE_SHIFT+14];
+			if (ce_l1_0_b[0]) l1_r0[13:0]      <= addr_ext[LINE_SHIFT+13:LINE_SHIFT];
+			if (ce_l1_0_b[1]) l1_r0[LA_W-1:14] <= addr_ext[ADDR_W-1:LINE_SHIFT+14];
+			if (ce_l1_1_b[0]) l1_r1[13:0]      <= addr_ext[LINE_SHIFT+13:LINE_SHIFT];
+			if (ce_l1_1_b[1]) l1_r1[LA_W-1:14] <= addr_ext[ADDR_W-1:LINE_SHIFT+14];
 			if (ce_l2_0_b[0]) l2_r0[13:0]      <= l2_w[13:0];
 			if (ce_l2_0_b[1]) l2_r0[LA_W-1:14] <= l2_w[LA_W-1:14];
 			if (ce_l2_1_b[0]) l2_r1[13:0]      <= l2_w[13:0];

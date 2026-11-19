@@ -885,6 +885,7 @@ module atg_cp #(
 	wire [3:0] su_fault_kind = (x_fault_kind[3:0] == 4'd8) ? GHCI_FAULT_KIND_INVALID_OP : x_fault_kind[3:0];
 
 	atg_cp_ctl #(
+		.ADDR_W(ADDR_W),
 		.LINE_SHIFT(LINE_SHIFT), .UNITS(UNITS), .NSRC(9),
 		.SRC_BLOCK(72'h00_00_06_00_02_00_00_00_00), .SRC_CLIENT(72'h00_00_00_00_00_00_00_00_00),
 		.DC_CLIENT(HAS_DISP != 0 ? DC_CLIENT : 8'hFF),
