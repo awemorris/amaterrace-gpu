@@ -1140,20 +1140,14 @@ module atg_blt_2d #(
 	wire [2*LINE_BITS-1:0] both = {buf1, buf0};
 	wire [LINE_BITS-1:0] copy_line;
 
-	generate
-	if (ENABLE_SCALE != 0) begin : gen_leg_align
-		atg_blt_align #(
-			.LINE_BYTES(LINE_BYTES),
-			.LINE_SHIFT(LINE_SHIFT)
-		) leg_align (
-			.in_data(both),
-			.off(src_off),
-			.out_data(copy_line)
-		);
-	end else begin : gen_no_leg_align
-		assign copy_line = buf0;
-	end
-	endgenerate
+	atg_blt_align #(
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT)
+	) leg_align (
+		.in_data(both),
+		.off(src_off),
+		.out_data(copy_line)
+	);
 
 	/* Blend-over. */
 	wire bl_done;
@@ -1620,20 +1614,14 @@ module atg_blt_2d #(
 	wire [2*LINE_BITS-1:0] pp_both = {s2_sdata1_sim, s2_sdata0_sim};
 	wire [LINE_BITS-1:0] pp_copy_line;
 
-	generate
-	if (ENABLE_SCALE != 0) begin : gen_pp_align
-		atg_blt_align #(
-			.LINE_BYTES(LINE_BYTES),
-			.LINE_SHIFT(LINE_SHIFT)
-		) pp_align (
-			.in_data(pp_both),
-			.off(s2_off_sim),
-			.out_data(pp_copy_line)
-		);
-	end else begin : gen_no_pp_align
-		assign pp_copy_line = s2_sdata0_sim;
-	end
-	endgenerate
+	atg_blt_align #(
+		.LINE_BYTES(LINE_BYTES),
+		.LINE_SHIFT(LINE_SHIFT)
+	) pp_align (
+		.in_data(pp_both),
+		.off(s2_off_sim),
+		.out_data(pp_copy_line)
+	);
 `endif
 
 	/* Burst requests to AMB */
@@ -2371,7 +2359,6 @@ module atg_blt_2d #(
 	am_add #(.W(5)) a_bwr (.a(burst_wr_out), .b(5'd0), .ci(bst_wr_fire), .s(bwr_up), .co(bst_co_unused[13]));
 	am_sub #(.W(5)) s_bwr (.a(bwr_up), .b(5'd0), .bi(rsp_wr_bst), .d(bwr_next), .bo(bst_co_unused[14]));
 
-`ifdef SYNTH_KINTEX7
 	reg r_burst_drain_done;
 	always @(posedge clk or posedge rst_b2d_high) begin
 		if (rst_b2d_high)
@@ -2380,9 +2367,6 @@ module atg_blt_2d #(
 			r_burst_drain_done <= (state == S_BURST) && b_draining && !s1_valid && !s2_valid && !s3_valid && (burst_wr_out == 5'd0) && !rsp_valid;
 	end
 	wire burst_drain_done = r_burst_drain_done;
-`else
-	wire burst_drain_done = b_draining && !s1_valid && !s2_valid && !s3_valid && bwr_next == 5'd0 && !rsp_valid;
-`endif
 
 	/* Mode determination at kick */
 	wire is_smear = (sbase_u == dbase_u) && !o_rev && ({1'b0, s_src_xy[15:0]} < clip_x0);

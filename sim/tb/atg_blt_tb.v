@@ -56,7 +56,10 @@ module atg_blt_tb_run #(
 	reg [7:0] rsp_tag = 0;
 	reg [LB-1:0] rsp_rdata = 0;
 
-	atg_blt #(.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .MS4(1)) dut (
+	atg_blt #(
+		.ADDR_W(32), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .MS4(1),
+		.ENABLE_SCALE(1), .ENABLE_BLEND(1), .ENABLE_TILE(1)
+	) dut (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.kick(kick), .busy(busy), .done(done), .error(error), .error_kind(error_kind),
 		.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
