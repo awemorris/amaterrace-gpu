@@ -74,7 +74,11 @@ module am_addsub #(
 	end
 	endgenerate
 `else
+`ifdef SYNTH_ASIC
+	am_add #(.W(W)) u_as_add (.a(a), .b(bx), .ci(sub_ci), .s(s), .co(co));
+`else
 	assign {co, s} = {1'b0, a} + {1'b0, bx} + {{W{1'b0}}, sub_ci};
+`endif
 `endif
 endmodule
 

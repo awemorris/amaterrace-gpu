@@ -612,6 +612,7 @@ module atg_su_wb #(
 
 		/* 2-entry decoupled long-beat output stage (lq_* head + lq1_* skid) isolates sv from g_lskid. */
 		(* keep = "true", max_fanout = 16 *) reg lq_skid_valid;
+		(* keep = "true", dont_touch = "true" *) reg [DW/16-1:0] lq_skid_valid_rep;
 		(* keep = "true", max_fanout = 16 *) reg lq_in_rdy;
 		reg [WARP_W-1:0] lq1_warp;
 		reg [GRP_W-1:0]  lq1_grp;
@@ -695,7 +696,7 @@ module atg_su_wb #(
 				if (ksel_v && lq_in_rdy)
 					lq1_d_sl <= lk_s_data_sl;
 				if (lq_ld_s)
-					lq_d_sl <= lq_skid_valid ? lq1_d_sl : lk_s_data_sl;
+					lq_d_sl <= lq_skid_valid_rep[glqd] ? lq1_d_sl : lk_s_data_sl;
 			end
 			(* dont_touch = "true" *) wire [15:0] sd_fl_s = fq_valid_sl[glqd] ? fq_data[glqd*16 +: 16] : lq_d_sl;
 			assign w_data[glqd*16 +: 16] = wb_sel1_w ? (wb_sel0_w ? sd_fl_s : g_sd_sl[glqd].sd_45_s) :
@@ -706,8 +707,9 @@ module atg_su_wb #(
 
 		always @(posedge clk or posedge rst_p) begin
 			if (rst_p) begin
-				lq_skid_valid <= 1'b0;
-				lq_in_rdy     <= 1'b1;
+				lq_skid_valid     <= 1'b0;
+				lq_skid_valid_rep <= {(DW/16){1'b0}};
+				lq_in_rdy         <= 1'b1;
 				lq1_warp      <= {WARP_W{1'b0}};
 				lq1_grp       <= {GRP_W{1'b0}};
 				lq1_reg       <= 6'd0;
@@ -744,12 +746,14 @@ module atg_su_wb #(
 				end
 				if (lq_skid_valid) begin
 					if (lq_done) begin
-						lq_skid_valid <= 1'b0;
-						lq_in_rdy     <= 1'b1;
+						lq_skid_valid     <= 1'b0;
+						lq_skid_valid_rep <= {(DW/16){1'b0}};
+						lq_in_rdy         <= 1'b1;
 					end
 				end else if (lq_valid && !lq_done && ksel_v) begin
-					lq_skid_valid <= 1'b1;
-					lq_in_rdy     <= 1'b0;
+					lq_skid_valid     <= 1'b1;
+					lq_skid_valid_rep <= {(DW/16){1'b1}};
+					lq_in_rdy         <= 1'b0;
 				end
 				if (lq_head_we) begin
 					lq_valid <= lq_skid_valid ? 1'b1      : ksel_v;
@@ -1008,9 +1012,11 @@ module atg_su_wb #(
 				s_any = 1'b1;
 			end
 	end
+	/* verilator lint_off SYNCASYNCNET */
 	always @(posedge clk)
 		if (rst_n && s_two)
 			$display("ERROR atg_su_wb: two short results in one cycle (%b)", s_valid);
+	/* verilator lint_on SYNCASYNCNET */
 `endif
 
 	wire unused_ok = &{1'b0, fe_grp, (G != 0)};

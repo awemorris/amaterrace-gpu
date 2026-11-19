@@ -296,6 +296,7 @@ module atg_rop_ds_tb;
 			 * bounds: disabled (depth[9] = 0)
 			 * value = 10'h03F (32'h0000003F)
 			 */
+			st_put(9'h075, 32'd64);
 			st_put(9'h076, 32'h0000003F);
 			st_put(9'h05C, 32'h00000000);
 

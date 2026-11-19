@@ -105,6 +105,7 @@ module atg_su_lds #(
 	wire scrub_i = scrub;
 	wire lds_take_raw = !scrub_i && !sc_on && (st == IDLE) && mine && !ram_we_r;
 	(* max_fanout = 12 *) reg [2:0] st;
+	(* keep = "true", dont_touch = "true" *) reg [NPHYS-1:0] lds_idle_rep;
 	wire [NPHYS*AW-1:0] radr;
 	wire [DW-1:0] rdat, rcmp, res;
 	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes;
@@ -200,7 +201,7 @@ module atg_su_lds #(
 `ifdef SYNTH_KINTEX7
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_tk_a (.I0(lds_take_raw), .O(lds_take_l));
 `else
-			assign lds_take_l  = lds_take_raw;
+			assign lds_take_l  = lds_idle_rep[l];
 `endif
 			(* shreg_extract = "no" *) reg [AW-1:0] radr_l_r;
 			always @(posedge clk)
@@ -305,6 +306,7 @@ module atg_su_lds #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			st <= IDLE;
+			lds_idle_rep <= {NPHYS{1'b1}};
 			li <= {LW{1'b0}};
 			pli_1 <= {LW{1'b0}};
 			pli_2 <= {LW{1'b0}};
@@ -362,6 +364,7 @@ module atg_su_lds #(
 					li <= {LW{1'b0}};
 					aph <= 3'd0;
 					st <= xl == {NPHYS{1'b0}} ? BEAT : ACCESS;
+					lds_idle_rep <= {NPHYS{1'b0}};
 				end
 				ACCESS: if (atom_active) begin
 					case (aph)
@@ -399,8 +402,10 @@ module atg_su_lds #(
 				DRAIN1: st <= DRAIN2;
 				DRAIN2: st <= DRAIN3;
 				DRAIN3: st <= BEAT;
-				default: if (l_ready)
+				default: if (l_ready) begin
 					st <= IDLE;
+					lds_idle_rep <= {NPHYS{1'b1}};
+				end
 				endcase
 			end
 		end

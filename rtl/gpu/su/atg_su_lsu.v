@@ -135,6 +135,12 @@ module atg_su_lsu #(
 	assign prep_lsu_h1 = prep_lsu_raw;
 `endif
 	(* max_fanout = 12 *) reg [3:0] st;
+	(* keep = "true", dont_touch = "true" *) reg [NPHYS-1:0] idle_r, prep_r;
+	reg at_valid_r;
+	reg [29:0] at_addr_r;
+	reg [31:0] at_a_r, at_b_r;
+	wire [29:0] at_ad_w;
+	wire [31:0] at_a_w, at_b_w;
 	(* max_fanout = 12 *) reg [31:0] rimm;
 	wire [DW-1:0] radr, rdat, rcmp, res;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend, pend_a, pend_b, pend_be;
@@ -230,9 +236,9 @@ module atg_su_lsu #(
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pr_wo (.I0(prep_lsu_h), .O(prep_wo));
 			(* dont_touch = "true" *) LUT1 #(.INIT(2'b10)) u_buf_pr_ad (.I0(prep_lsu_h), .O(prep_adr_h));
 `else
-			assign take_byte_l = take_lsu_h;
-			assign prep_wo     = prep_lsu_h;
-			assign prep_adr_h  = prep_lsu_h;
+			assign take_byte_l = idle_r[la];
+			assign prep_wo     = prep_r[la];
+			assign prep_adr_h  = prep_r[la];
 `endif
 			(* dont_touch = "true" *) reg [WW-1:0] rwo_rd_0, rwo_rd_1, rwo_rd_2, rwo_rd_3, rwo_wr_a, rwo_wr_b, rwo_wr_be;
 			always @(posedge clk) begin
@@ -407,6 +413,12 @@ module atg_su_lsu #(
 			pend_b  <= {NPHYS{1'b0}};
 			pend_be <= {NPHYS{1'b0}};
 			st <= IDLE;
+			idle_r <= {NPHYS{1'b1}};
+			prep_r <= {NPHYS{1'b0}};
+			at_valid_r <= 1'b0;
+			at_addr_r <= 30'd0;
+			at_a_r <= 32'd0;
+			at_b_r <= 32'd0;
 			rimm <= 32'd0;
 			inv_q <= 1'b0;
 			ali <= {LW{1'b0}};
@@ -440,11 +452,11 @@ module atg_su_lsu #(
 				pend_a  <= pend_a & ~cur;
 				pend_b  <= pend_b & ~cur;
 				pend_be <= pend_be & ~cur;
-			end else if (st == AWAIT && at_rsp_valid) begin
-				pend[ali]    <= 1'b0;
-				pend_a[ali]  <= 1'b0;
-				pend_b[ali]  <= 1'b0;
-				pend_be[ali] <= 1'b0;
+			end else if (st == AREQ && at_valid_r && at_ready) begin
+				pend[anext[LW-1:0]]    <= 1'b0;
+				pend_a[anext[LW-1:0]]  <= 1'b0;
+				pend_b[anext[LW-1:0]]  <= 1'b0;
+				pend_be[anext[LW-1:0]] <= 1'b0;
 			end
 			if (lsu_idle_ce_a) begin
 				rwr <= op == ATG_LSU_SW;
@@ -480,14 +492,22 @@ module atg_su_lsu #(
 			inv_q <= (mine && st == IDLE && op == ATG_LSU_FENCE && imm[2]) ||
 			         (take && (amask != {NPHYS{1'b0}}) && (op == ATG_LSU_ATOM));
 			case (st)
-			IDLE: if (take)
+			IDLE: if (take) begin
+				idle_r <= {NPHYS{1'b0}};
+				prep_r <= {NPHYS{1'b1}};
 				st <= PREP;
+			end
 			PREP: begin
+				prep_r <= {NPHYS{1'b0}};
 				if (lanes == {NPHYS{1'b0}})
 					st <= BEAT;
-				else if (ratom)
-					st <= AREQ;
-				else
+				else if (ratom) begin
+					st         <= AREQ;
+					at_valid_r <= pend_nz;
+					at_addr_r  <= at_ad_w;
+					at_a_r     <= at_a_w;
+					at_b_r     <= at_b_w;
+				end else
 					st <= LINE;
 			end
 			LINE: begin
@@ -506,18 +526,28 @@ module atg_su_lsu #(
 			WAIT: if (dc_rsp_valid) begin
 				st <= LINE;
 			end
-			AREQ: if (anext == NPHYS[LW:0])
+			AREQ: if (!at_valid_r) begin
 				st <= BEAT;
-			else begin
+			end else begin
 				ali <= anext[LW-1:0];
-				if (at_ready)
-					st <= AWAIT;
+				if (at_ready) begin
+					st         <= AWAIT;
+					at_valid_r <= 1'b0;
+				end
 			end
-			AWAIT: if (at_rsp_valid) begin
-				st <= AREQ;
+			AWAIT: begin
+				at_addr_r <= at_ad_w;
+				at_a_r    <= at_a_w;
+				at_b_r    <= at_b_w;
+				if (at_rsp_valid) begin
+					st         <= AREQ;
+					at_valid_r <= pend_nz;
+				end
 			end
-			default: if (l_ready)
-				st <= IDLE;
+			default: if (l_ready) begin
+				st     <= IDLE;
+				idle_r <= {NPHYS{1'b1}};
+			end
 			endcase
 		end
 	end
@@ -575,44 +605,29 @@ module atg_su_lsu #(
 `endif
 		end
 	endgenerate
-	reg [7:0] at_ad_0, at_ad_1;
-	reg [6:0] at_ad_2, at_ad_3;
-	reg [7:0] at_a_0, at_a_1, at_a_2, at_a_3;
-	reg [7:0] at_b_0, at_b_1, at_b_2, at_b_3;
-	integer ai;
-	always @(*) begin
-		at_ad_0 = radr[2 +: 8];
-		at_ad_1 = radr[10 +: 8];
-		at_ad_2 = radr[18 +: 7];
-		at_ad_3 = radr[25 +: 7];
-		at_a_0  = rdat[0 +: 8];
-		at_a_1  = rdat[8 +: 8];
-		at_a_2  = rdat[16 +: 8];
-		at_a_3  = rdat[24 +: 8];
-		at_b_0  = rcmp[0 +: 8];
-		at_b_1  = rcmp[8 +: 8];
-		at_b_2  = rcmp[16 +: 8];
-		at_b_3  = rcmp[24 +: 8];
-		for (ai = 1; ai < NPHYS; ai = ai + 1) begin
-			if (an_ad_b0 == ai[LW-1:0]) at_ad_0 = radr[ai*32 + 2 +: 8];
-			if (an_ad_b1 == ai[LW-1:0]) at_ad_1 = radr[ai*32 + 10 +: 8];
-			if (an_ad_b2 == ai[LW-1:0]) at_ad_2 = radr[ai*32 + 18 +: 7];
-			if (an_ad_b3 == ai[LW-1:0]) at_ad_3 = radr[ai*32 + 25 +: 7];
-			if (an_a_b0  == ai[LW-1:0]) at_a_0  = rdat[ai*32 + 0 +: 8];
-			if (an_a_b1  == ai[LW-1:0]) at_a_1  = rdat[ai*32 + 8 +: 8];
-			if (an_a_b2  == ai[LW-1:0]) at_a_2  = rdat[ai*32 + 16 +: 8];
-			if (an_a_b3  == ai[LW-1:0]) at_a_3  = rdat[ai*32 + 24 +: 8];
-			if (an_b_b0  == ai[LW-1:0]) at_b_0  = rcmp[ai*32 + 0 +: 8];
-			if (an_b_b1  == ai[LW-1:0]) at_b_1  = rcmp[ai*32 + 8 +: 8];
-			if (an_b_b2  == ai[LW-1:0]) at_b_2  = rcmp[ai*32 + 16 +: 8];
-			if (an_b_b3  == ai[LW-1:0]) at_b_3  = rcmp[ai*32 + 24 +: 8];
-		end
-	end
-	assign at_valid = st == AREQ && anext != NPHYS[LW:0];
+	assign at_ad_w = {
+		radr[{an_ad_b3, 5'd25} +: 7],
+		radr[{an_ad_b2, 5'd18} +: 7],
+		radr[{an_ad_b1, 5'd10} +: 8],
+		radr[{an_ad_b0, 5'd2}  +: 8]
+	};
+	assign at_a_w = {
+		rdat[{an_a_b3, 5'd24} +: 8],
+		rdat[{an_a_b2, 5'd16} +: 8],
+		rdat[{an_a_b1, 5'd8}  +: 8],
+		rdat[{an_a_b0, 5'd0}  +: 8]
+	};
+	assign at_b_w = {
+		rcmp[{an_b_b3, 5'd24} +: 8],
+		rcmp[{an_b_b2, 5'd16} +: 8],
+		rcmp[{an_b_b1, 5'd8}  +: 8],
+		rcmp[{an_b_b0, 5'd0}  +: 8]
+	};
+	assign at_valid = at_valid_r;
 	assign at_op = rsub;
-	assign at_addr = {at_ad_3, at_ad_2, at_ad_1, at_ad_0};
-	assign at_a = {at_a_3, at_a_2, at_a_1, at_a_0};
-	assign at_b = {at_b_3, at_b_2, at_b_1, at_b_0};
+	assign at_addr = at_addr_r;
+	assign at_a = at_a_r;
+	assign at_b = at_b_r;
 
 	assign l_valid = st == BEAT;
 	assign l_warp = rwarp;

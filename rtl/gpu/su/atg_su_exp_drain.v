@@ -46,6 +46,8 @@ module atg_su_exp_drain #(
 	output reg [WARP_W-1:0] d_warp,
 	output reg [2:0] d_q,
 	output reg [2:0] d_rt,
+	(* keep = "true", dont_touch = "true" *) output reg [36*WARP_W-1:0] d_warp_rep,
+	(* keep = "true", dont_touch = "true" *) output reg [20*3-1:0] d_q_rep,
 	output wire d_first,
 	output wire d_lastb,
 	output wire d_nocol,
@@ -147,6 +149,8 @@ module atg_su_exp_drain #(
 			vx_w <= {WARP_W{1'b0}};
 			d_warp <= {WARP_W{1'b0}};
 			d_q <= 3'd0;
+			d_warp_rep <= {(36*WARP_W){1'b0}};
+			d_q_rep <= 60'd0;
 			d_rt <= 3'd0;
 			rtw_r <= 8'd0;
 			low_rtw_r <= 3'd0;
@@ -167,6 +171,8 @@ module atg_su_exp_drain #(
 				if (cand_v) begin
 					d_warp <= cand;
 					d_q <= 3'd0;
+					d_warp_rep <= {36{cand}};
+					d_q_rep <= 60'd0;
 					st <= S_FIRST;
 				end
 			S_FIRST: begin
@@ -185,6 +191,7 @@ module atg_su_exp_drain #(
 						st <= S_RET;
 					else begin
 						d_q <= dq1;
+						d_q_rep <= {20{dq1}};
 						d_rt <= low_rtw_r;
 					end
 				end

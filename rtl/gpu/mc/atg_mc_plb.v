@@ -41,7 +41,7 @@ module atg_mc_plb #(
 	input wire [GW-1:0] g0,
 	input wire [TAGW-1:0] tag,
 	input wire [LINE_SHIFT-1:0] byte_idx,
-	output reg hit,
+	output wire hit,
 	output wire [LINE_BYTES*8-1:0] data,
 	output wire [7:0] byte_data,
 
@@ -55,34 +55,61 @@ module atg_mc_plb #(
 	input wire [TAGW-1:0] w_tag,
 	output wire w_inv
 );
+	localparam LB = LINE_BYTES * 8;
+
 	reg [PLB-1:0] pl_v;
 	reg [PLB*TAGW-1:0] pl_tag;
-	(* ram_style = "distributed" *) reg [LINE_BYTES*8-1:0] pl_data [0:PLB-1];
+	reg [PLB*LB-1:0] pl_data;
 	reg [PLB_W-1:0] pl_rr;
-	reg [PLB_W-1:0] idx;
 	wire [PLB-1:0] pl_inv;
 	integer k;
 
-	always @(*) begin
-		hit = 1'b0;
-		idx = {PLB_W{1'b0}};
-		for (k = 0; k < PLB; k = k + 1)
-			if (pl_v[k] && pl_tag[k*TAGW +: TAGW] == tag) begin
-				hit = 1'b1;
-				idx = k[PLB_W-1:0];
-			end
-	end
-
-	wire [7:0] way_byte [0:PLB-1];
-	genvar gk_b;
+	/* Parallel tag match across PLB ways, then mux way line before byte select. */
+	wire [PLB-1:0] pl_match;
+	wire [PLB*LB-1:0] pl_masked;
+	genvar gm;
 	generate
-		for (gk_b = 0; gk_b < PLB; gk_b = gk_b + 1) begin : g_wb
-			assign way_byte[gk_b] = pl_data[gk_b][{byte_idx, 3'b000} +: 8];
+		for (gm = 0; gm < PLB; gm = gm + 1) begin : g_match
+			assign pl_match[gm] = pl_v[gm] && (pl_tag[gm*TAGW +: TAGW] == tag);
+			assign pl_masked[gm*LB +: LB] = {LB{pl_match[gm]}} & pl_data[gm*LB +: LB];
 		end
 	endgenerate
 
-	assign byte_data = way_byte[idx];
-	assign data = pl_data[idx];
+	assign hit = |pl_match;
+
+	generate
+		if (PLB == 4) begin : g_mux4
+			assign data = (pl_masked[0*LB +: LB] | pl_masked[1*LB +: LB]) |
+				      (pl_masked[2*LB +: LB] | pl_masked[3*LB +: LB]);
+		end else if (PLB == 8) begin : g_mux8
+			wire [LB-1:0] s0 = pl_masked[0*LB +: LB] | pl_masked[1*LB +: LB];
+			wire [LB-1:0] s1 = pl_masked[2*LB +: LB] | pl_masked[3*LB +: LB];
+			wire [LB-1:0] s2 = pl_masked[4*LB +: LB] | pl_masked[5*LB +: LB];
+			wire [LB-1:0] s3 = pl_masked[6*LB +: LB] | pl_masked[7*LB +: LB];
+			assign data = (s0 | s1) | (s2 | s3);
+		end else if (PLB == 16) begin : g_mux16
+			wire [LB-1:0] s0 = (pl_masked[0*LB +: LB] | pl_masked[1*LB +: LB]) |
+					   (pl_masked[2*LB +: LB] | pl_masked[3*LB +: LB]);
+			wire [LB-1:0] s1 = (pl_masked[4*LB +: LB] | pl_masked[5*LB +: LB]) |
+					   (pl_masked[6*LB +: LB] | pl_masked[7*LB +: LB]);
+			wire [LB-1:0] s2 = (pl_masked[8*LB +: LB] | pl_masked[9*LB +: LB]) |
+					   (pl_masked[10*LB +: LB] | pl_masked[11*LB +: LB]);
+			wire [LB-1:0] s3 = (pl_masked[12*LB +: LB] | pl_masked[13*LB +: LB]) |
+					   (pl_masked[14*LB +: LB] | pl_masked[15*LB +: LB]);
+			assign data = (s0 | s1) | (s2 | s3);
+		end else begin : g_mux_gen
+			reg [LB-1:0] mux_or;
+			integer km;
+			always @(*) begin
+				mux_or = {LB{1'b0}};
+				for (km = 0; km < PLB; km = km + 1)
+					mux_or = mux_or | pl_masked[km*LB +: LB];
+			end
+			assign data = mux_or;
+		end
+	endgenerate
+
+	assign byte_data = data[{byte_idx, 3'b000} +: 8];
 
 	/*
 	 * Whether the line of a tag t (the PLB's lines and w_tag) overlaps
@@ -155,10 +182,10 @@ module atg_mc_plb #(
 
 	always @(posedge clk) begin
 		for (k = 0; k < PLB; k = k + 1)
-			if (fill && rr_hot[k])
+			if (fill && rr_hot[k]) begin
 				pl_tag[k*TAGW +: TAGW] <= fill_tag;
-		if (fill)
-			pl_data[pl_rr] <= fill_data;
+				pl_data[k*LB +: LB] <= fill_data;
+			end
 	end
 
 	wire unused_ok = &{1'b0, ie_co, is_l_bo, gs_co, rr_co};

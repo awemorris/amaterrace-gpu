@@ -362,6 +362,7 @@ module atg_su_opd #(
 
 	wire [DW-1:0] b_early_va, b_early_vb, b_early_vc;
 	reg b_use_rf1, b_use_rf2, b_use_rf3;
+	(* keep = "true", dont_touch = "true" *) reg [NPHYS*2-1:0] b_use_rf1_rep, b_use_rf2_rep, b_use_rf3_rep;
 	reg b_clr31_1, b_inv31_1, b_clr15_1, b_inv15_1;
 	reg b_clr31_2, b_inv31_2, b_clr15_2, b_inv15_2;
 	reg b_clr31_3, b_inv31_3, b_clr15_3, b_inv15_3;
@@ -670,6 +671,9 @@ module atg_su_opd #(
 			b_use_rf1 <= 1'b0;
 			b_use_rf2 <= 1'b0;
 			b_use_rf3 <= 1'b0;
+			b_use_rf1_rep <= {(NPHYS*2){1'b0}};
+			b_use_rf2_rep <= {(NPHYS*2){1'b0}};
+			b_use_rf3_rep <= {(NPHYS*2){1'b0}};
 			b_clr31_1 <= 1'b0; b_inv31_1 <= 1'b0; b_clr15_1 <= 1'b0; b_inv15_1 <= 1'b0;
 			b_clr31_2 <= 1'b0; b_inv31_2 <= 1'b0; b_clr15_2 <= 1'b0; b_inv15_2 <= 1'b0;
 			b_clr31_3 <= 1'b0; b_inv31_3 <= 1'b0; b_clr15_3 <= 1'b0; b_inv15_3 <= 1'b0;
@@ -746,6 +750,9 @@ module atg_su_opd #(
 				b_use_rf1 <= (a_k1_r == 3'd1) && !a_needs_step1;
 				b_use_rf2 <= (a_k2_r == 3'd1) && !a_needs_step1;
 				b_use_rf3 <= (a_k3_r == 3'd1);
+				b_use_rf1_rep <= {(NPHYS*2){(a_k1_r == 3'd1) && !a_needs_step1}};
+				b_use_rf2_rep <= {(NPHYS*2){(a_k2_r == 3'd1) && !a_needs_step1}};
+				b_use_rf3_rep <= {(NPHYS*2){(a_k3_r == 3'd1)}};
 			end
 			if (b_ctl_we_10) begin
 				b_n1 <= a_n1;
@@ -1244,12 +1251,12 @@ module atg_su_opd #(
 			wire b_use_rf2_lo, b_use_rf2_hi;
 			wire b_use_rf3_lo, b_use_rf3_hi;
 
-			assign b_use_rf1_lo = b_use_rf1;
-			assign b_use_rf1_hi = b_use_rf1;
-			assign b_use_rf2_lo = b_use_rf2;
-			assign b_use_rf2_hi = b_use_rf2;
-			assign b_use_rf3_lo = b_use_rf3;
-			assign b_use_rf3_hi = b_use_rf3;
+			assign b_use_rf1_lo = b_use_rf1_rep[2*l];
+			assign b_use_rf1_hi = b_use_rf1_rep[2*l + 1];
+			assign b_use_rf2_lo = b_use_rf2_rep[2*l];
+			assign b_use_rf2_hi = b_use_rf2_rep[2*l + 1];
+			assign b_use_rf3_lo = b_use_rf3_rep[2*l];
+			assign b_use_rf3_hi = b_use_rf3_rep[2*l + 1];
 
 			assign va[l*32 +: 16] = (REG_IO != 0) ?
 				(b_use_rf1_lo ? rf_va1_r[15:0] : b_early_va[l*32 +: 16]) :

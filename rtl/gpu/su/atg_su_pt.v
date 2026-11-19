@@ -156,9 +156,10 @@ module atg_su_pt #(
 	wire [31:0] rbank = {24'd0, pt_idx} % NPHYS;
 	(* shreg_extract = "no", max_fanout = 12 *) reg pt_rd_r1;
 	(* dont_touch = "true" *) reg [AW-1:0] raddr_r;
-	(* shreg_extract = "no", max_fanout = 12 *) reg [$clog2(NPHYS)-1:0] rb_r1, rb_r2, rb_r3;
+	(* shreg_extract = "no", max_fanout = 12 *) reg [$clog2(NPHYS)-1:0] rb_r1;
+	(* keep = "true", dont_touch = "true" *) reg [$clog2(NPHYS)-1:0] rb_r2_sl [0:3];
 	wire [NPHYS*32-1:0] rd_q;
-	wire [NPHYS*32-1:0] rd_q_pipe;
+	reg [31:0] pt_rdata_r;
 
 	/* The banks' write port: the vertex warps' exp, or the scrub's zeros (registered for 0-LUT BRAM ADDR, Rule 4). */
 	wire sc_on;
@@ -214,49 +215,52 @@ module atg_su_pt #(
 		end
 		(* ram_style = "block" *) reg [31:0] m [0:DEPTH-1];
 		reg [31:0] rd_q_b;
-		(* dont_touch = "true" *) reg [31:0] rd_q_pipe_b;
 		(* dont_touch = "true" *) wire pt_rd_b = pt_rd_r1;
 		always @(posedge clk) begin
 			if (m_we_r[b])
 				m[m_wa_r] <= m_wd_r[32 * b +: 32];
 			if (pt_rd_b)
 				rd_q_b <= m[raddr_r];
-			rd_q_pipe_b <= rd_q_b;
 		end
 		assign rd_q[32 * b +: 32] = rd_q_b;
-		assign rd_q_pipe[32 * b +: 32] = rd_q_pipe_b;
 	end
 	endgenerate
 
+	wire [31:0] pt_rdata_nxt;
+	generate
+	for (gbh = 0; gbh < 4; gbh = gbh + 1) begin : g_rdata_sl
+		wire [NPHYS*8-1:0] rdata_b;
+		genvar grbi;
+		for (grbi = 0; grbi < NPHYS; grbi = grbi + 1) begin : g_rbi
+			assign rdata_b[grbi*8 +: 8] = rd_q[grbi*32 + gbh*8 +: 8];
+		end
+		assign pt_rdata_nxt[gbh*8 +: 8] = rdata_b[rb_r2_sl[gbh]*8 +: 8];
+	end
+	endgenerate
+
+	integer grs;
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
-			pt_rd_r1 <= 1'b0;
-			raddr_r  <= {AW{1'b0}};
-			rb_r1    <= {$clog2(NPHYS){1'b0}};
-			rb_r2    <= {$clog2(NPHYS){1'b0}};
-			rb_r3    <= {$clog2(NPHYS){1'b0}};
+			pt_rd_r1   <= 1'b0;
+			raddr_r    <= {AW{1'b0}};
+			rb_r1      <= {$clog2(NPHYS){1'b0}};
+			for (grs = 0; grs < 4; grs = grs + 1)
+				rb_r2_sl[grs] <= {$clog2(NPHYS){1'b0}};
+			pt_rdata_r <= 32'd0;
 		end else begin
 			pt_rd_r1 <= pt_rd;
 			if (pt_rd) begin
 				raddr_r <= raddr[AW-1:0];
 				rb_r1   <= rbank[$clog2(NPHYS)-1:0];
 			end
-			if (pt_rd_r1)
-				rb_r2 <= rb_r1;
-			rb_r3 <= rb_r2;
+			if (pt_rd_r1) begin
+				for (grs = 0; grs < 4; grs = grs + 1)
+					rb_r2_sl[grs] <= rb_r1;
+			end
+			pt_rdata_r <= pt_rdata_nxt;
 		end
 	end
-	generate
-	for (gbh = 0; gbh < 4; gbh = gbh + 1) begin : g_rdata_sl
-		(* dont_touch = "true" *) wire [$clog2(NPHYS)-1:0] rb_r3_sl = rb_r3;
-		wire [NPHYS*8-1:0] rdata_b;
-		genvar grbi;
-		for (grbi = 0; grbi < NPHYS; grbi = grbi + 1) begin : g_rbi
-			assign rdata_b[grbi*8 +: 8] = rd_q_pipe[grbi*32 + gbh*8 +: 8];
-		end
-		assign pt_rdata[gbh*8 +: 8] = rdata_b[rb_r3_sl*8 +: 8];
-	end
-	endgenerate
+	assign pt_rdata = pt_rdata_r;
 
 	/* ---- The allocator. */
 	reg [NB*6-1:0] cnt;	/* entries in use, 0..32 */

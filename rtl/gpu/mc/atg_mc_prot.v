@@ -160,33 +160,69 @@ module atg_mc_prot #(
 
 	/* -------------------------------------- the table and its range */
 
-	wire [GW-1:0] g0 = aperture_base[ADDR_W-1:12];
+	wire [GW-1:0] g0_w = aperture_base[ADDR_W-1:12];
 	wire [ADDR_W:0] lim_up;
 	wire lim_up_co;
 	am_add #(.W(ADDR_W+1)) lim_up_add (
 		.a({1'b0, aperture_limit}), .b({{(ADDR_W+1-12){1'b0}}, 12'hFFF}), .ci(1'b0),
 		.s(lim_up), .co(lim_up_co)
 	);
-	wire [GW:0] g1 = lim_up[ADDR_W:12];
+	wire [GW:0] g1_w = lim_up[ADDR_W:12];
+
+	reg [GW-1:0] g0_r;
+	reg [GW:0] g1_r;
+	reg [ADDR_W-1:0] tbase_s1, tbase_r;
+	reg tb_on_s1, tb_on_r;
+	reg [GW:0] g_diff_s2;
+	reg [ADDR_W:0] tbytes_s3;
+	reg [ADDR_W:0] tend_r;
+
 	/* The table's bytes: one per granule of [G0, G1), rounded up to 4 KiB. */
 	wire [GW:0] g_diff;
 	wire g_diff_bo;
 	am_sub #(.W(GW+1)) g_diff_sub (
-		.a(g1), .b({1'b0, g0}), .bi(1'b0), .d(g_diff), .bo(g_diff_bo)
+		.a(g1_r), .b({1'b0, g0_r}), .bi(1'b0), .d(g_diff), .bo(g_diff_bo)
 	);
 	wire [ADDR_W:0] tgran;
 	wire tgran_co;
 	am_add #(.W(ADDR_W+1)) tgran_add (
-		.a({{(ADDR_W-GW){1'b0}}, g_diff}), .b({{(ADDR_W+1-12){1'b0}}, 12'hFFF}), .ci(1'b0),
+		.a({{(ADDR_W-GW){1'b0}}, g_diff_s2}), .b({{(ADDR_W+1-12){1'b0}}, 12'hFFF}), .ci(1'b0),
 		.s(tgran), .co(tgran_co)
 	);
 	wire [ADDR_W:0] tbytes = {tgran[ADDR_W:12], 12'd0};
-	wire tb_on = P && tbase != {ADDR_W{1'b0}};
 	wire [ADDR_W:0] tend;
 	wire tend_co;
 	am_add #(.W(ADDR_W+1)) tend_add (
-		.a({1'b0, tbase}), .b(tbytes), .ci(1'b0), .s(tend), .co(tend_co)
+		.a({1'b0, tbase_s1}), .b(tbytes_s3), .ci(1'b0), .s(tend), .co(tend_co)
 	);
+
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			g0_r <= {GW{1'b0}};
+			g1_r <= {(GW+1){1'b0}};
+			tbase_s1 <= {ADDR_W{1'b0}};
+			tbase_r <= {ADDR_W{1'b0}};
+			tb_on_s1 <= 1'b0;
+			tb_on_r <= 1'b0;
+			g_diff_s2 <= {(GW+1){1'b0}};
+			tbytes_s3 <= {(ADDR_W+1){1'b0}};
+			tend_r <= {(ADDR_W+1){1'b0}};
+		end else begin
+			g0_r <= g0_w;
+			g1_r <= g1_w;
+			tbase_s1 <= tbase;
+			tbase_r <= tbase_s1;
+			tb_on_s1 <= P && (tbase != {ADDR_W{1'b0}});
+			tb_on_r <= tb_on_s1;
+			g_diff_s2 <= g_diff;
+			tbytes_s3 <= tbytes;
+			tend_r <= tend;
+		end
+	end
+
+	wire [GW-1:0] g0 = g0_r;
+	wire [GW:0] g1 = g1_r;
+	wire tb_on = tb_on_r;
 
 	/* A write into the table without tbl (with HAS_PROT and a table). */
 	function tw_bad_of;
@@ -198,7 +234,7 @@ module atg_mc_prot #(
 `ifdef MUT_PROT_TBL
 			tw_bad_of = 1'b0;
 `else
-			tw_bad_of = tb_on && h[1] && !h[HW] && a >= {1'b0, tbase} && a < tend;
+			tw_bad_of = tb_on && h[1] && !h[HW] && a >= {1'b0, tbase_r} && a < tend_r;
 `endif
 		end
 	endfunction
@@ -347,7 +383,7 @@ module atg_mc_prot #(
 
 	assign p_tag = p_idx[GW-1:LINE_SHIFT];
 	am_add #(.W(LA_W)) w_line_add (
-		.a(tbase[ADDR_W-1:LINE_SHIFT]), .b({{(LA_W-TAGW){1'b0}}, p_tag}), .ci(1'b0),
+		.a(tbase_r[ADDR_W-1:LINE_SHIFT]), .b({{(LA_W-TAGW){1'b0}}, p_tag}), .ci(1'b0),
 		.s(w_line), .co(w_line_co)
 	);
 

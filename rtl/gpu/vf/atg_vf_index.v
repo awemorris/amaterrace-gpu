@@ -305,6 +305,7 @@ module atg_vf_index #(
 	(* keep = "true" *) wire we_buf1_m0 = rd_rsp && rsp_tag[0];
 	(* keep = "true" *) wire we_buf1_m1 = rd_rsp && rsp_tag[0];
 	(* keep = "true" *) wire we_buf1_a  = rd_rsp && rsp_tag[0];
+	(* keep = "true" *) reg [15:0] bv_free0_r, bv_free1_r;
 	wire [15:0] we_buf0_b, we_buf1_b;
 	generate
 		for (gb = 0; gb < 16; gb = gb + 1) begin : g_buf_we
@@ -314,8 +315,8 @@ module atg_vf_index #(
 			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 			LUT1 #(.INIT(2'b10)) u_b1 (.O(we_buf1_b[gb]), .I0(gb < 8 ? we_buf1_m0 : we_buf1_m1));
 `else
-			assign we_buf0_b[gb] = we_buf0_m0;
-			assign we_buf1_b[gb] = we_buf1_m0;
+			assign we_buf0_b[gb] = bv_free0_r[gb] && we_buf0_m0;
+			assign we_buf1_b[gb] = bv_free1_r[gb] && we_buf1_m0;
 `endif
 		end
 	endgenerate
@@ -620,6 +621,8 @@ module atg_vf_index #(
 			nalloc <= 2'd0;
 			inflight <= 2'd0;
 			bv <= 2'b00;
+			bv_free0_r <= 16'hFFFF;
+			bv_free1_r <= 16'hFFFF;
 			e_slot <= 1'b0;
 			e_a <= 32'd0;
 			for (wi = 0; wi < 8; wi = wi + 1)
@@ -638,8 +641,13 @@ module atg_vf_index #(
 			iv_restart_r <= 1'b0;
 			iv_last_r <= 1'b0;
 		end else begin
-			if (rd_rsp_ok)
+			if (rd_rsp_ok) begin
 				bv[rsp_tag[0]] <= 1'b1;
+				if (!rsp_tag[0])
+					bv_free0_r <= 16'h0000;
+				else
+					bv_free1_r <= 16'h0000;
+			end
 			inflight <= inflight_next;
 
 			if (ce_ka0_b[0])  k_a0_r[15:0]     <= k_a0[15:0];
@@ -676,8 +684,13 @@ module atg_vf_index #(
 				rq_slot <= !rq_slot;
 			end
 			nalloc <= nalloc_next;
-			if (pop)
+			if (pop) begin
 				bv[e_slot] <= 1'b0;
+				if (!e_slot)
+					bv_free0_r <= 16'hFFFF;
+				else
+					bv_free1_r <= 16'hFFFF;
+			end
 
 			if (ce_ea_b[0])     e_a[15:0]  <= next_ea_val[15:0];
 			if (ce_ea_b[1])     e_a[31:16] <= next_ea_val[31:16];
@@ -762,6 +775,8 @@ module atg_vf_index #(
 					rq_more <= 1'b0;
 					nalloc <= 2'd0;
 					bv <= 2'b00;
+					bv_free0_r <= 16'hFFFF;
+					bv_free1_r <= 16'hFFFF;
 				end
 			end
 		end

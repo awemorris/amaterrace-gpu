@@ -323,10 +323,13 @@ module atg_su_exp #(
 
 		end
 	endgenerate
+	wire [36*WARP_W-1:0] dwarp_rep;
+	wire [20*3-1:0] dq_rep;
 	atg_su_exp_drain #(.NWARPS(NWARPS), .WARP_W(WARP_W)) drain (
 		.clk(clk), .rst_n(rst_n), .fl_go(fl_go), .fl_slot(fl_slot_top), .fl_seq(fl_info[47:32]),
 		.wc_end(wc_end), .wc_warp(wc_warp), .d_cov(dcov), .d_rtw(rtw[dw_rtw*8 +: 8]),
-		.d_warp(dwarp), .d_q(dq), .d_rt(drt), .d_first(dfirst), .d_lastb(dlastb),
+		.d_warp(dwarp), .d_q(dq), .d_rt(drt), .d_warp_rep(dwarp_rep), .d_q_rep(dq_rep),
+		.d_first(dfirst), .d_lastb(dlastb),
 		.d_nocol(dnocol), .ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq),
 		.ex_last(ex_last), .ex_next(ex_next), .xr_valid(xr_valid), .xr_warp(xr_warp)
 	);
@@ -424,19 +427,18 @@ module atg_su_exp #(
 		end
 	end
 
-	wire [CAW-1:0] dcrow_pair [0:3];
-	wire [RW-1:0] drow_pair [0:3];
-	genvar gdp, gdb;
-	for (gdp = 0; gdp < 4; gdp = gdp + 1) begin : g_dr_pair
-		for (gdb = 0; gdb < CAW; gdb = gdb + 1) begin : g_dcr_p
-
-			assign dcrow_pair[gdp][gdb] = dcrow[gdb];
-
-		end
-		for (gdb = 0; gdb < RW; gdb = gdb + 1) begin : g_dr_p
-
-			assign drow_pair[gdp][gdb] = drow[gdb];
-
+	wire [CAW-1:0] dcrow_pair [0:NPHYS-1];
+	wire [RW-1:0] drow_pair [0:NPHYS-1];
+	genvar gdp;
+	for (gdp = 0; gdp < NPHYS; gdp = gdp + 1) begin : g_dr_pair
+		wire [WARP_W-1:0] dw_b = dwarp_rep[gdp*WARP_W +: WARP_W];
+		wire [2:0] dq_b = dq_rep[(gdp / 4)*3 +: 3];
+		wire [31:0] drow_b = {{(32-WARP_W){1'b0}}, dw_b} * G + {27'd0, dq_b, 2'b00} / NPHYS;
+		assign drow_pair[gdp] = drow_b[RW-1:0];
+		if (RT_AW == 0) begin : g_dcr_s
+			assign dcrow_pair[gdp] = drow_b[RW-1:0];
+		end else begin : g_dcr_m
+			assign dcrow_pair[gdp] = {drow_b[RW-1:0], drt[RT_AW-1:0]};
 		end
 	end
 
@@ -493,15 +495,15 @@ module atg_su_exp #(
 		genvar gbd;
 		for (gbd = 0; gbd < CAW; gbd = gbd + 1) begin : g_b_dcrow
 
-			assign b_dcrow_0[gbd] = dcrow_pair[b_quad][gbd];
-			assign b_dcrow_1[gbd] = dcrow_pair[b_quad][gbd];
+			assign b_dcrow_0[gbd] = dcrow_pair[b][gbd];
+			assign b_dcrow_1[gbd] = dcrow_pair[b][gbd];
 
 		end
 		for (gbd = 0; gbd < RW; gbd = gbd + 1) begin : g_b_drow
 
-			assign b_drow_0[gbd] = drow_pair[b_quad][gbd];
-			assign b_drow_1[gbd] = drow_pair[b_quad][gbd];
-			assign b_drow_rsm[gbd] = drow_pair[b_quad][gbd];
+			assign b_drow_0[gbd] = drow_pair[b][gbd];
+			assign b_drow_1[gbd] = drow_pair[b][gbd];
+			assign b_drow_rsm[gbd] = drow_pair[b][gbd];
 
 		end
 		wire b_we_0 = b_sc_on_c0_we || (side_bnk[b] && col_match_q[b_half][0]);
@@ -680,17 +682,9 @@ module atg_su_exp #(
 	genvar gi, gch;
 	generate
 		for (gi = 0; gi < 4; gi = gi + 1) begin : g_qmux
-			wire [2:0] dq_col;
-			wire [2:0] dq_col1;
-			wire [2:0] dq_dep;
-			genvar gdq;
-			for (gdq = 0; gdq < 3; gdq = gdq + 1) begin : g_dq_buf
-
-				assign dq_col[gdq]  = dq[gdq];
-				assign dq_col1[gdq] = dq[gdq];
-				assign dq_dep[gdq]  = dq[gdq];
-
-			end
+			wire [2:0] dq_col  = dq_rep[(8 + gi*3 + 0)*3 +: 3];
+			wire [2:0] dq_col1 = dq_rep[(8 + gi*3 + 1)*3 +: 3];
+			wire [2:0] dq_dep  = dq_rep[(8 + gi*3 + 2)*3 +: 3];
 			wire [4:0] lane_col  = {dq_col,  gi[1:0]} & (NPHYS - 1);
 			wire [4:0] lane_col1 = {dq_col1, gi[1:0]} & (NPHYS - 1);
 			wire [4:0] lane_dep  = {dq_dep,  gi[1:0]} & (NPHYS - 1);

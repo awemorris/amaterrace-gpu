@@ -98,33 +98,18 @@ module am_fp_f2fix #(
 	wire lsb = unrounded[0];
 	wire round_up = (ROUND != 0) ? (guard && (sticky || lsb)) : 1'b0;
 
-	wire [W-1:0] rounded;
+	/* Single adder for round-to-nearest-even + optional sign negation */
+	wire [W-1:0] signed_res;
+	wire [W-1:0] rs_a_in = (SIGNED && act_sign) ? ~unrounded : unrounded;
+	wire rs_ci_in = (SIGNED && act_sign) ? !round_up : round_up;
 	wire r_co_unused;
-	am_add #(.W(W)) u_rnd (
-		.a(unrounded),
+	am_add #(.W(W)) u_rnd_sign (
+		.a(rs_a_in),
 		.b({W{1'b0}}),
-		.ci(round_up),
-		.s(rounded),
+		.ci(rs_ci_in),
+		.s(signed_res),
 		.co(r_co_unused)
 	);
-
-	/* Sign conversion */
-	wire [W-1:0] signed_res;
-	wire rs_co_unused;
-	generate
-		if (SIGNED) begin : g_sign
-			am_addsub #(.W(W)) u_rs (
-				.a({W{1'b0}}),
-				.b(rounded),
-				.sub(act_sign),
-				.s(signed_res),
-				.co(rs_co_unused)
-			);
-		end else begin : g_nosign
-			assign signed_res = rounded;
-			assign rs_co_unused = 1'b0;
-		end
-	endgenerate
 
 	/* Saturation limits */
 	wire [W-1:0] sat_pos;
@@ -154,7 +139,16 @@ module am_fp_f2fix #(
 	endgenerate
 
 	/* Overflow & Underflow detection */
-	wire is_overflow = (act_exp >= E_BASE) || (rounded > sat_pos);
+	wire rnd_gt_sat;
+	generate
+		if (ACT_SAT_BITS >= W) begin : g_no_sat_cmp
+			assign rnd_gt_sat = 1'b0;
+		end else begin : g_sat_cmp
+			assign rnd_gt_sat = (|unrounded[W-1:ACT_SAT_BITS]) ||
+				(round_up && (&unrounded[ACT_SAT_BITS-1:0]));
+		end
+	endgenerate
+	wire is_overflow = (act_exp >= E_BASE) || rnd_gt_sat;
 	wire is_underflow = (act_exp < E_MIN) || act_zero;
 
 	wire [W-1:0] sat_res = (!SIGNED && act_sign) ? {W{1'b0}} :
@@ -163,7 +157,7 @@ module am_fp_f2fix #(
 	assign q = act_nan || is_underflow ? {W{1'b0}} :
 		(SATURATE && is_overflow) ? sat_res : signed_res;
 
-	wire unused_ok = &{1'b0, s_bo_unused, r_co_unused, rs_co_unused, sn_co_unused, clk, rst_n, en};
+	wire unused_ok = &{1'b0, s_bo_unused, r_co_unused, sn_co_unused, clk, rst_n, en};
 endmodule
 
 `default_nettype wire

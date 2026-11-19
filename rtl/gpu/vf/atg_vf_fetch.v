@@ -1160,12 +1160,14 @@ module atg_vf_fetch #(
 
 			/* Element mux (4 groups of 8 bits, fanout <= 16) */
 			for (ri = 0; ri < 4; ri = ri + 1) begin
-				if (ce_elem_b[ri]) begin
+				if (sel_divadd_b[ri]) begin
+					elem[8*ri +: 8] <= el_div_w[8*ri +: 8];
+				end else if (ce_elem_b[ri]) begin
 					case ({sel_el1_b[ri], sel_el0_b[ri]})
 					2'b00: elem[8*ri +: 8] <= v_idx[8*ri +: 8];
 					2'b01: elem[8*ri +: 8] <= s_finst[8*ri +: 8];
 					2'b10: elem[8*ri +: 8] <= v_inst[8*ri +: 8];
-					2'b11: elem[8*ri +: 8] <= sel_divadd_b[ri] ? el_div_w[8*ri +: 8] : el_memo_r[8*ri +: 8];
+					2'b11: elem[8*ri +: 8] <= el_memo_r[8*ri +: 8];
 					endcase
 				end
 			end

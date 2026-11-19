@@ -101,6 +101,8 @@ module atg_su_tex #(
 	wire rst_p = !rst_n;
 
 	(* fsm_encoding = "none" *) reg [1:0] st;
+	(* keep = "true", dont_touch = "true" *) reg [4*NQ-1:0] st_idle_ql;
+	(* keep = "true", dont_touch = "true" *) reg [4*NQ-1:0] st_dref_ql;
 	reg [QW-1:0] q, lastq;
 	reg [NPHYS-1:0] lanes;
 	reg [WARP_W-1:0] warp;
@@ -187,8 +189,11 @@ module atg_su_tex #(
 `else
 			assign q_sl_lo = (ghw < 5) ? q_lane_0 : q_lane_1;
 			assign q_sl_hi = (ghw < 5) ? q_lane_0 : q_lane_1;
-			assign ti_s = {NQ{ti_l}};
-			assign td_s = {NQ{td_l}};
+			genvar gq_a;
+			for (gq_a = 0; gq_a < NQ; gq_a = gq_a + 1) begin : g_q_asic_buf
+				assign ti_s[gq_a] = st_idle_ql[gq_a * 4 + gq_l] && rq_ready && mine;
+				assign td_s[gq_a] = st_dref_ql[gq_a * 4 + gq_l] && rq_ready && mine;
+			end
 			assign th_s = {NQ{th_l}};
 			assign cf_s = {NQ{cf_l}};
 `endif
@@ -249,6 +254,8 @@ module atg_su_tex #(
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			st <= IDLE;
+			st_idle_ql <= {(4*NQ){1'b1}};
+			st_dref_ql <= {(4*NQ){1'b0}};
 			lanes <= {NPHYS{1'b0}};
 			last <= 1'b0;
 			q <= {QW{1'b0}};
@@ -282,21 +289,33 @@ module atg_su_tex #(
 				last <= x_last;
 				q <= {QW{1'b0}};
 				lastq <= ql;
-				if (wide)
+				if (wide) begin
 					st <= DREF;
-				else if (qm != {NQ{1'b0}})
+					st_idle_ql <= {(4*NQ){1'b0}};
+					st_dref_ql <= {(4*NQ){1'b1}};
+				end else if (qm != {NQ{1'b0}}) begin
 					st <= SEND;
+					st_idle_ql <= {(4*NQ){1'b0}};
+				end
 			end
 			DREF: if (take_dref) begin
 				lanes <= exec;
 				last <= x_last;
 				lastq <= ql;
-				st <= qm != {NQ{1'b0}} ? SEND : IDLE;
+				st_dref_ql <= {(4*NQ){1'b0}};
+				if (qm != {NQ{1'b0}}) begin
+					st <= SEND;
+				end else begin
+					st <= IDLE;
+					st_idle_ql <= {(4*NQ){1'b1}};
+				end
 			end
 			SEND: if (!tx_valid || tx_ready) begin
 				q <= q_next;
-				if (q == lastq)
+				if (q == lastq) begin
 					st <= IDLE;
+					st_idle_ql <= {(4*NQ){1'b1}};
+				end
 			end
 			default: st <= IDLE;
 			endcase

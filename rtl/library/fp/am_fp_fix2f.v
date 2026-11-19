@@ -40,14 +40,11 @@ module am_fp_fix2f #(
 		end
 	endgenerate
 
-	reg [4:0] lz;
-	integer b;
-	always @(*) begin
-		lz = 5'd0;
-		for (b = 0; b < W; b = b + 1)
-			if (m[b])
-				lz = TOP - b[4:0];
-	end
+	wire [4:0] msb_n, lz_w;
+	wire msb_nz, lz_bo_unused;
+	am_msb #(.W(W), .SW(5)) u_lz_msb (.a(m), .n(msb_n), .nz(msb_nz));
+	am_sub #(.W(5)) u_lz_sub (.a(TOP), .b(msb_n), .bi(1'b0), .d(lz_w), .bo(lz_bo_unused));
+	wire [4:0] lz = msb_nz ? lz_w : 5'd0;
 
 	am_shift #(.W(W), .SW(5), .DIR(2)) u_mn (.a(m), .amt(lz), .left(1'b1), .arith(1'b0), .y(mn));
 	am_sub #(.W(8)) u_e (.a(E0), .b({3'd0, lz}), .bi(1'b0), .d(e), .bo(e_bo_unused));
@@ -65,7 +62,7 @@ module am_fp_fix2f #(
 	endgenerate
 	assign f = (m == {W{1'b0}}) ? 32'd0 : {sign, e, frac};
 
-	wire unused_ok = &{1'b0, mn[W-1], e_bo_unused, m_co_unused};
+	wire unused_ok = &{1'b0, mn[W-1], e_bo_unused, m_co_unused, lz_bo_unused};
 endmodule
 
 `default_nettype wire

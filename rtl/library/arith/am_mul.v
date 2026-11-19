@@ -37,6 +37,19 @@ module am_mul #(
 	output wire [AW+BW-1:0] p
 );
 `ifndef SYNTH_KINTEX7
+	/* Constant helper: remaining vector count after `st` 3:2 CSA reduction stages. */
+	function integer csa_cnt;
+		input integer n0;
+		input integer st;
+		integer s, n;
+		begin
+			n = n0;
+			for (s = 0; s < st; s = s + 1)
+				n = (n > 2) ? ((n / 3) * 2 + (n % 3)) : n;
+			csa_cnt = n;
+		end
+	endfunction
+
 	generate
 	if (LAT == 0) begin : g_c
 		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
@@ -46,7 +59,7 @@ module am_mul #(
 			assign m = a * b;
 		end
 		assign p = m;
-	end else if (LAT == 1 || (AW <= 17 && BW <= 17)) begin : g_r1
+	end else if (LAT == 1 || (AW <= 8 && BW <= 8)) begin : g_r1
 		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
 		if (SIGNED != 0) begin : g_s
 			assign m = $signed(a) * $signed(b);
@@ -62,151 +75,197 @@ module am_mul #(
 					r[i] <= r[i-1];
 			end
 		assign p = r[LAT-1];
-	end else if (AW > 17 && BW > 17) begin : g_r2d
+`ifdef SYNTH_ASIC
+	end else begin : g_csa
 		localparam PW = AW + BW;
-		localparam AHI_W = AW - 17;
-		localparam BHI_W = BW - 17;
-		wire [16:0] a_lo = a[16:0];
-		wire [16:0] b_lo = b[16:0];
-		wire [AHI_W-1:0] a_hi = a[AW-1:17];
-		wire [BHI_W-1:0] b_hi = b[BW-1:17];
-		reg [33:0] p_ll_r;
-		reg [PW-1:0] r [1:LAT-1];
-		if (SIGNED != 0) begin : g_s2d
-			wire [33:0] p_ll_w = {1'b0, a_lo} * {1'b0, b_lo};
-			wire signed [AHI_W+17:0] p_hl_w = $signed(a_hi) * $signed({1'b0, b_lo});
-			wire signed [BHI_W+17:0] p_lh_w = $signed({1'b0, a_lo}) * $signed(b_hi);
-			wire signed [AHI_W+BHI_W-1:0] p_hh_w = $signed(a_hi) * $signed(b_hi);
-			reg signed [AHI_W+17:0] p_hl_r;
-			reg signed [BHI_W+17:0] p_lh_r;
-			reg signed [AHI_W+BHI_W-1:0] p_hh_r;
-			wire signed [PW-1:0] t_ll = $signed({{(PW-34){1'b0}}, p_ll_r});
-			wire signed [PW-1:0] t_hl = $signed({p_hl_r, 17'd0});
-			wire signed [PW-1:0] t_lh = $signed({p_lh_r, 17'd0});
-			wire signed [PW-1:0] t_hh = $signed({p_hh_r, 34'd0});
-			wire signed [PW-1:0] sum_w = t_ll + t_hl + t_lh + t_hh;
-			integer i;
-			always @(posedge clk)
-				if (en) begin
-					p_ll_r <= p_ll_w;
-					p_hl_r <= p_hl_w;
-					p_lh_r <= p_lh_w;
-					p_hh_r <= p_hh_w;
-					r[1]   <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
-						r[i] <= r[i-1];
+		localparam integer DO_BW = (SIGNED != 0 && AW >= 2 && BW >= 2) ? 1 : 0;
+		localparam integer NROW = BW + DO_BW;
+		localparam integer SPLIT_ST = (NROW <= 6) ? 1 : ((NROW <= 12) ? 2 : 3);
+		localparam integer MAX_ST = 10;
+
+		wire [NROW*PW-1:0] pp_init;
+		genvar gj, gi, gst, gk, grem;
+
+		if (DO_BW != 0) begin : g_pp_bw
+			for (gj = 0; gj < BW; gj = gj + 1) begin : g_row
+				wire [AW-1:0] row_bits;
+				for (gi = 0; gi < AW; gi = gi + 1) begin : g_col
+					wire prod = a[gi] & b[gj];
+					wire inv_bit = ((gi == AW - 1) ^ (gj == BW - 1));
+					assign row_bits[gi] = inv_bit ? ~prod : prod;
 				end
-		end else begin : g_u2d
-			wire [33:0] p_ll_w = a_lo * b_lo;
-			wire [AHI_W+16:0] p_hl_w = a_hi * b_lo;
-			wire [BHI_W+16:0] p_lh_w = a_lo * b_hi;
-			wire [AHI_W+BHI_W-1:0] p_hh_w = a_hi * b_hi;
-			reg [AHI_W+16:0] p_hl_r;
-			reg [BHI_W+16:0] p_lh_r;
-			reg [AHI_W+BHI_W-1:0] p_hh_r;
-			wire [PW-1:0] t_ll = {{(PW-34){1'b0}}, p_ll_r};
-			wire [PW-1:0] t_hl = {{(BW-17){1'b0}}, p_hl_r, 17'd0};
-			wire [PW-1:0] t_lh = {{(AW-17){1'b0}}, p_lh_r, 17'd0};
-			wire [PW-1:0] t_hh = {p_hh_r, 34'd0};
-			wire [PW-1:0] sum_w = t_ll + t_hl + t_lh + t_hh;
-			integer i;
-			always @(posedge clk)
-				if (en) begin
-					p_ll_r <= p_ll_w;
-					p_hl_r <= p_hl_w;
-					p_lh_r <= p_lh_w;
-					p_hh_r <= p_hh_w;
-					r[1]   <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
-						r[i] <= r[i-1];
-				end
+				wire [PW-1:0] row_pad = {{(PW-AW){1'b0}}, row_bits} << gj;
+				assign pp_init[gj*PW +: PW] = row_pad;
+			end
+			wire [PW-1:0] bw_const =
+				({{(PW-1){1'b0}}, 1'b1} << (PW - 1)) +
+				({{(PW-1){1'b0}}, 1'b1} << (AW - 1)) +
+				({{(PW-1){1'b0}}, 1'b1} << (BW - 1));
+			assign pp_init[BW*PW +: PW] = bw_const;
+		end else if (SIGNED != 0) begin : g_pp_s1
+			wire signed [PW-1:0] prod_s = $signed(a) * $signed(b);
+			assign pp_init[0 +: PW] = prod_s;
+			if (NROW > 1) begin : g_pad
+				assign pp_init[PW +: (NROW-1)*PW] = {((NROW-1)*PW){1'b0}};
+			end
+		end else begin : g_pp_u
+			for (gj = 0; gj < BW; gj = gj + 1) begin : g_row
+				wire [AW-1:0] row_bits = b[gj] ? a : {AW{1'b0}};
+				wire [PW-1:0] row_pad = {{(PW-AW){1'b0}}, row_bits} << gj;
+				assign pp_init[gj*PW +: PW] = row_pad;
+			end
 		end
-		assign p = r[LAT-1];
-	end else if (AW > 17) begin : g_r1d_a
-		localparam PW = AW + BW;
-		localparam AHI_W = AW - 17;
-		wire [16:0] a_lo = a[16:0];
-		wire [AHI_W-1:0] a_hi = a[AW-1:17];
-		reg [PW-1:0] r [1:LAT-1];
-		if (SIGNED != 0) begin : g_s1da
-			wire signed [BW+17:0] p_l_w = $signed({1'b0, a_lo}) * $signed(b);
-			wire signed [AHI_W+BW-1:0] p_h_w = $signed(a_hi) * $signed(b);
-			reg signed [BW+17:0] p_l_r;
-			reg signed [AHI_W+BW-1:0] p_h_r;
-			wire signed [PW-1:0] t_l = p_l_r;
-			wire signed [PW-1:0] t_h = $signed({p_h_r, 17'd0});
-			wire signed [PW-1:0] sum_w = t_l + t_h;
+
+		if (LAT >= 3) begin : g_lat3
+			localparam integer M_CNT = csa_cnt(NROW, SPLIT_ST);
+			wire [NROW*PW-1:0] st1_vec [0:SPLIT_ST];
+			assign st1_vec[0] = pp_init;
+			for (gst = 0; gst < SPLIT_ST; gst = gst + 1) begin : g_st1
+				localparam integer IN_N  = csa_cnt(NROW, gst);
+				localparam integer OUT_N = csa_cnt(NROW, gst + 1);
+				if (IN_N > 2) begin : g_red
+					localparam integer NTRP = IN_N / 3;
+					localparam integer NREM = IN_N % 3;
+					for (gk = 0; gk < NTRP; gk = gk + 1) begin : g_t
+						wire [PW-1:0] x0 = st1_vec[gst][(3*gk+0)*PW +: PW];
+						wire [PW-1:0] x1 = st1_vec[gst][(3*gk+1)*PW +: PW];
+						wire [PW-1:0] x2 = st1_vec[gst][(3*gk+2)*PW +: PW];
+						wire [PW-1:0] cs_s = x0 ^ x1 ^ x2;
+						wire [PW-1:0] cs_c = (x0 & x1) | (x0 & x2) | (x1 & x2);
+						assign st1_vec[gst+1][(2*gk+0)*PW +: PW] = cs_s;
+						assign st1_vec[gst+1][(2*gk+1)*PW +: PW] = {cs_c[PW-2:0], 1'b0};
+					end
+					for (grem = 0; grem < NREM; grem = grem + 1) begin : g_r
+						assign st1_vec[gst+1][(2*NTRP+grem)*PW +: PW] =
+							st1_vec[gst][(3*NTRP+grem)*PW +: PW];
+					end
+					if (OUT_N < NROW) begin : g_z
+						assign st1_vec[gst+1][OUT_N*PW +: (NROW-OUT_N)*PW] =
+							{((NROW-OUT_N)*PW){1'b0}};
+					end
+				end else begin : g_pass
+					assign st1_vec[gst+1] = st1_vec[gst];
+				end
+			end
+
+			reg [M_CNT*PW-1:0] st1_r;
+			always @(posedge clk)
+				if (en)
+					st1_r <= st1_vec[SPLIT_ST][0 +: M_CNT*PW];
+
+			wire [M_CNT*PW-1:0] st2_vec [SPLIT_ST:MAX_ST];
+			assign st2_vec[SPLIT_ST] = st1_r;
+			for (gst = SPLIT_ST; gst < MAX_ST; gst = gst + 1) begin : g_st2
+				localparam integer IN_N  = csa_cnt(NROW, gst);
+				localparam integer OUT_N = csa_cnt(NROW, gst + 1);
+				if (IN_N > 2) begin : g_red
+					localparam integer NTRP = IN_N / 3;
+					localparam integer NREM = IN_N % 3;
+					for (gk = 0; gk < NTRP; gk = gk + 1) begin : g_t
+						wire [PW-1:0] x0 = st2_vec[gst][(3*gk+0)*PW +: PW];
+						wire [PW-1:0] x1 = st2_vec[gst][(3*gk+1)*PW +: PW];
+						wire [PW-1:0] x2 = st2_vec[gst][(3*gk+2)*PW +: PW];
+						wire [PW-1:0] cs_s = x0 ^ x1 ^ x2;
+						wire [PW-1:0] cs_c = (x0 & x1) | (x0 & x2) | (x1 & x2);
+						assign st2_vec[gst+1][(2*gk+0)*PW +: PW] = cs_s;
+						assign st2_vec[gst+1][(2*gk+1)*PW +: PW] = {cs_c[PW-2:0], 1'b0};
+					end
+					for (grem = 0; grem < NREM; grem = grem + 1) begin : g_r
+						assign st2_vec[gst+1][(2*NTRP+grem)*PW +: PW] =
+							st2_vec[gst][(3*NTRP+grem)*PW +: PW];
+					end
+					if (OUT_N < M_CNT) begin : g_z
+						assign st2_vec[gst+1][OUT_N*PW +: (M_CNT-OUT_N)*PW] =
+							{((M_CNT-OUT_N)*PW){1'b0}};
+					end
+				end else begin : g_pass
+					assign st2_vec[gst+1] = st2_vec[gst];
+				end
+			end
+
+			reg [PW-1:0] st2_s, st2_c;
+			wire [PW-1:0] st2_c_in = (M_CNT >= 2) ? st2_vec[MAX_ST][PW +: PW] : {PW{1'b0}};
+			wire [PW-1:0] sum_w;
+			wire sum_co_unused;
+			am_add #(.W(PW)) u_fin_add (.a(st2_s), .b(st2_c), .ci(1'b0), .s(sum_w), .co(sum_co_unused));
+			reg [PW-1:0] r [2:LAT-1];
 			integer i;
 			always @(posedge clk)
 				if (en) begin
-					p_l_r <= p_l_w;
-					p_h_r <= p_h_w;
-					r[1]  <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
+					st2_s <= st2_vec[MAX_ST][0 +: PW];
+					st2_c <= st2_c_in;
+					r[2]  <= sum_w;
+					for (i = 3; i < LAT; i = i + 1)
 						r[i] <= r[i-1];
 				end
-		end else begin : g_u1da
-			wire [17+BW-1:0] p_l_w = a_lo * b;
-			wire [AHI_W+BW-1:0] p_h_w = a_hi * b;
-			reg [17+BW-1:0] p_l_r;
-			reg [AHI_W+BW-1:0] p_h_r;
-			wire [PW-1:0] t_l = {{(AHI_W){1'b0}}, p_l_r};
-			wire [PW-1:0] t_h = {p_h_r, 17'd0};
-			wire [PW-1:0] sum_w = t_l + t_h;
-			integer i;
+			assign p = r[LAT-1];
+			wire unused_l3 = &{1'b0, sum_co_unused};
+		end else begin : g_lat2
+			wire [NROW*PW-1:0] st_vec [0:MAX_ST];
+			assign st_vec[0] = pp_init;
+			for (gst = 0; gst < MAX_ST; gst = gst + 1) begin : g_st
+				localparam integer IN_N  = csa_cnt(NROW, gst);
+				localparam integer OUT_N = csa_cnt(NROW, gst + 1);
+				if (IN_N > 2) begin : g_red
+					localparam integer NTRP = IN_N / 3;
+					localparam integer NREM = IN_N % 3;
+					for (gk = 0; gk < NTRP; gk = gk + 1) begin : g_t
+						wire [PW-1:0] x0 = st_vec[gst][(3*gk+0)*PW +: PW];
+						wire [PW-1:0] x1 = st_vec[gst][(3*gk+1)*PW +: PW];
+						wire [PW-1:0] x2 = st_vec[gst][(3*gk+2)*PW +: PW];
+						wire [PW-1:0] cs_s = x0 ^ x1 ^ x2;
+						wire [PW-1:0] cs_c = (x0 & x1) | (x0 & x2) | (x1 & x2);
+						assign st_vec[gst+1][(2*gk+0)*PW +: PW] = cs_s;
+						assign st_vec[gst+1][(2*gk+1)*PW +: PW] = {cs_c[PW-2:0], 1'b0};
+					end
+					for (grem = 0; grem < NREM; grem = grem + 1) begin : g_r
+						assign st_vec[gst+1][(2*NTRP+grem)*PW +: PW] =
+							st_vec[gst][(3*NTRP+grem)*PW +: PW];
+					end
+					if (OUT_N < NROW) begin : g_z
+						assign st_vec[gst+1][OUT_N*PW +: (NROW-OUT_N)*PW] =
+							{((NROW-OUT_N)*PW){1'b0}};
+					end
+				end else begin : g_pass
+					assign st_vec[gst+1] = st_vec[gst];
+				end
+			end
+
+			reg [PW-1:0] st1_s, st1_c;
+			wire [PW-1:0] st1_c_in = (NROW >= 2) ? st_vec[MAX_ST][PW +: PW] : {PW{1'b0}};
+			wire [PW-1:0] sum_w;
+			wire sum_co_unused;
+			am_add #(.W(PW)) u_fin_add (.a(st1_s), .b(st1_c), .ci(1'b0), .s(sum_w), .co(sum_co_unused));
+			reg [PW-1:0] r1;
 			always @(posedge clk)
 				if (en) begin
-					p_l_r <= p_l_w;
-					p_h_r <= p_h_w;
-					r[1]  <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
-						r[i] <= r[i-1];
+					st1_s <= st_vec[MAX_ST][0 +: PW];
+					st1_c <= st1_c_in;
+					r1    <= sum_w;
 				end
+			assign p = r1;
+			wire unused_l2 = &{1'b0, sum_co_unused};
 		end
-		assign p = r[LAT-1];
-	end else begin : g_r1d_b
-		localparam PW = AW + BW;
-		localparam BHI_W = BW - 17;
-		wire [16:0] b_lo = b[16:0];
-		wire [BHI_W-1:0] b_hi = b[BW-1:17];
-		reg [PW-1:0] r [1:LAT-1];
-		if (SIGNED != 0) begin : g_s1db
-			wire signed [AW+17:0] p_l_w = $signed(a) * $signed({1'b0, b_lo});
-			wire signed [AW+BHI_W-1:0] p_h_w = $signed(a) * $signed(b_hi);
-			reg signed [AW+17:0] p_l_r;
-			reg signed [AW+BHI_W-1:0] p_h_r;
-			wire signed [PW-1:0] t_l = p_l_r;
-			wire signed [PW-1:0] t_h = $signed({p_h_r, 17'd0});
-			wire signed [PW-1:0] sum_w = t_l + t_h;
-			integer i;
-			always @(posedge clk)
-				if (en) begin
-					p_l_r <= p_l_w;
-					p_h_r <= p_h_w;
-					r[1]  <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
-						r[i] <= r[i-1];
-				end
-		end else begin : g_u1db
-			wire [AW+17-1:0] p_l_w = a * b_lo;
-			wire [AW+BHI_W-1:0] p_h_w = a * b_hi;
-			reg [AW+17-1:0] p_l_r;
-			reg [AW+BHI_W-1:0] p_h_r;
-			wire [PW-1:0] t_l = {{(BHI_W){1'b0}}, p_l_r};
-			wire [PW-1:0] t_h = {p_h_r, 17'd0};
-			wire [PW-1:0] sum_w = t_l + t_h;
-			integer i;
-			always @(posedge clk)
-				if (en) begin
-					p_l_r <= p_l_w;
-					p_h_r <= p_h_w;
-					r[1]  <= sum_w;
-					for (i = 2; i < LAT; i = i + 1)
-						r[i] <= r[i-1];
-				end
+	end
+`else
+	end else begin : g_sim_lat
+		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
+		if (SIGNED != 0) begin : g_s
+			assign m = $signed(a) * $signed(b);
+		end else begin : g_u
+			assign m = a * b;
 		end
+		reg [AW+BW-1:0] r [0:LAT-1];
+		integer i;
+		always @(posedge clk)
+			if (en) begin
+				r[0] <= m;
+				for (i = 1; i < LAT; i = i + 1)
+					r[i] <= r[i-1];
+			end
 		assign p = r[LAT-1];
 	end
+`endif
 	endgenerate
 
 	wire unused_ok = &{1'b0, clk, en};

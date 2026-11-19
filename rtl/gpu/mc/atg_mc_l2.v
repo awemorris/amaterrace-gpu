@@ -165,7 +165,14 @@ module atg_mc_l2 #(
 	reg [LINE_BITS-1:0] req_wdata;
 	reg [UW-1:0] req_user;
 	reg req_id;
+	localparam NSL = LINE_BYTES / 4;
+
 	reg req_nc;
+	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] req_nc_s;
+	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] req_write_s;
+	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] st_lookup_s;
+	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] hit_s;
+	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] victim_dirty_s;
 	reg req_high;
 
 	wire [SET_W-1:0] req_set = req_line[SET_W-1:0];
@@ -222,15 +229,21 @@ module atg_mc_l2 #(
 	wire hit = |way_hit;
 
 	/* Priority encoder for hit way */
-	reg [WAY_W-1:0] hit_way_idx;
-	integer hit_i;
-	always @(*) begin
-		hit_way_idx = {WAY_W{1'b0}};
-		for (hit_i = 0; hit_i < WAYS; hit_i = hit_i + 1) begin
-			if (way_hit[hit_i])
-				hit_way_idx = hit_i[WAY_W-1:0];
-		end
-	end
+	wire [WAY_W-1:0] hit_way_idx;
+	wire hit_msb_nz;
+	am_msb #(.W(WAYS), .SW(WAY_W)) u_hit_msb (
+		.a(way_hit), .n(hit_way_idx), .nz(hit_msb_nz)
+	);
+	wire unused_hit_nz = hit_msb_nz;
+
+	/* Registered lookup results captured at end of S_READ_WAIT (wait_phase == 1) */
+	reg hit_r;
+	reg [WAY_W-1:0] hit_way_r;
+	reg [WAY_W-1:0] victim_way_r;
+	reg victim_dirty_r;
+	reg [TAG_W-1:0] victim_tag_r;
+	(* keep = "true", dont_touch = "true" *) reg [NSL*WAY_W-1:0] hit_way_s;
+	(* keep = "true", dont_touch = "true" *) reg [NSL*WAY_W-1:0] evict_way_s;
 
 	/* Tree-PLRU victim selection for 16 or 4 ways */
 	wire [14:0] cur_plru = cur_plru_r;
@@ -284,7 +297,7 @@ module atg_mc_l2 #(
 	reg [WAY_W-1:0] active_victim_way;
 
 	/* Combinational Tree-PLRU update */
-	wire [WAY_W-1:0] cur_access_way = (state == S_LOOKUP) ? hit_way_idx : active_victim_way;
+	wire [WAY_W-1:0] cur_access_way = (state == S_LOOKUP) ? hit_way_r : active_victim_way;
 	wire [3:0] plru_access_way = {{ (4-WAY_W){1'b0} }, cur_access_way};
 	wire [14:0] plru_in_tree = cur_plru_r;
 	reg [14:0] plru_out_tree;
@@ -333,8 +346,29 @@ module atg_mc_l2 #(
 		end
 	end
 
+	/* Sliced 32-bit way data muxes driven by per-slice replicated select registers */
+	wire [LINE_BITS-1:0] hit_rdata;
+	wire [LINE_BITS-1:0] evict_rdata;
+	wire [LINE_BITS-1:0] merge_orig_line;
+	wire [LINE_BITS-1:0] bram_wdata;
+	genvar gs, gw_m;
+	generate
+		for (gs = 0; gs < NSL; gs = gs + 1) begin : g_rdata_slice
+			wire [WAY_W-1:0] hw = hit_way_s[gs*WAY_W +: WAY_W];
+			wire [WAY_W-1:0] ew = evict_way_s[gs*WAY_W +: WAY_W];
+			wire [31:0] hw_vec [0:WAYS-1];
+			wire [31:0] ew_vec [0:WAYS-1];
+			for (gw_m = 0; gw_m < WAYS; gw_m = gw_m + 1) begin : g_wvec
+				assign hw_vec[gw_m] = way_rdata_r[gw_m][gs*32 +: 32];
+				assign ew_vec[gw_m] = way_rdata_r[gw_m][gs*32 +: 32];
+			end
+			assign hit_rdata[gs*32 +: 32] = hw_vec[hw];
+			assign evict_rdata[gs*32 +: 32] = ew_vec[ew];
+			assign merge_orig_line[gs*32 +: 32] = st_lookup_s[gs] ? hit_rdata[gs*32 +: 32] : m_rsp_rdata[gs*32 +: 32];
+		end
+	endgenerate
+
 	/* Combinational line merge */
-	wire [LINE_BITS-1:0] merge_orig_line = (state == S_LOOKUP) ? way_rdata_r[hit_way_idx] : m_rsp_rdata;
 	wire [LINE_BITS-1:0] merge_new_line = req_wdata;
 	wire [LINE_BYTES-1:0] merge_be = req_be;
 	reg [LINE_BITS-1:0] merged_line_out;
@@ -349,8 +383,15 @@ module atg_mc_l2 #(
 	end
 
 	/* Data Block RAMs inferred per way (Rule 4: 0 LUT on ADDR/WE/DI and 0 LUT on DOUT) */
-	wire [LINE_BITS-1:0] bram_wdata = (state == S_LOOKUP) ? merged_line_out :
-	                                 ((!req_write) ? m_rsp_rdata : merged_line_out);
+	wire [LINE_BITS-1:0] lookup_mwdata;
+	generate
+		for (gs = 0; gs < NSL; gs = gs + 1) begin : g_bwdata_slice
+			assign bram_wdata[gs*32 +: 32] = st_lookup_s[gs] ? merged_line_out[gs*32 +: 32] :
+			                                  ((!req_write_s[gs]) ? m_rsp_rdata[gs*32 +: 32] : merged_line_out[gs*32 +: 32]);
+			assign lookup_mwdata[gs*32 +: 32] = req_nc_s[gs] ? req_wdata[gs*32 +: 32] :
+			                                     ((!hit_s[gs] && victim_dirty_s[gs]) ? evict_rdata[gs*32 +: 32] : 32'd0);
+		end
+	endgenerate
 
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_bram
@@ -377,17 +418,18 @@ module atg_mc_l2 #(
 	endgenerate
 
 	reg [WAYS-1:0] set_dirty_r;
-	wire set_has_dirty = |set_dirty_r;
-
-	reg [WAY_W-1:0] first_dirty_way;
-	integer fdw_i;
-	always @(*) begin
-		first_dirty_way = {WAY_W{1'b0}};
-		for (fdw_i = WAYS - 1; fdw_i >= 0; fdw_i = fdw_i - 1) begin
-			if (set_dirty_r[fdw_i])
-				first_dirty_way = fdw_i[WAY_W-1:0];
+	wire [WAYS-1:0] set_dirty_rev;
+	generate
+		for (w = 0; w < WAYS; w = w + 1) begin : g_dirty_rev
+			assign set_dirty_rev[w] = set_dirty_r[WAYS - 1 - w];
 		end
-	end
+	endgenerate
+	wire [WAY_W-1:0] first_dirty_rev_idx;
+	wire set_has_dirty;
+	am_msb #(.W(WAYS), .SW(WAY_W)) u_dirty_msb (
+		.a(set_dirty_rev), .n(first_dirty_rev_idx), .nz(set_has_dirty)
+	);
+	wire [WAY_W-1:0] first_dirty_way = set_has_dirty ? ~first_dirty_rev_idx : {WAY_W{1'b0}};
 
 	wire [TAG_W-1:0] flush_line_tag = way_tag_r[active_victim_way];
 	wire [LA_W-1:0] flush_line_addr = {flush_line_tag, flush_set};
@@ -435,6 +477,18 @@ module atg_mc_l2 #(
 			req_user <= {UW{1'b0}};
 			req_id <= 1'b0;
 			req_nc <= 1'b0;
+			req_nc_s <= {NSL{1'b0}};
+			req_write_s <= {NSL{1'b0}};
+			st_lookup_s <= {NSL{1'b0}};
+			hit_r <= 1'b0;
+			hit_s <= {NSL{1'b0}};
+			hit_way_r <= {WAY_W{1'b0}};
+			hit_way_s <= {(NSL*WAY_W){1'b0}};
+			victim_way_r <= {WAY_W{1'b0}};
+			evict_way_s <= {(NSL*WAY_W){1'b0}};
+			victim_dirty_r <= 1'b0;
+			victim_dirty_s <= {NSL{1'b0}};
+			victim_tag_r <= {TAG_W{1'b0}};
 			req_high <= 1'b0;
 			bram_we_r <= {WAYS{1'b0}};
 			bram_wdata_r <= {LINE_BITS{1'b0}};
@@ -469,12 +523,14 @@ module atg_mc_l2 #(
 				S_IDLE: begin
 					if (s_req_valid && s_req_high) begin
 						req_write <= s_req_write;
+						req_write_s <= {NSL{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
 						req_user  <= s_req_user;
 						req_id    <= s_req_id;
 						req_nc    <= s_req_nc;
+						req_nc_s  <= {NSL{s_req_nc}};
 						req_high  <= s_req_high;
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
 							bram_raddr[init_w] <= s_req_line[SET_W-1:0];
@@ -490,12 +546,14 @@ module atg_mc_l2 #(
 						state       <= S_FLUSH_STEP;
 					end else if (s_req_valid && s_req_ready) begin
 						req_write <= s_req_write;
+						req_write_s <= {NSL{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
 						req_user  <= s_req_user;
 						req_id    <= s_req_id;
 						req_nc    <= s_req_nc;
+						req_nc_s  <= {NSL{s_req_nc}};
 						req_high  <= s_req_high;
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
 							bram_raddr[init_w] <= s_req_line[SET_W-1:0];
@@ -508,24 +566,37 @@ module atg_mc_l2 #(
 					if (!wait_phase) begin
 						wait_phase <= 1'b1;
 					end else begin
-						wait_phase <= 1'b0;
-						state <= S_LOOKUP;
+						wait_phase     <= 1'b0;
+						hit_r          <= hit;
+						hit_s          <= {NSL{hit}};
+						hit_way_r      <= hit_way_idx;
+						hit_way_s      <= {NSL{hit_way_idx}};
+						victim_way_r   <= victim_way_idx;
+						evict_way_s    <= {NSL{victim_way_idx}};
+						victim_dirty_r <= valid_mem[victim_way_idx][req_set] && dirty_mem[victim_way_idx][req_set];
+						victim_dirty_s <= {NSL{valid_mem[victim_way_idx][req_set] && dirty_mem[victim_way_idx][req_set]}};
+						victim_tag_r   <= way_tag_r[victim_way_idx];
+						st_lookup_s    <= {NSL{1'b1}};
+						state          <= S_LOOKUP;
 					end
 				end
 
 				S_LOOKUP: begin
+					st_lookup_s  <= {NSL{1'b0}};
+					bram_wdata_r <= bram_wdata;
+					s_rsp_rdata  <= hit_rdata;
+					m_req_wdata  <= lookup_mwdata;
 					if (req_nc) begin
 						/* Non-cacheable bypass */
 						m_req_valid <= 1'b1;
 						m_req_write <= req_write;
 						m_req_line  <= req_line;
 						m_req_be    <= req_be;
-						m_req_wdata <= req_wdata;
 						m_req_user  <= req_user;
 						m_req_id    <= req_id;
 						m_req_key   <= req_user[15:8];
 						state       <= S_BYPASS_REQ;
-					end else if (hit) begin
+					end else if (hit_r) begin
 						/* Cache hit */
 						plru_mem[req_set] <= plru_out_tree;
 						if (!req_write) begin
@@ -533,18 +604,16 @@ module atg_mc_l2 #(
 							s_rsp_valid <= 1'b1;
 							s_rsp_write <= 1'b0;
 							s_rsp_user  <= req_user;
-							s_rsp_rdata <= way_rdata_r[hit_way_idx];
 							s_rsp_error <= 1'b0;
 							state       <= (saved_state != S_IDLE) ? saved_state : S_IDLE;
 							saved_state <= S_IDLE;
 						end else begin
 							/* Write hit: pipeline BRAM write */
-							dirty_mem[hit_way_idx][req_set] <= 1'b1;
+							dirty_mem[hit_way_r][req_set] <= 1'b1;
 							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-								bram_we_r[init_w] <= (hit_way_idx == init_w[WAY_W-1:0]);
+								bram_we_r[init_w] <= (hit_way_r == init_w[WAY_W-1:0]);
 								bram_waddr[init_w] <= req_set;
 							end
-							bram_wdata_r <= bram_wdata;
 							pending_rsp_write <= 1'b1;
 							pending_rsp_user  <= req_user;
 							pending_rsp_rdata <= {LINE_BITS{1'b0}};
@@ -553,14 +622,13 @@ module atg_mc_l2 #(
 						end
 					end else begin
 						/* Cache miss */
-						active_victim_way <= victim_way_idx;
-						if (valid_mem[victim_way_idx][req_set] && dirty_mem[victim_way_idx][req_set]) begin
+						active_victim_way <= victim_way_r;
+						if (victim_dirty_r) begin
 							/* Victim is dirty: evict to AXI master */
 							m_req_valid <= 1'b1;
 							m_req_write <= 1'b1;
-							m_req_line  <= {way_tag_r[victim_way_idx], req_set};
+							m_req_line  <= {victim_tag_r, req_set};
 							m_req_be    <= {LINE_BYTES{1'b1}};
-							m_req_wdata <= way_rdata_r[victim_way_idx];
 							m_req_user  <= {UW{1'b0}};
 							m_req_id    <= req_id;
 							m_req_key   <= 8'hFE;
@@ -571,7 +639,6 @@ module atg_mc_l2 #(
 							m_req_write <= 1'b0;
 							m_req_line  <= req_line;
 							m_req_be    <= {LINE_BYTES{1'b0}};
-							m_req_wdata <= {LINE_BITS{1'b0}};
 							m_req_user  <= req_user;
 							m_req_id    <= req_id;
 							m_req_key   <= req_user[15:8];
@@ -676,12 +743,14 @@ module atg_mc_l2 #(
 					if (s_req_valid && s_req_high) begin
 						/* Priority service for DC request */
 						req_write <= s_req_write;
+						req_write_s <= {NSL{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
 						req_user  <= s_req_user;
 						req_id    <= s_req_id;
 						req_nc    <= s_req_nc;
+						req_nc_s  <= {NSL{s_req_nc}};
 						req_high  <= s_req_high;
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
 							bram_raddr[init_w] <= s_req_line[SET_W-1:0];
@@ -695,6 +764,7 @@ module atg_mc_l2 #(
 						wait_phase <= 1'b0;
 						if (set_has_dirty) begin
 							active_victim_way <= first_dirty_way;
+							evict_way_s <= {NSL{first_dirty_way}};
 							for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
 								bram_raddr[init_w] <= flush_set;
 							state <= S_FLUSH_RWAIT;
@@ -744,7 +814,7 @@ module atg_mc_l2 #(
 						m_req_write <= 1'b1;
 						m_req_line  <= flush_line_addr;
 						m_req_be    <= {LINE_BYTES{1'b1}};
-						m_req_wdata <= way_rdata_r[active_victim_way];
+						m_req_wdata <= evict_rdata;
 						m_req_user  <= {UW{1'b0}};
 						m_req_id    <= 1'b0; /* Local VRAM */
 						m_req_key   <= 8'hFE;
@@ -764,7 +834,7 @@ module atg_mc_l2 #(
 		end
 	end
 
-	wire unused_co = &{1'b0, flush_set_co, quiesce, req_high};
+	wire unused_co = &{1'b0, flush_set_co, quiesce, req_high, unused_hit_nz};
 endmodule
 
 `default_nettype wire

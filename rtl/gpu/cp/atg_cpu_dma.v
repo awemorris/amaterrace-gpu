@@ -178,7 +178,8 @@ module atg_cpu_dma #(
 	 * read's, or a written line's: never in the same cycle), and the
 	 * writes in flight +- 1.
 	 */
-	wire [31:0] x_addr_s, j_mem_n, j_rem_n;
+	reg [31:0] x_addr_r;
+	wire [31:0] x_addr_inc, j_mem_n, j_rem_n;
 	wire [WS:0] st_w_n, g_w_n;
 	wire [LW-1:0] j_line_n;
 	wire [7:0] wr_out_n;
@@ -187,9 +188,7 @@ module atg_cpu_dma #(
 	wire wr_dec = !(req_valid && req_ready && req_write) && wr_rsp && wr_out != 8'd0;
 
 	am_add #(.W(32)) x_addr_add (
-		.a(st_we ? s_dst[st_slot] : j_mem),
-		.b({{(29 - WS){1'b0}}, st_we ? st_w : g_w, 2'b00}), .ci(1'b0), .s(x_addr_s),
-		.co(ar_co[0])
+		.a(x_addr_r), .b(32'd4), .ci(1'b0), .s(x_addr_inc), .co(ar_co[0])
 	);
 	am_add #(.W(WS + 1)) st_w_add (
 		.a(st_w), .b({(WS + 1){1'b0}}), .ci(1'b1), .s(st_w_n), .co(ar_co[1])
@@ -213,7 +212,7 @@ module atg_cpu_dma #(
 	);
 	assign ar_co[7] = 1'b0;
 
-	assign x_addr = x_addr_s;
+	assign x_addr = x_addr_r;
 	assign x_wdata = st_word;
 
 	assign req_be = {LINE_BYTES{1'b1}};
@@ -274,6 +273,7 @@ module atg_cpu_dma #(
 			st_act <= 1'b0;
 			st_slot <= 2'd0;
 			st_w <= {(WS + 1){1'b0}};
+			x_addr_r <= 32'd0;
 			g_w <= {(WS + 1){1'b0}};
 			g_cap <= 1'b0;
 		end else begin
@@ -311,10 +311,12 @@ module atg_cpu_dma #(
 					s_full[st_slot] <= 1'b0;
 				end
 				st_w <= st_w_n;
+				x_addr_r <= x_addr_inc;
 			end else if (have_full) begin
 				st_act <= 1'b1;
 				st_slot <= full_s;
 				st_w <= {(WS + 1){1'b0}};
+				x_addr_r <= s_dst[full_s];
 			end
 			if (rd_issue) begin
 				req_valid <= 1'b1;
@@ -330,8 +332,10 @@ module atg_cpu_dma #(
 			end
 			/* Write side: gather WPL words, then the request. */
 			g_cap <= g_en;
-			if (g_en)
+			if (g_en) begin
 				g_w <= g_w_n;
+				x_addr_r <= x_addr_inc;
+			end
 			case (state)
 			S_IDLE:
 				if (go) begin
@@ -346,6 +350,8 @@ module atg_cpu_dma #(
 					j_slot <= dma_slot;
 					j_line <= dma_amb[ADDR_W-1:LINE_SHIFT];
 					j_mem <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
+					if (sb_wdata[16])
+						x_addr_r <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
 					j_rem <= {{(16 - WS){1'b0}}, sb_wdata[15:0], {WS{1'b0}}};
 					g_w <= {(WS + 1){1'b0}};
 					state <= sb_wdata[16] ? S_GATHER : S_READ;
@@ -388,6 +394,8 @@ module atg_cpu_dma #(
 					j_mem <= j_mem_n;
 					j_rem <= j_rem_n;
 					g_w <= {(WS + 1){1'b0}};
+					if (j_rem != WPL)
+						x_addr_r <= j_mem_n;
 					state <= (j_rem == WPL) ? S_IDLE : S_GATHER;
 				end
 			endcase

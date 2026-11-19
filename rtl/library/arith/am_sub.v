@@ -57,7 +57,21 @@ module am_sub #(
 	end
 	endgenerate
 `else
+`ifdef SYNTH_ASIC
+	generate
+	if (W > 8 && W <= 128) begin : g_ks_sub
+		wire co_n;
+		am_add #(.W(W)) u_sub_add (
+			.a(a), .b(~b), .ci(~bi), .s(d), .co(co_n)
+		);
+		assign bo = ~co_n;
+	end else begin : g_beh
+		assign {bo, d} = {1'b0, a} - {1'b0, b} - {{W{1'b0}}, bi};
+	end
+	endgenerate
+`else
 	assign {bo, d} = {1'b0, a} - {1'b0, b} - {{W{1'b0}}, bi};
+`endif
 `endif
 endmodule
 

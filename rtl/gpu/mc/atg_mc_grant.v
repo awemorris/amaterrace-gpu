@@ -41,7 +41,7 @@ module atg_mc_grant #(
 	input wire [5:0] slot,
 	input wire [19:0] g,
 	input wire write,
-	output reg hit
+	output wire hit
 );
 	reg [NGRANT-1:0] e_valid;
 	reg [NGRANT*6-1:0] e_slot;
@@ -49,7 +49,6 @@ module atg_mc_grant #(
 	reg [NGRANT-1:0] e_write;
 	reg [NGRANT*20-1:0] e_base;
 	reg [NGRANT*21-1:0] e_limit;
-	integer k;
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
@@ -80,18 +79,23 @@ module atg_mc_grant #(
 		end
 	end
 
-	always @(*) begin
-		hit = 1'b0;
-		for (k = 0; k < NGRANT; k = k + 1)
-			if (e_valid[k] && e_slot[k*6 +: 6] == slot && e_base[k*20 +: 20] <= g &&
+	/* Parallel per-entry match + OR reduction keeps depth O(1) for NGRANT=64. */
+	wire [NGRANT-1:0] entry_hit;
+	genvar gk;
+	generate
+		for (gk = 0; gk < NGRANT; gk = gk + 1) begin : g_ent
+			wire dir_ok = write ? e_write[gk] : e_read[gk];
+			wire slot_ok = e_slot[gk*6 +: 6] == slot;
+			wire lo_ok = e_base[gk*20 +: 20] <= g;
 `ifdef MUT_PROT_LIMIT
-			    {1'b0, g} <= e_limit[k*21 +: 21] &&
+			wire hi_ok = {1'b0, g} <= e_limit[gk*21 +: 21];
 `else
-			    {1'b0, g} < e_limit[k*21 +: 21] &&
+			wire hi_ok = {1'b0, g} < e_limit[gk*21 +: 21];
 `endif
-			    (write ? e_write[k] : e_read[k]))
-				hit = slot != 6'd0;
-	end
+			assign entry_hit[gk] = e_valid[gk] && dir_ok && slot_ok && lo_ok && hi_ok;
+		end
+	endgenerate
+	assign hit = (slot != 6'd0) && (|entry_hit);
 endmodule
 
 `default_nettype wire

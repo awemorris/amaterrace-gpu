@@ -58,7 +58,45 @@ module am_add #(
 	end
 	endgenerate
 `else
+`ifdef SYNTH_ASIC
+	generate
+	if (W > 8 && W <= 128) begin : g_ks
+		localparam LG = (W <= 16) ? 4 : ((W <= 32) ? 5 : ((W <= 64) ? 6 : 7));
+		wire [W-1:0] p_raw = a ^ b;
+		wire [W-1:0] g_lvl [0:LG];
+		wire [W-1:0] p_lvl [0:LG];
+		assign g_lvl[0][0] = (a[0] & b[0]) | (p_raw[0] & ci);
+		assign p_lvl[0][0] = 1'b0;
+		genvar gi, gst;
+		for (gi = 1; gi < W; gi = gi + 1) begin : g_init
+			assign g_lvl[0][gi] = a[gi] & b[gi];
+			assign p_lvl[0][gi] = p_raw[gi];
+		end
+		for (gst = 0; gst < LG; gst = gst + 1) begin : g_st
+			localparam integer D = 1 << gst;
+			for (gi = 0; gi < W; gi = gi + 1) begin : g_bit
+				if (gi >= D) begin : g_comb
+					assign g_lvl[gst+1][gi] = g_lvl[gst][gi] | (p_lvl[gst][gi] & g_lvl[gst][gi-D]);
+					assign p_lvl[gst+1][gi] = p_lvl[gst][gi] & p_lvl[gst][gi-D];
+				end else begin : g_pass
+					assign g_lvl[gst+1][gi] = g_lvl[gst][gi];
+					assign p_lvl[gst+1][gi] = p_lvl[gst][gi];
+				end
+			end
+		end
+		assign s[0] = p_raw[0] ^ ci;
+		for (gi = 1; gi < W; gi = gi + 1) begin : g_sum
+			assign s[gi] = p_raw[gi] ^ g_lvl[LG][gi-1];
+		end
+		assign co = g_lvl[LG][W-1];
+		wire unused_p = &{1'b0, p_lvl[LG]};
+	end else begin : g_beh
+		assign {co, s} = {1'b0, a} + {1'b0, b} + {{W{1'b0}}, ci};
+	end
+	endgenerate
+`else
 	assign {co, s} = {1'b0, a} + {1'b0, b} + {{W{1'b0}}, ci};
+`endif
 `endif
 endmodule
 

@@ -401,10 +401,11 @@ module atg_rx_setup #(
 `define RX_BUF1(inst_name, in_sig, out_sig) \
 	assign out_sig = (in_sig)
 
-	(* fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [3:0] st, st_rep_a, st_rep_b, st_rep_c, st_rep_d, st_rep_e, st_rep_f;
-	(* fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [4:0] seq_step, seq_step_hi, seq_step_v, seq_step_rep_a, seq_step_rep_b, seq_step_rep_c, seq_step_rep_d;
+	(* keep = "true", fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [3:0] st, st_rep_a, st_rep_b, st_rep_c, st_rep_d, st_rep_e, st_rep_f;
+	(* keep = "true", dont_touch = "true" *) reg [4:0] r_st_idle_br;
+	(* keep = "true", fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [4:0] seq_step, seq_step_hi, seq_step_v, seq_step_rep_a, seq_step_rep_b, seq_step_rep_c, seq_step_rep_d;
 	(* fsm_encoding = "none", extract_reset = "no", max_fanout = 16 *) reg [1:0] p_plane;	/* 0: Z, 1: RW, 2: B0, 3: B1 */
-	(* fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [3:0] p_step, p_step_rep_a;
+	(* keep = "true", fsm_encoding = "none", extract_enable = "no", extract_reset = "no" *) reg [3:0] p_step, p_step_rep_a;
 	(* extract_enable = "no", extract_reset = "no" *) reg [1:0] kind, kind_prim, kind_out, kind_edge, kind_fpu;
 	reg [26:0] keep;
 	reg lastq;
@@ -748,8 +749,8 @@ module atg_rx_setup #(
 	(* extract_enable = "no", extract_reset = "no" *) reg [7:0] ea_in;
 	am_sub #(.W(8)) u_ea23 (.a(ea_in), .b(8'd23), .bi(1'b0), .d(ea23), .bo(su_bo_unused));
 
-	wire [31:0] max_z01 = max_mag({1'b0, R[33][30:0]}, {1'b0, R[36][30:0]});
-	wire [31:0] max_z   = max_mag(max_z01, {1'b0, R[39][30:0]});
+	wire [7:0] max_z01_exp = (R[36][30:23] > R[33][30:23]) ? R[36][30:23] : R[33][30:23];
+	wire [7:0] max_z_exp   = (R[39][30:23] > max_z01_exp)  ? R[39][30:23] : max_z01_exp;
 
 	/* Stream Selection: cl_* vs mesh_* (Option 4 Static MUX with cl_* priority) */
 	 wire cl_valid_b0, cl_valid_b1;
@@ -811,11 +812,19 @@ module atg_rx_setup #(
 	`RX_BUF1(u_wid_kl,  we_idle_in, we_idle_keep_lo);
 	`RX_BUF1(u_wid_kh,  we_idle_in, we_idle_keep_hi);
 
+`ifdef SYNTH_KINTEX7
 	`RX_BUF1(u_iv_b0, we_idle_in, iv_branch[0]);
 	`RX_BUF1(u_iv_b1, we_idle_in, iv_branch[1]);
 	`RX_BUF1(u_iv_b2, we_idle_in, iv_branch[2]);
 	`RX_BUF1(u_iv_b3, we_idle_in, iv_branch[3]);
 	`RX_BUF1(u_iv_b4, we_idle_in, iv_branch[4]);
+`else
+	assign iv_branch[0] = r_st_idle_br[0] && in_valid_ctrl;
+	assign iv_branch[1] = r_st_idle_br[1] && in_valid_ctrl;
+	assign iv_branch[2] = r_st_idle_br[2] && in_valid_ctrl;
+	assign iv_branch[3] = r_st_idle_br[3] && in_valid_ctrl;
+	assign iv_branch[4] = r_st_idle_br[4] && in_valid_ctrl;
+`endif
 
 	genvar giv;
 	generate
@@ -1977,6 +1986,7 @@ module atg_rx_setup #(
 			st_rep_d <= S_IDLE;
 			st_rep_e <= S_IDLE;
 			st_rep_f <= S_IDLE;
+			r_st_idle_br <= 5'b11111;
 
 			seq_step <= 5'd0;
 			seq_step_hi <= 5'd0;
@@ -2008,6 +2018,7 @@ module atg_rx_setup #(
 			st_rep_d <= st_next;
 			st_rep_e <= st_next;
 			st_rep_f <= st_next;
+			r_st_idle_br <= {5{st_next == S_IDLE}};
 
 			seq_step <= seq_next;
 			seq_step_hi <= seq_next;
@@ -2139,7 +2150,7 @@ module atg_rx_setup #(
 			case (seq_step_v)
 			5'd1, 5'd3: fm_v <= 1'b1;
 			5'd2: if (fm_o_c_v) begin
-				if (rm[5:4] == 2'd3) ea_in <= max_z[30:23];
+				if (rm[5:4] == 2'd3) ea_in <= max_z_exp;
 				else fm_v <= 1'b1;
 			end
 			5'd4: if (fm_o_c_v) begin
@@ -2178,7 +2189,7 @@ module atg_rx_setup #(
 	assign sp_tri[351:0] = {e_bbox, e_edges};
 	assign sp_tri[767:736] = {1'b0, kind_out, raw, e_front, more ? 3'd0 : keep[26:24], keep[23:0]};
 
-	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused, max_z[31], max_z[22:0],
+	wire unused_ok = &{1'b0, fd_busy, rm[2:1], su_bo_unused,
 		lw_fix[23:16], ps_fix[23:16], div_busy, mesh_id, in_valid_ctrl, in_valid_fd,
 		seq_inc_co_unused, seq_inc_hi_co_unused, p_step_ctrl_inc_co_unused, p_plane_inc_co_unused,
 		is_flw, is_fps};
