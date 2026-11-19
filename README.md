@@ -1,7 +1,7 @@
 Lumiere GPU
 ===========
 
-[![CI](https://github.com/awemorris/lumiere/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/lumiere-gpu/actions/workflows/ci.yml)
+[![CI](https://github.com/awemorris/lumiere-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/lumiere-gpu/actions/workflows/ci.yml)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](https://opensource.org/licenses/Zlib)
 [![GHCI Standard: 1.0](https://img.shields.io/badge/GHCI-1.0-indigo.svg)](docs/ghci.md)
 [![Target: Xilinx KC705/ZCU106](https://img.shields.io/badge/Target-Xilinx-emerald.svg)](boards/)
@@ -10,8 +10,8 @@ Gonna illuminate the world!
 
 ---
 
-`Lumiere` is an open-source, synthesis-ready RTL-IP and driver
-software for a modern GPU, delivering Vulkan-class graphics and
+`Lumiere GPU` (ATG1) is an open-source, synthesis-ready RTL-IP and
+driver software for a modern GPU, delivering Vulkan-class graphics and
 parallel compute.  It is architected to fulfill the core paradigms and
 feature sets of Vulkan, DirectX 12, and Metal.
 
@@ -84,18 +84,23 @@ Table of Contents
 1. Top-Level Architecture
 -------------------------
 
-Amaterrace GPU is partitioned into modular, latency-insensitive processing blocks interconnected by a high-bandwidth internal routing tree (`atg_rt`), converging onto a unified Shared Last-Level Cache (LLC) and memory subsystem:
+Lumiere GPU is partitioned into modular, latency-insensitive
+processing blocks interconnected by a high-bandwidth internal routing
+tree (`atg_rt`), converging onto a unified Shared Last-Level Cache
+(LLC) and memory subsystem:
 
-![Amaterrace GPU SoC Top-Level Architecture](docs/svg/atg_top_architecture.svg)
+![Lumiere GPU SoC Top-Level Architecture](docs/svg/atg_top_architecture.svg)
 
 ---
 
 2. Execution Data Paths
 -----------------------
 
-Workloads in Amaterrace GPU traverse dedicated, highly optimized hardware streaming pipelines. The diagram below illustrates the four primary execution data paths:
+Workloads in Lumiere GPU traverse dedicated, highly optimized hardware
+streaming pipelines. The diagram below illustrates the four primary
+execution data paths:
 
-![Amaterrace GPU Execution Data Paths](docs/svg/atg_data_paths.svg)
+![Lumiere GPU Execution Data Paths](docs/svg/atg_data_paths.svg)
 
 ### 3D Graphics Pipeline
 
@@ -140,7 +145,10 @@ DRAM Framebuffer ──> MC Priority Arbiter ──> Dual-Clock CDC AFIFO ──
 3. GHCI 1.0 Host Interface & System Topologies
 ----------------------------------------------
 
-Amaterrace GPU implements the **GHCI 1.0 (GPU Host Controller Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI defines an AHCI/xHCI-style unified programming interface for high-efficiency graphics and parallel compute GPUs.
+Lumiere GPU implements the **GHCI 1.0 (GPU Host Controller
+Interface)** specification ([docs/ghci.md](docs/ghci.md)). GHCI
+defines an AHCI/xHCI-style unified programming interface for
+high-efficiency graphics and parallel compute GPUs.
 
 ![GHCI 1.0 GPU Architecture](docs/svg/ghci_gpu_architecture.svg)
 
@@ -208,7 +216,7 @@ The swimlane sequence diagram below illustrates the end-to-end command lifecycle
 
 The Shader Unit (`atg_su`) executes the standard GSI1 64-bit ISA. It implements a 32-thread logical SIMT warp execution model with parameterizable physical hardware width:
 
-![Amaterrace SU Architecture](docs/svg/atg_su_architecture.svg)
+![Lumiere SU Architecture](docs/svg/atg_su_architecture.svg)
 
 - **Parameterizable Physical Lanes (`NPHYS`):** The physical execution width is configurable at synthesis (`NPHYS = 1, 2, 4, 8, 16, or 32` lanes, with RTL default `NPHYS = 8`). A 32-thread logical warp executes across physical lanes in $G = 32 / \text{NPHYS}$ time cycles.
 - **Scalar Processing Elements (Scalar PEs):** Each physical lane is an independent scalar PE (`atg_su_lane`), comprising:
@@ -245,7 +253,7 @@ Theoretical peak of one SU with `NPHYS = 32`, assuming every lane completes one 
 
 The Rasterizer (`atg_rx`) converts geometric primitives into covered pixel quads:
 
-![Amaterrace RX Rasterizer Pipeline](docs/svg/atg_rx_rasterizer.svg)
+![Lumiere RX Rasterizer Pipeline](docs/svg/atg_rx_rasterizer.svg)
 
 - **Primitive Setup:** Computes triangle edge equations ($E_0, E_1, E_2$), triangle area, bounding box coordinates, and back-face culling.
 - **Hierarchical Coarse Scan:** Evaluates coarse tile corners to fast-reject exterior tiles and fast-accept interior tiles.
@@ -259,7 +267,7 @@ The Rasterizer (`atg_rx`) converts geometric primitives into covered pixel quads
 
 The Render Output Backend (`atg_rop`) processes shaded fragment quads and commits pixels to memory:
 
-![Amaterrace ROP Architecture](docs/svg/atg_rop_backend.svg)
+![Lumiere ROP Architecture](docs/svg/atg_rop_backend.svg)
 
 - **On-Chip Tile Buffer:** Multi-banked fast SRAM holding active tile color, depth, and stencil data for single-cycle read-modify-write operations.
 - **Late Depth & Stencil Test:** Performs per-pixel depth comparisons and stencil updates for surviving fragments.
@@ -383,7 +391,7 @@ achieve timing closure with **Fmax >= 200 MHz** (**WNS >= 0.000 ns**):
 -----------------------
 
 ```
-amaterrace-gpu/
+lumiere-gpu/
 ├── rtl/                          # Complete Verilog-2005 Synthesizable RTL
 │   ├── bsp/                      # Board Support Packages (generic, xilinx7, pcie)
 │   ├── library/                  # Reusable Hardware Infrastructure
@@ -415,3 +423,9 @@ amaterrace-gpu/
 │   └── vectors/                  # Golden Test Vectors & Geometry Datasets
 └── spec/                         # Formal Module Specifications (One per RTL module)
 ```
+
+---
+
+# 7. Misc & Trivia
+
+Lumiere GPU is formerly known as Amaterrace GPU.
