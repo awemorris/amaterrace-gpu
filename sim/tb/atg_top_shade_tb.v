@@ -26,6 +26,9 @@
 `ifndef CFG_FMT_ENABLE_DEPTH32F
 `define CFG_FMT_ENABLE_DEPTH32F 1
 `endif
+`ifndef CFG_RX_ENABLE_CPOLY
+`define CFG_RX_ENABLE_CPOLY 1
+`endif
 
 `include "atg_top_scene.vh"
 
