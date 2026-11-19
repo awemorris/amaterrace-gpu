@@ -24,9 +24,8 @@ There is no compiler-rt for riscv32 in the shared LLVM, so `lib.c` carries
 memcpy, memset, memcmp, the 64-bit shifts and the 64-bit division, and
 `float.c` the few fp32 operations.
 
-The LLVM is found at `CLANG_BIN`, by default `../zedBSD-claude1/build/llvm/bin`
-beside the repository's root.  From a checkout elsewhere, such as a git
-worktree, pass it:
+LLVM (`clang`, `ld.lld`, `llvm-objcopy`) is expected on `PATH`, or pass
+`CLANG_BIN=/path/to/llvm/bin`:
 `make -C fw/cp CLANG_BIN=/path/to/llvm/bin`.
 
 `formats.inc` (the formats of `mk/fmtmodel.py`) and `programs.inc` (the

@@ -2,9 +2,13 @@
 # images/atg1-cp-kc705.imem.hex (32768 words) and .dmem.hex (16384 words).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
-ROOT       := $(abspath ../..)
-CLANG_BIN  ?= $(ROOT)/../zedBSD-claude1/build/llvm/bin
-BOARD      := kc705
+ROOT         := $(abspath ../..)
+CLANG_BIN    ?=
+CLANG_PREFIX := $(if $(CLANG_BIN),$(CLANG_BIN)/,)
+CLANG        ?= $(CLANG_PREFIX)clang
+LLD          ?= $(CLANG_PREFIX)ld.lld
+LLVM_OBJCOPY ?= $(CLANG_PREFIX)llvm-objcopy
+BOARD        := kc705
 LINE_BYTES := 64
 IMEM_WORDS := 32768
 DMEM_WORDS := 16384
@@ -27,20 +31,20 @@ all: $(IMG)/atg1-cp-$(BOARD).imem.hex $(IMG)/atg1-cp-$(BOARD).dmem.hex $(OUT)/at
 
 $(OUT)/%.c.o: %.c fw.h hw.h $(ROOT)/include/ghci_frame.h $(ROOT)/include/ghci_layout.h
 	@mkdir -p $(OUT)
-	timeout 60 $(CLANG_BIN)/clang $(CFLAGS) -c $< -o $@
+	timeout 60 $(CLANG) $(CFLAGS) -c $< -o $@
 
 $(OUT)/%.S.o: %.S
 	@mkdir -p $(OUT)
-	timeout 60 $(CLANG_BIN)/clang $(CFLAGS) -c $< -o $@
+	timeout 60 $(CLANG) $(CFLAGS) -c $< -o $@
 
 $(OUT)/format.c.o: formats.inc
 $(OUT)/builtin.c.o: programs.inc
 
 $(OUT)/atg1-cp.elf: $(OBJS) link.ld
-	timeout 60 $(CLANG_BIN)/ld.lld -T $(SRC)/link.ld --gc-sections $(OBJS) -o $@
+	timeout 60 $(LLD) -T $(SRC)/link.ld --gc-sections $(OBJS) -o $@
 
 $(OUT)/atg1-cp.bin: $(OUT)/atg1-cp.elf
-	timeout 60 $(CLANG_BIN)/llvm-objcopy -O binary --only-section=.text $< $@
+	timeout 60 $(LLVM_OBJCOPY) -O binary --only-section=.text $< $@
 
 $(OUT)/atg1-cp-$(BOARD).bin: $(OUT)/atg1-cp.bin
 	cp $< $@
@@ -49,7 +53,7 @@ $(OUT)/imem.bin: $(OUT)/atg1-cp.bin
 	cp $< $@
 
 $(OUT)/atg1-cp.dmem.bin: $(OUT)/atg1-cp.elf
-	timeout 60 $(CLANG_BIN)/llvm-objcopy -O binary --only-section=.rodata --only-section=.data $< $@
+	timeout 60 $(LLVM_OBJCOPY) -O binary --only-section=.rodata --only-section=.data $< $@
 
 define pad_to_hex
 	@mkdir -p $(IMG)
