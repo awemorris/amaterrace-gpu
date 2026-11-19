@@ -27,28 +27,19 @@ a patent license.
 The target performance varies from low-end SoC (54.4 GFLOPS) to
 high-end PCIe board (13.9 TFLOPS).
 
-| Preset Name                 | SIMT Lanes   | Shader Units | GFLOPS FP32 @1.7GHz | GFLOPS FP32 @600MHz | GFLOPS FP32 @200MHz | Features                      | Description                      |
-|-----------------------------|--------------|--------------|---------------------|---------------------|---------------------|-------------------------------|----------------------------------|
-| gfx-vulkan10-su1-half       | 16           | 1            | 54.4                | 19.2                | -                   | Vulkan 1.0 Baseline           | ≈ PowerVR IMG BXE-4-32 MC1      |
-| gfx-vulkan10-su1            | 32           | 1            | 108.8               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-vulkan10-su2            | 32           | 2            | 217.6               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-vulkan10-su4            | 32           | 4            | 435.2               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-vulkan10-su8            | 32           | 8            | 870.4               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-vulkan10-su16           | 32           | 16           | 1740.8              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ Adreno X1-45, GTX 1050        |
-| gfx-vulkan10-su32           | 32           | 32           | 3481.6              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ GTX 1650, RX 6400             |
-| gfx-vulkan10-su64           | 32           | 64           | 6963.2              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
-| gfx-vulkan10-su128          | 32           | 128          | 13926.4             | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 5050                      |
-| compute-vulkan10-su1-half   | 16           | 1            | 54.4                | 19.2                | -                   | Vulkan 1.0 Baseline           | ≈ PowerVR IMG BXE-4-32 MC1      |
-| compute-vulkan10-su1        | 32           | 1            | 108.8               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su2        | 32           | 2            | 217.6               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su4        | 32           | 4            | 435.2               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su8        | 32           | 8            | 870.4               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su16       | 32           | 16           | 1740.8              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su32       | 32           | 32           | 3481.6              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| compute-vulkan10-su64       | 32           | 64           | 6963.2              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
-| compute-vulkan10-su128      | 32           | 128          | 13926.4             | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 5050                      |
-| gfx-fpga-test               | 4            | 1            | -                   | -                   | 1.6                 | Basic Rendering               | Xilinx KC705                     |
-| compute-fpga-test           | 32           | 1            | -                   | -                   | 12.8                | Basic Compute                 | Xilinx KC705                     |
+| Preset Name           | SIMT Lanes   | Shader Units | FLOPS FP32             | Features                      | Description                      |
+|-----------------------|--------------|--------------|------------------------|-------------------------------|----------------------------------|
+| gfx-vk10-su1-half     | 16           | 1            | 19.2 GFLOPS @200MHz    | Vulkan 1.0 Baseline           | ≈ PowerVR IMG BXE-4-32 MC1      |
+| gfx-vk10-su1          | 32           | 1            | 108.8 GFLOPS @1.7GHz   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vk10-su2          | 32           | 2            | 217.6 GFLOPS @1.7GHz   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vk10-su4          | 32           | 4            | 435.2 GFLOPS @1.7GHz   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vk10-su8          | 32           | 8            | 870.4 GFLOPS @1.7GHz   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vk10-su16         | 32           | 16           | 1740.8 GFLOPS @1.7GHz  | Vulkan 1.0 Baseline           | ≈ Adreno X1-45, GTX 1050        |
+| gfx-vk10-su32         | 32           | 32           | 3481.6 GFLOPS @1.7GHz  | Vulkan 1.0 Baseline           | ≈ GTX 1650, RX 6400             |
+| gfx-vk10-su64         | 32           | 64           | 6963.2 GFLOPS @1.7GHz  | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
+| gfx-vk10-su128        | 32           | 128          | 13926.4 GFLOPS @1.7GHz | Vulkan 1.0 Baseline           | ≈ RTX 5050 - RTX 5060           |
+| gfx-fpga-test         | 4            | 1            | 1.6 GFLOPS @200MHz     | Basic Rendering               | Xilinx KC705                     |
+| compute-fpga-test     | 32           | 1            | 12.8 GFLOPS @200MHz    | Basic Compute                 | Xilinx KC705                     |
 
 ---
 
