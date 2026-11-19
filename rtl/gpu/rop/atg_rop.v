@@ -135,10 +135,10 @@ module atg_rop #(
 	wire [31:0] m_xy;
 	wire [15:0] m_smask;
 	wire [511:0] m_color, m_color1, m_sdepth;
-	wire d_valid, d_ready;
+	wire d_valid, d_ready, wb_d_skid_ready;
 	wire [31:0] d_xy;
 	wire [15:0] d_smask;
-	wire [511:0] d_color, d_color1;
+	wire [511:0] d_color, d_color1, b_src1_skid;
 	wire b_valid, b_rvalid;
 	wire [511:0] b_src;
 	wire [127:0] b_dst, b_pix;
@@ -363,9 +363,16 @@ module atg_rop #(
 		.clear(occ_clear), .count(occ_count)
 	);
 
+	wire unused_d1_skid_rdy, unused_d1_skid_val;
+	am_skid #(.W(512)) u_d1_skid (
+		.clk(clk), .rst_n(rst_n_net),
+		.in_valid(d_valid), .in_ready(unused_d1_skid_rdy), .in_data(d_color1),
+		.out_valid(unused_d1_skid_val), .out_ready(wb_d_skid_ready), .out_data(b_src1_skid)
+	);
+
 	atg_rop_blend #(.MRT_COUNT(MRT_COUNT)) blend (
 		.clk(clk), .rst_n(rst_n_net), .st_we(blend_st_we), .st_idx(blend_st_idx), .st_wdata(blend_st_wdata),
-		.b_valid(b_valid), .b_src(b_src), .b_src1(d_color1), .b_has_src1(ex_has_src1),
+		.b_valid(b_valid), .b_src(b_src), .b_src1(b_src1_skid), .b_has_src1(ex_has_src1),
 		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),
 		.b_rvalid(b_rvalid), .b_pix(b_pix)
 	);
@@ -380,7 +387,7 @@ module atg_rop #(
 		.ENABLE_PACK(ENABLE_PACK)
 	) wb (
 		.clk(clk), .rst_n(rst_n_net), .st_we(wb_st_we), .st_idx(wb_st_idx), .st_wdata(wb_st_wdata),
-		.d_valid(d_valid), .d_ready(d_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
+		.d_valid(d_valid), .d_ready(d_ready), .d_skid_ready(wb_d_skid_ready), .d_xy(d_xy), .d_smask(d_smask), .d_color(d_color),
 		.d_rt(d_beat[4:2]), .d_nocol(d_beat[1]),
 		.b_valid(b_valid), .b_src(b_src),
 		.b_dst(b_dst), .b_mask(b_mask), .b_rt(b_rt),

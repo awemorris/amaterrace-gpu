@@ -47,6 +47,7 @@ module atg_rop_wb #(
 	/* From atg_rop_ds */
 	input wire d_valid,
 	output wire d_ready,
+	output wire d_skid_ready,
 	input wire [31:0] d_xy,
 	input wire [15:0] d_smask,	/* bit 4 l + s: sample s of lane l */
 	input wire [511:0] d_color,
@@ -77,6 +78,25 @@ module atg_rop_wb #(
 );
 	localparam LA_W = ADDR_W - LINE_SHIFT;
 	(* keep = "true", dont_touch = "true" *) wire rst_sync = !rst_n;
+
+	/* Registered input skid buffer to keep module boundary flop-to-flop (Rule 3) */
+	wire di_valid, di_nocol;
+	wire [31:0] di_xy;
+	wire [15:0] di_smask;
+	wire [511:0] di_color;
+	wire [2:0] di_rt;
+	wire di_ready;
+	localparam integer D_SKID_W = 32 + 16 + 512 + 3 + 1;
+	am_skid #(.W(D_SKID_W)) u_d_skid (
+		.clk(clk),
+		.rst_n(rst_n),
+		.in_valid(d_valid),
+		.in_ready(d_ready),
+		.in_data({d_xy, d_smask, d_color, d_rt, d_nocol}),
+		.out_valid(di_valid),
+		.out_ready(di_ready),
+		.out_data({di_xy, di_smask, di_color, di_rt, di_nocol})
+	);
 
 	/* The two cache line entries */
 	reg ev [0:1];
@@ -219,13 +239,13 @@ module atg_rop_wb #(
 	genvar g_xl;
 	generate
 	for (g_xl = 1; g_xl < LINE_SHIFT; g_xl = g_xl + 1) begin : g_dxy_loff
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_xl (.I0(d_xy[g_xl]), .O(d_xy_loff[g_xl]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_xl (.I0(di_xy[g_xl]), .O(d_xy_loff[g_xl]));
 	end
 	endgenerate
 `else
-	assign d_xy_loff = d_xy[LINE_SHIFT-1:1];
+	assign d_xy_loff = di_xy[LINE_SHIFT-1:1];
 `endif
-	wire [LINE_SHIFT-1:0] d_xy_lo_b = {d_xy_loff, d_xy[0]};
+	wire [LINE_SHIFT-1:0] d_xy_lo_b = {d_xy_loff, di_xy[0]};
 	wire [1:0] xsh_loff = cached_xsh_rep[0];
 	(* keep = "true" *) wire [LINE_SHIFT-1:0] str_line_off =
 		(xsh_loff == 2'd2) ? {d_xy_lo_b[LINE_SHIFT-3:0], 2'b00} :
@@ -264,11 +284,11 @@ module atg_rop_wb #(
 	genvar g_bs;
 	generate
 	for (g_bs = 0; g_bs < 32; g_bs = g_bs + 1) begin : g_bs_mux
-		assign b_src[16 * g_bs +: 16] = idle_bsrc[g_bs] ? d_color[16 * g_bs +: 16] : r_bsrc[16 * g_bs +: 16];
+		assign b_src[16 * g_bs +: 16] = idle_bsrc[g_bs] ? di_color[16 * g_bs +: 16] : r_bsrc[16 * g_bs +: 16];
 	end
 	endgenerate
 `else
-	assign b_src = is_idle_reg ? d_color : r_bsrc;
+	assign b_src = is_idle_reg ? di_color : r_bsrc;
 `endif
 
 	/* 4-LUT-level streaming destination pixel gather (0 CARRY4s, fanout <= 16):
@@ -285,9 +305,9 @@ module atg_rop_wb #(
 	for (gc = 0; gc < 8; gc = gc + 1) begin : g_str_c
 		wire [1:0] xsh_c = cached_xsh_rep[gc];
 		assign str_c_rep[gc] =
-			xsh_c[1] ? d_xy[1 +: CHUNK_IDX_W] :
-			xsh_c[0] ? d_xy[2 +: CHUNK_IDX_W] :
-			           d_xy[3 +: CHUNK_IDX_W];
+			xsh_c[1] ? di_xy[1 +: CHUNK_IDX_W] :
+			xsh_c[0] ? di_xy[2 +: CHUNK_IDX_W] :
+			           di_xy[3 +: CHUNK_IDX_W];
 	end
 	for (gc = 0; gc < 4; gc = gc + 1) begin : g_q64
 		for (gbit = 0; gbit < 16; gbit = gbit + 1) begin : g_qb
@@ -301,16 +321,16 @@ module atg_rop_wb #(
 		wire [1:0] xsh_shi = cached_xsh_rep[12 + gc];
 		wire idle_lo = is_idle_bdst[2 * gc + 0];
 		wire idle_hi = is_idle_bdst[2 * gc + 1];
-		/* Buffered d_xy[2:1] per slot (fanout <= 8 per LUT1, Level 1 -> feeds Level 3) */
+		/* Buffered di_xy[2:1] per slot (fanout <= 8 per LUT1, Level 1 -> feeds Level 3) */
 		wire [1:0] x21_lo;
 		wire x1_hi;
 `ifdef SYNTH_KINTEX7
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x21_l0 (.I0(d_xy[1]), .O(x21_lo[0]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x21_l1 (.I0(d_xy[2]), .O(x21_lo[1]));
-		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x1_hi  (.I0(d_xy[1]), .O(x1_hi));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x21_l0 (.I0(di_xy[1]), .O(x21_lo[0]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x21_l1 (.I0(di_xy[2]), .O(x21_lo[1]));
+		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_x1_hi  (.I0(di_xy[1]), .O(x1_hi));
 `else
-		assign x21_lo = d_xy[2:1];
-		assign x1_hi  = d_xy[1];
+		assign x21_lo = di_xy[2:1];
+		assign x1_hi  = di_xy[1];
 `endif
 
 		for (gbit = 0; gbit < 8; gbit = gbit + 1) begin : g_b0_7
@@ -368,9 +388,9 @@ module atg_rop_wb #(
 	wire [1:0] xsh_t0 = cached_xsh_rep[1];
 	wire [1:0] xsh_t1 = cached_xsh_rep[2];
 	(* keep = "true" *) wire [7:0] t01_eq;
-	assign t01_eq[0] = ((!xsh_t0[1]) || ((d_xy[LINE_SHIFT - 2] == cached_tag_x0[0]) && (d_xy[LINE_SHIFT - 2] == cached_tag_x1[0]))) &&
-	                   (d_xy[31] == line_y[15]);
-	assign t01_eq[1] = ((xsh_t1 == 2'd0) || ((d_xy[LINE_SHIFT - 1] == cached_tag_x0[1]) && (d_xy[LINE_SHIFT - 1] == cached_tag_x1[1]))) &&
+	assign t01_eq[0] = ((!xsh_t0[1]) || ((di_xy[LINE_SHIFT - 2] == cached_tag_x0[0]) && (di_xy[LINE_SHIFT - 2] == cached_tag_x1[0]))) &&
+	                   (di_xy[31] == line_y[15]);
+	assign t01_eq[1] = ((xsh_t1 == 2'd0) || ((di_xy[LINE_SHIFT - 1] == cached_tag_x0[1]) && (di_xy[LINE_SHIFT - 1] == cached_tag_x1[1]))) &&
 	                   is_idle_reg;
 	genvar gt;
 	generate
@@ -378,31 +398,31 @@ module atg_rop_wb #(
 		localparam integer X_LO = LINE_SHIFT + 2 * gt;
 		localparam integer T_LO = 2 + 2 * gt;
 		assign t01_eq[2 + gt] =
-			(d_xy[X_LO +: 2] == cached_tag_x0[T_LO +: 2]) &&
-			(d_xy[X_LO +: 2] == cached_tag_x1[T_LO +: 2]);
+			(di_xy[X_LO +: 2] == cached_tag_x0[T_LO +: 2]) &&
+			(di_xy[X_LO +: 2] == cached_tag_x1[T_LO +: 2]);
 	end
 	if (LINE_SHIFT == 5) begin : g_teq7_ls5
-		assign t01_eq[7] = (d_xy[15] == cached_tag_x0[12]) && (d_xy[15] == cached_tag_x1[12]) &&
-		                   !d_xy[0] && stream_cfg_ok && line_match_valid;
+		assign t01_eq[7] = (di_xy[15] == cached_tag_x0[12]) && (di_xy[15] == cached_tag_x1[12]) &&
+		                   !di_xy[0] && stream_cfg_ok && line_match_valid;
 	end else begin : g_teq7_ls6
 		assign t01_eq[7] = (cached_tag_x0[12] == cached_tag_x1[12]) &&
-		                   !d_xy[0] && stream_cfg_ok && line_match_valid;
+		                   !di_xy[0] && stream_cfg_ok && line_match_valid;
 	end
 	endgenerate
 
 	(* keep = "true" *) wire [4:0] y_eq3;
-	assign y_eq3[0] = (d_xy[18:16] == line_y[2:0]);
-	assign y_eq3[1] = (d_xy[21:19] == line_y[5:3]);
-	assign y_eq3[2] = (d_xy[24:22] == line_y[8:6]);
-	assign y_eq3[3] = (d_xy[27:25] == line_y[11:9]);
-	assign y_eq3[4] = (d_xy[30:28] == line_y[14:12]);
+	assign y_eq3[0] = (di_xy[18:16] == line_y[2:0]);
+	assign y_eq3[1] = (di_xy[21:19] == line_y[5:3]);
+	assign y_eq3[2] = (di_xy[24:22] == line_y[8:6]);
+	assign y_eq3[3] = (di_xy[27:25] == line_y[11:9]);
+	assign y_eq3[4] = (di_xy[30:28] == line_y[14:12]);
 
-	(* keep = "true" *) wire hit_rt = (d_rt == line_rt);
-	(* keep = "true" *) wire dval_col = d_valid && !d_nocol;
+	(* keep = "true" *) wire hit_rt = (di_rt == line_rt);
+	(* keep = "true" *) wire dval_col = di_valid && !di_nocol;
 
-	(* keep = "true" *) wire sm_z0 = (d_smask[5:0]   == 6'd0);
-	(* keep = "true" *) wire sm_z1 = (d_smask[11:6]  == 6'd0);
-	(* keep = "true" *) wire sm_z2 = (d_smask[15:12] == 4'd0);
+	(* keep = "true" *) wire sm_z0 = (di_smask[5:0]   == 6'd0);
+	(* keep = "true" *) wire sm_z1 = (di_smask[11:6]  == 6'd0);
+	(* keep = "true" *) wire sm_z2 = (di_smask[15:12] == 4'd0);
 
 	/* Pipeline shift register (11 stages for atg_rop_blend LAT=11 + 1 commit stage) */
 	reg [10:0] pipe_v;
@@ -422,8 +442,8 @@ module atg_rop_wb #(
 	(* keep = "true" *) wire pipe_nz_1 = pipe_nz_1_r;
 	wire pipe_busy = pipe_nz_0 || pipe_nz_1;
 
-	(* keep = "true" *) wire p_idle_0 = d_nocol || (pipe_v[4:0] == 5'd0);
-	(* keep = "true" *) wire p_idle_1 = d_nocol || (!pipe_v[5] && !pipe_nz_1_r);
+	(* keep = "true" *) wire p_idle_0 = di_nocol || (pipe_v[4:0] == 5'd0);
+	(* keep = "true" *) wire p_idle_1 = di_nocol || (!pipe_v[5] && !pipe_nz_1_r);
 
 	/* Level 2: single 6-input LUT6 for idle_or_drop */
 	(* keep = "true" *) wire idle_or_drop =
@@ -458,14 +478,14 @@ module atg_rop_wb #(
 		.rst_n(rst_n),
 		.alloc_valid(stream_cand_haz),
 		.alloc_ready(alloc_ready),
-		.alloc_tag({d_rt, d_xy[31:17], d_xy[15:1]}),
+		.alloc_tag({di_rt, di_xy[31:17], di_xy[15:1]}),
 		.alloc_id(alloc_id),
 		.o_grp_hit(haz_grp_hit),
 		.release_valid(release_valid),
 		.release_id(release_id)
 	);
 
-	wire [3:0] s0_mask = {d_smask[12], d_smask[8], d_smask[4], d_smask[0]};
+	wire [3:0] s0_mask = {di_smask[12], di_smask[8], di_smask[4], di_smask[0]};
 `ifdef SYNTH_KINTEX7
 	(* keep = "true" *) wire b_valid_w =
 		(sh_grp[0] && sh_grp[1] && sh_grp2_cand && !haz_grp_hit[0] && !haz_grp_hit[1]) || fsm_b_valid;
@@ -475,7 +495,7 @@ module atg_rop_wb #(
 	assign b_valid = b_valid_w;
 	assign b_mask = is_idle_reg ? s0_mask : r_bmask;
 
-	wire [2:0] eff_rt = is_idle_reg ? d_rt : rt;
+	wire [2:0] eff_rt = is_idle_reg ? di_rt : rt;
 `ifdef SYNTH_KINTEX7
 	wire [2:0] eff_rt_blend;
 	genvar g_rtb;
@@ -535,11 +555,12 @@ module atg_rop_wb #(
 	endgenerate
 `endif
 
-	/* Level 3: single 6-input LUT6 for d_ready */
+	/* Level 3: single 6-input LUT6 for di_ready */
 	(* keep = "true" *) wire d_ready_w =
 		idle_or_drop || (sh_grp[0] && sh_grp[1] && sh_grp[2] && !haz_grp_hit[0] && !haz_grp_hit[1]);
-	assign d_ready = d_ready_w;
-	assign busy = (st != S_IDLE) || ev[0] || ev[1] || pipe_busy;
+	assign di_ready = d_ready_w;
+	assign d_skid_ready = d_ready_w;
+	assign busy = (st != S_IDLE) || ev[0] || ev[1] || pipe_busy || di_valid;
 	assign req_tag = 8'd0;
 
 	/* ---------------------------------------------------------------------
@@ -795,8 +816,8 @@ module atg_rop_wb #(
 	                   ((st == S_EVW) && !req_valid && !wait_rsp && p_read);
 	wire req_go_w = req_wr_go_w || req_rd_go_w;
 	wire en_s_blend_go = (st == S_BLEND) && (p_mask != 4'd0);
-	/* Rule 1 fix: color/xy/mask are only read when st != S_IDLE, so latch whenever is_idle_reg && d_valid (1 LUT) */
-	wire en_s_idle_miss = is_idle_reg && d_valid;
+	/* Rule 1 fix: color/xy/mask are only read when st != S_IDLE, so latch whenever is_idle_reg && di_valid (1 LUT) */
+	wire en_s_idle_miss = is_idle_reg && di_valid;
 	wire en_s_row_w = (st == S_ROW);
 	wire en_cur_rb_w = (st == S_ROW_WAIT5) || (st == S_ROW_PREP);
 	wire en_bprep2_w = (st == S_BLEND_PREP2) && !p_multi_b[1] && (g_fsm == 2'd0);
@@ -971,16 +992,16 @@ module atg_rop_wb #(
 		/* Buffered S_IDLE miss latches for color, xy, mask (Rule 1 fix: 3 LUTs to CE) */
 		for (l = 0; l < 32; l = l + 1) begin
 			if (eid_leaf[l])
-				color[16 * l +: 16] <= d_color[16 * l +: 16];
+				color[16 * l +: 16] <= di_color[16 * l +: 16];
 		end
 		if (eid_leaf[32])
-			xy[15:0] <= {d_xy[15:LINE_SHIFT], d_xy_loff, d_xy[0]};
+			xy[15:0] <= {di_xy[15:LINE_SHIFT], d_xy_loff, di_xy[0]};
 		if (eid_leaf[33])
-			xy[31:16] <= d_xy[31:16];
+			xy[31:16] <= di_xy[31:16];
 		if (eid_leaf[34])
-			mask <= d_smask;
+			mask <= di_smask;
 		if (eid_leaf[35])
-			rt <= d_rt;
+			rt <= di_rt;
 
 		/* Buffered S_BLEND latches for r_bsrc, r_bdst, r_bmask, r_bsoff, r_bent, r_bps */
 		for (l = 0; l < 32; l = l + 1) begin
@@ -1036,10 +1057,10 @@ module atg_rop_wb #(
 			edirty[1] <= edirty[1] | commit_wr1_en;
 
 		if (en_s_idle_miss) begin
-			color <= d_color;
-			xy <= {d_xy[31:LINE_SHIFT], d_xy_loff, d_xy[0]};
-			mask <= d_smask;
-			rt <= d_rt;
+			color <= di_color;
+			xy <= {di_xy[31:LINE_SHIFT], d_xy_loff, di_xy[0]};
+			mask <= di_smask;
+			rt <= di_rt;
 		end
 
 		if (en_s_blend_go) begin
@@ -1092,8 +1113,8 @@ module atg_rop_wb #(
 	end
 
 	/* Rule 1 fix: decouple st[4:1] from cached_tag_x0, and compute st[0] / is_idle_reg next-state at Level 4 */
-	(* keep = "true" *) wire idle_flush_go = is_idle_reg && !d_valid && !pipe_nz_0 && !pipe_nz_1 && (idle == 5'd16) && (ev[0] || ev[1]);
-	(* keep = "true" *) wire miss_pre = !rst_sync && is_idle_reg && d_valid && !pipe_v[5] && !pipe_nz_1_r && !d_nocol;
+	(* keep = "true" *) wire idle_flush_go = is_idle_reg && !di_valid && !pipe_nz_0 && !pipe_nz_1 && (idle == 5'd16) && (ev[0] || ev[1]);
+	(* keep = "true" *) wire miss_pre = !rst_sync && is_idle_reg && di_valid && !pipe_v[5] && !pipe_nz_1_r && !di_nocol;
 	(* keep = "true" *) wire pipe_z4_0 = (pipe_v[4:0] == 5'd0);
 	(* keep = "true" *) wire st0_miss_cand = miss_pre && pipe_z4_0 && !(sm_z0 && sm_z1 && sm_z2);
 
@@ -1394,7 +1415,7 @@ module atg_rop_wb #(
 
 			case (st)
 			S_IDLE: begin
-				if (d_valid) begin
+				if (di_valid) begin
 					idle <= 5'd0;
 				end else if (!pipe_busy) begin
 					if (idle != 5'd16)

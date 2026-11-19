@@ -776,11 +776,13 @@ module atg_rop_wpix #(
 	am_mul #(.AW(17), .BW(32), .LAT(2)) u_yrs (.clk(wpix_act_clk), .en(1'b1), .a(yr_r), .b(sel_stride), .p(yrs));
 
 	reg [31:0] yrs_r;
+	reg smask_lw_r;
 	always @(posedge wpix_act_clk) begin
 		if (rst_sync) begin
 			xoff_r <= 32'd0;
 			xoff_j_r <= 32'd0;
 			yrs_r <= 32'd0;
+			smask_lw_r <= 1'b0;
 		end else begin
 			xoff_r <= xoff;
 `ifdef MUT_WPIX_LINE
@@ -789,6 +791,7 @@ module atg_rop_wpix #(
 			xoff_j_r <= xoff_r | (multi_slot[0] ? {{(30-LINE_SHIFT){1'b0}}, i_j, {LINE_SHIFT{1'b0}}} : 32'd0);
 `endif
 			yrs_r <= yrs[31:0];
+			smask_lw_r <= (i_smask[8 * i_r +: 8] != 8'd0);
 		end
 	end
 
@@ -1060,7 +1063,7 @@ module atg_rop_wpix #(
 	endgenerate
 
 	assign o_mask = slot_mk_r;
-	assign o_lw = multi_slot[0] ? (slot_mk_r != 4'd0) : (i_smask[8 * i_r +: 8] != 8'd0);
+	assign o_lw = multi_slot[0] ? (slot_mk_r != 4'd0) : smask_lw_r;
 	assign o_ent = slot_en_r;
 	assign o_soff = {slot_o_r[3], slot_o_r[2], slot_o_r[1], slot_o_r[0]};
 	assign o_bsrc = {slot_src_r[3], slot_src_r[2], slot_src_r[1], slot_src_r[0]};
@@ -1118,8 +1121,15 @@ module atg_rop_wpix #(
 			.o_raw(f_raw), .o_keep(f_keep)
 		);
 	end else begin : g_no_fblend
+		reg f_done_r;
+		always @(posedge clk or posedge rst_sync) begin
+			if (rst_sync)
+				f_done_r <= 1'b0;
+			else
+				f_done_r <= f_go;
+		end
 		assign f_idle = 1'b1;
-		assign f_done = f_go;
+		assign f_done = f_done_r;
 		assign f_raw = 256'd0;
 		assign f_keep = 256'd0;
 	end

@@ -348,28 +348,39 @@ module atg_rx_frag #(
 	wire [6:0] rv_w3 = r_rv_w3;
 	(* max_fanout = 16 *) reg [2:0] dsn;	/* d_s words written */
 	(* dont_touch = "true", extract_reset = "no" *) reg [1:0] r_dsn_sel [0:1];
-	wire rd_now = st == S_COPY && !rd_done && !c_pt_busy;
-	assign pt_rd = rd_now;
-	assign pt_idx = ent[8 * cv +: 8];
+	reg r_pt_rd, r_copy_armed;
+	reg [7:0] r_pt_idx;
+	reg [6:0] r_pt_word, r_pt_w;
+	reg [1:0] r_pt_v;
+	reg r_fl_pw_we;
+	reg [11:0] r_fl_pw_addr;
+	reg [31:0] r_fl_pw_data;
+	wire [6:0] cw_p4;
+	wire rd_now = (st == S_COPY) && r_copy_armed && !rd_done && !c_pt_busy;
+	assign pt_rd = r_pt_rd;
+	assign pt_idx = r_pt_idx;
+	assign pt_word = r_pt_word;
 	wire [7:0] fc_carry_unused;
-	am_add #(.W(7)) u_pt_word (.a(cw), .b(7'd4), .ci(1'b0), .s(pt_word), .co(fc_carry_unused[0]));
-	wire f_pt_in_flight = |r_rv_q || rd_now;
-	assign pt_busy = (st == S_COPY) || f_pt_in_flight;
-	(* dont_touch = "true" *) wire map_we    = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
-	(* dont_touch = "true" *) wire map_we_ad = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
-	(* dont_touch = "true" *) wire map_we_lo = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
-	(* dont_touch = "true" *) wire map_we_hi = st == S_COPY && rd_done && !(|r_rv_q) && !map_done;
+	am_add #(.W(7)) u_pt_word (.a(cw), .b(7'd4), .ci(1'b0), .s(cw_p4), .co(fc_carry_unused[0]));
+	assign pt_busy = (st == S_COPY) || (|r_rv_q) || r_pt_rd;
+	(* dont_touch = "true" *) wire map_we    = st == S_COPY && rd_done && !r_pt_rd && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_ad = st == S_COPY && rd_done && !r_pt_rd && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_lo = st == S_COPY && rd_done && !r_pt_rd && !(|r_rv_q) && !map_done;
+	(* dont_touch = "true" *) wire map_we_hi = st == S_COPY && rd_done && !r_pt_rd && !(|r_rv_q) && !map_done;
 	(* dont_touch = "true" *) wire ds_we     = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_ad  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_lo  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
 	(* dont_touch = "true" *) wire ds_we_hi  = st == S_COPY && map_done && ms4 && dsn != 3'd4;
-	assign fl_pw_we = rv_q3 || map_we || ds_we;
-	assign fl_pw_addr = map_we_ad ? 12'hFFF : ds_we_ad ? {10'h3FE, dsn[1:0]} :
+	wire pw_we_nxt = rv_q3 || map_we || ds_we;
+	wire [11:0] pw_addr_nxt = map_we_ad ? 12'hFFF : ds_we_ad ? {10'h3FE, dsn[1:0]} :
 		{1'b0, 3'd0, rv_v3, rv_w3[5:0]};
 	wire [31:0] dsv_mux = {dsv[{r_dsn_sel[1], 1'b1, 4'd0} +: 16], dsv[{r_dsn_sel[0], 5'd0} +: 16]};
-	assign fl_pw_data[15:0]  = map_we_lo ? 16'd0 : ds_we_lo ? dsv_mux[15:0]  : pt_rdata[15:0];
-	assign fl_pw_data[31:16] = map_we_hi ? 16'd0 : ds_we_hi ? dsv_mux[31:16] : pt_rdata[31:16];
-	wire copy_end = map_done && (!ms4 || dsn == 3'd4);
+	wire [15:0] pw_data_nxt_lo = map_we_lo ? 16'd0 : ds_we_lo ? dsv_mux[15:0]  : pt_rdata[15:0];
+	wire [15:0] pw_data_nxt_hi = map_we_hi ? 16'd0 : ds_we_hi ? dsv_mux[31:16] : pt_rdata[31:16];
+	assign fl_pw_we = r_fl_pw_we;
+	assign fl_pw_addr = r_fl_pw_addr;
+	assign fl_pw_data = r_fl_pw_data;
+	wire copy_end = map_done && (!ms4 || dsn == 3'd4) && !r_fl_pw_we;
 
 	/* The register writes: lane wl of the quad, register wr (pipelined 1 cycle for 0-LUT outputs) */
 	(* max_fanout = 16 *) reg [1:0] wl;
@@ -447,15 +458,19 @@ module atg_rx_frag #(
 	assign fl_lane = r_fl_lane;
 	assign fl_data = r_fl_data;
 
+	reg r_fl_go, go_seq_done;
+	reg [15:0] r_sq_seq;
+	reg r_front;
+	reg [31:0] r_qbc;
 	assign fl_req = st == S_ALLOC;
-	assign fl_go = (st == S_GO) && !r_fl_we_int;
-	assign sq_req = (st == S_GO) && !r_fl_we_int;
+	assign fl_go = r_fl_go;
+	assign sq_req = r_fl_go;
 	reg [31:0] qmask;
 	always @(*)
 		for (k = 0; k < 8; k = k + 1)
 			qmask[4 * k +: 4] = {4{k < n}};
 	assign fl_mask = qmask;
-	assign fl_info = {15'd0, front, sq_seq, qbc};
+	assign fl_info = {15'd0, r_front, r_sq_seq, r_qbc};
 	assign busy = st != S_COL || n != 4'd0;
 
 	/* Next-cycle replicas for qi, wl, wr, needc, dsn */
@@ -525,6 +540,11 @@ module atg_rx_frag #(
 			r_rv_q <= 3'd0;
 			r_rv_v1 <= 2'd0; r_rv_v2 <= 2'd0; r_rv_v3 <= 2'd0;
 			r_rv_w1 <= 7'd0; r_rv_w2 <= 7'd0; r_rv_w3 <= 7'd0;
+			r_pt_rd <= 1'b0; r_copy_armed <= 1'b0;
+			r_pt_idx <= 8'd0; r_pt_word <= 7'd0; r_pt_v <= 2'd0; r_pt_w <= 7'd0;
+			r_fl_pw_we <= 1'b0; r_fl_pw_addr <= 12'd0; r_fl_pw_data <= 32'd0;
+			r_fl_go <= 1'b0; go_seq_done <= 1'b0;
+			r_sq_seq <= 16'd0; r_front <= 1'b0; r_qbc <= 32'd0;
 			bgo <= 1'b0;
 			dz_done <= 1'b0;
 			rd_done <= 1'b0;
@@ -536,13 +556,17 @@ module atg_rx_frag #(
 			wl <= 2'd0;
 			wr <= 4'd0;
 		end else begin
-			r_rv_q  <= {r_rv_q[1:0], rd_now};
-			r_rv_v1 <= cv;
+			r_rv_q  <= {r_rv_q[1:0], r_pt_rd};
+			r_rv_v1 <= r_pt_v;
 			r_rv_v2 <= r_rv_v1;
 			r_rv_v3 <= r_rv_v2;
-			r_rv_w1 <= cw;
+			r_rv_w1 <= r_pt_w;
 			r_rv_w2 <= r_rv_w1;
 			r_rv_w3 <= r_rv_w2;
+			r_fl_pw_we <= pw_we_nxt;
+			r_fl_pw_addr <= pw_addr_nxt;
+			r_fl_pw_data <= {pw_data_nxt_hi, pw_data_nxt_lo};
+			r_pt_rd <= 1'b0;
 			bgo <= 1'b0;
 			if (t_load)
 				dz_done <= 1'b0;
@@ -567,6 +591,7 @@ module atg_rx_frag #(
 					map_done <= 1'b0;
 					dsn <= 3'd0;
 					qi <= 3'd0;
+					r_copy_armed <= 1'b0;
 					if (ms4 && !dz_done) begin
 						bgo <= 1'b1;
 						st <= S_DZ;
@@ -576,10 +601,17 @@ module atg_rx_frag #(
 			S_DZ:
 				if (b_done) begin
 					dz_done <= 1'b1;
+					r_copy_armed <= 1'b0;
 					st <= S_COPY;
 				end
 			S_COPY: begin
+				r_copy_armed <= 1'b1;
 				if (rd_now) begin
+					r_pt_rd <= 1'b1;
+					r_pt_idx <= ent[8 * cv +: 8];
+					r_pt_word <= cw_p4;
+					r_pt_v <= cv;
+					r_pt_w <= cw;
 					if (cw1 == vc) begin
 						cw <= 7'd0;
 						cv <= cv1;
@@ -613,20 +645,31 @@ module atg_rx_frag #(
 					wr <= 4'd0;
 					wl <= wl1;
 					if (wl == 2'd3) begin
-						if (qi1 == n)
+						if (qi1 == n) begin
+							go_seq_done <= 1'b0;
+							r_fl_go <= 1'b0;
 							st <= S_GO;
-						else begin
+						end else begin
 							qi <= qi1[2:0];
+							r_copy_armed <= 1'b0;
 							st <= S_COPY;	/* copy_end holds: on to the next quad */
 						end
 					end
 				end else
 					wr <= wr1;
-			default: begin	/* S_GO: wait 1 cycle for r_fl_we to drain, then pulse fl_go */
-				if (!r_fl_we_int) begin
+			default: begin	/* S_GO: wait 1 cycle for r_fl_we to drain, then register & pulse fl_go */
+				if (go_seq_done) begin
+					r_fl_go <= 1'b0;
+					go_seq_done <= 1'b0;
 					n <= 4'd0;
 					qcc <= 32'd0;
 					st <= S_COL;
+				end else if (!r_fl_we_int) begin
+					r_sq_seq <= sq_seq;
+					r_front <= front;
+					r_qbc <= qbc;
+					r_fl_go <= 1'b1;
+					go_seq_done <= 1'b1;
 				end
 			end
 			endcase

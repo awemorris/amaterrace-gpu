@@ -19,7 +19,6 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-(* keep_hierarchy = "yes" *)
 module atg_rop_hazard #(
 	parameter NUM_ENTRIES = 16,
 	parameter TAG_W = 33	/* {RT[2:0], Y[15:1], X[15:1]} */
