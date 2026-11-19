@@ -1,5 +1,5 @@
-Amaterrace GPU
-==============
+Amaterrace GPU (ATG1)
+=====================
 
 [![CI](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](https://opensource.org/licenses/Zlib)
@@ -10,12 +10,19 @@ Gonna illuminate the world!
 
 ---
 
-`Amaterrace GPU` (`ATG1`) is a scalable modern GPU RTL delivering
-Vulkan-class graphics and parallel compute, architected to fulfill the
-core paradigms and feature sets of Vulkan, DirectX 12, and Metal.  It
-proposes [GHCI 1.0](docs/ghci.md), a standardized set of `GPU Host
-Controller Interface` and `Shader ISA`.  The target clocks are 1.7GHz
-on 5nm ASIC and 450MHz on 16nm FPGA.
+`ATG1` is an open-source, synthesis-ready RTL for a modern GPU,
+delivering Vulkan-class graphics and parallel compute.  It is
+architected to fulfill the core paradigms and feature sets of Vulkan,
+DirectX 12, and Metal.  It proposes [GHCI 1.0](docs/ghci.md), a
+standardized set of `GPU Host Controller Interface` and `Shader ISA`.
+The target performance is 108.8 GFLOPS FP32 per shader core at 1.7GHz
+on 5nm ASIC.
+
+Please note that most GPU features are "opt-in" settings.  Developers
+must enable only those options for which they want to use and/or hold
+a patent license.
+
+![menuconfig](docs/imgs/menuconfig.png)
 
 ---
 
