@@ -13,9 +13,9 @@ Amaterrace GPU を **FPGA 軽量検証（KC705 等）** から **ASIC 5nm 1.5 GH
 1. **アドレス空間パラメータの完全伝搬**: `atg_top` における `.ADDR_W(32)` 固定を全廃し、仮想アドレス側（`VA_BITS`: 30..40 bit）と物理アドレス側（`PA_BITS`: 40..48 bit）を明確に分離・伝搬する（MMU 無効のフラット物理構成では `>= 32` bit 下限を保護）。
 2. **`atg_mmu` の完全統合**: `atg_cpu_win` (`0x38..0x3D`)・`atg_cp`・`atg_cp_ctl`・`atg_mc` を接続し、L1/L2 TLB およびハードウェアページテーブルウォーカーを `atg_top` 上で実動作させる。
 3. **クロスバー vs 統一ファットツリー NoC の棲み分け**:
-   - `*-fpga-test-minimal`（FPGA 最小リソース・低遅延試験用）のみ、現行のフラットクロスバー（`atg_mc_tree`）を使用する。
-   - **それ以外の全構成（`gfx-vulkan10-su*`, `gfx-all-su*`, `compute-su*`）は `NSU = 1, 2` を含め、`atg_rt2 / atg_rt3 / atg_rt4` ＋ `atg_rep` による統一ファットツリー NoC を採用する。** `DC` と `CP` をルート直近（高優先 QoS）へ配置する。
-4. **明示的 2D フロアプラン・ファブリック（`N = 1, 2, 4, 8, 16, 32, 64, 128`）**: 再帰的な汎用 `generate` で配線トポロジを隠蔽せず、`N` ごとに 2D 座標配置とリピータ（`atg_rep`）段数を明記した専用ファブリックモジュール `atg_su_fabric_n<N>` を構成する。
+   - `menuconfig` の先頭項目に **Target Platform (`FPGA` / `ASIC`)** を設け、`FPGA` 選択時は `NSU` を `1, 2` のみに制限し、フラットクロスバー（`atg_mc_tree`, `USE_NOC_FABRIC = 0`）を使用する（`*-fpga-test-minimal` 等）。
+   - `ASIC` 選択時は `NSU ∈ {1, 2, 4, 8, 16, 32, 64, 128}` を選択可能とし、`NSU = 1, 2` を含めて **`atg_rt2 / atg_rt3 / atg_rt4` ＋ `atg_rep` による統一ファットツリー NoC（`USE_NOC_FABRIC = 1`）** を採用する。`DC` と `CP` をルート直近（高優先 QoS）へ配置する。
+4. **明示的 2D フロアプラン・ファブリック（`N = 1, 2, 4, 8, 16, 32, 64, 128`）**: 再帰的な汎用 `generate` で配線トポロジを隠蔽せず、`N` ごとに 2D 座標配置とリピータ（`atg_rep`）段数を事前に **SVG フロアプラン図として作成・レビュー** した上で、専用ファブリックモジュール `atg_su_fabric_n<N>` を構成する。
 5. **全 SU での Graphics ＋ Compute 両用化 ＋ Compute-Only 構成対応**: 共有プリミティブテーブル（`atg_su_pt`）をスパイン側（`VF`/`RX` 近傍）へ配置（案 I）して全 `N` 基の SU で描画を実行可能にしつつ、Vulkan Compute-Only（`HAS_VF=HAS_RX=HAS_ROP=HAS_TU=HAS_DISP=0`）を正式プリセットとして提供する。将来の `SA`（Systolic Array）は SU と 1:1 ではなく NoC ツリー内の独立ノードとして配置する枠を予約する。
 6. **ASIC 5nm 1.5 GHz ルール遵守**: 全ルーター・リピータ・ブリッジ境界に `am_skid` を挿入し、`valid` のみならず **`ready` の組み合わせ貫通を完全に遮断** する（[`docs/style.md`](style.md) Rules 1–5 準拠）。
 
