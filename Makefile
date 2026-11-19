@@ -47,17 +47,18 @@ BOARD_SRC := boards/$(BOARD)/$(TOP).v $(sort $(wildcard boards/$(BOARD)/lib/*.v)
 XDC := boards/$(BOARD)/$(TOP).xdc
 FW_IMAGES := $(wildcard fw/cp/images/*.hex)
 
-.PHONY: help menuconfig preset-minimal preset-balanced preset-high-perf test-ghci-presets lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
+.PHONY: help menuconfig preset-minimal preset-balanced preset-high-perf test-ghci-presets fw lint sim sim-quick verilator check oxc-synth oxc-core oxc vivado prog-oxc prog-vivado clean replace-synopsis
 .DEFAULT_GOAL := help
 
 help:
 	@echo 'Amaterrace GPU (BOARD=$(BOARD) TOP=$(TOP) PART=$(PART))'
 	@echo ''
-	@echo '  make menuconfig        interactive configuration menu (tools/menuconfig.py)'
+	@echo '  make menuconfig        interactive configuration menu (mk/menuconfig.py)'
 	@echo '  make preset-minimal    apply minimal FPGA resource preset'
 	@echo '  make preset-balanced   apply balanced preset (default)'
 	@echo '  make preset-high-perf  apply high-performance preset'
-	@echo '  make lint              Verilator lint of every module and top (tools/lint.sh)'
+	@echo '  make fw                build CP firmware images (fw/cp)'
+	@echo '  make lint              Verilator lint of every module and top (mk/lint.sh)'
 	@echo '  make sim          the iverilog testbenches (sim/run.sh, about 17 minutes)'
 	@echo '  make sim-quick    the short run of the testbenches (sim/run.sh -q, a few minutes)'
 	@echo '  make verilator    the Verilator system harness (sim/verilator/run.sh)'
@@ -75,7 +76,10 @@ help:
 	@echo '  CABLE (openFPGALoader -c, default digilent), FTDI_SERIAL (selects the board).'
 
 menuconfig:
-	python3 tools/menuconfig.py
+	python3 mk/menuconfig.py
+
+fw:
+	$(MAKE) -C fw/cp
 
 preset-minimal:
 	cp config/minimal.mk config.mk
@@ -377,7 +381,7 @@ endif
 	@echo "\`endif /* ATG_CONFIG_VH */" >> $@
 
 lint: include/atg_config.vh
-	tools/lint.sh
+	mk/lint.sh
 
 sim: include/atg_config.vh
 	sim/run.sh
@@ -435,7 +439,7 @@ oxc: $(OXC)/$(TOP).bit
 # ---------------------------------------------------------------- Vivado
 
 vivado:
-	tools/vivado-build.sh $(BOARD) $(TOP)
+	mk/vivado-build.sh $(BOARD) $(TOP)
 
 # ---------------------------------------------------------------- loading
 
@@ -455,5 +459,5 @@ clean:
 # ---------------------------------------------------------------- Synopsys conversion
 
 replace-synopsis:
-	python3 tools/replace-synopsys.py $(if $(IN_PLACE),--in-place,--out-dir $(BUILD)/synopsys)
+	python3 mk/replace-synopsys.py $(if $(IN_PLACE),--in-place,--out-dir $(BUILD)/synopsys)
 
