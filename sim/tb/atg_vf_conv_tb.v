@@ -7,7 +7,7 @@
 
 /*
  * atg_vf_conv_tb: atg_vf_conv against the reference conversion of
- * tools/vf-vectors.py (sim/vec/vf_conv.txt).  Each batch sets ATTR_DESC
+ * vf-vectors (sim/vec/vf_conv.txt).  Each batch sets ATTR_DESC
  * (format) and ATTR_DST of up to 16 attributes and sends their af back to
  * back (random gaps, seeded), the last with af_last; every vl_* word is
  * checked in order (register, lane, data), and conv_done must pulse once,
@@ -16,7 +16,7 @@
  * zeros, denormals, infinities and NaNs), fewer words, disabled attributes;
  * "fill": more components than the format has, reserved formats.  Then
  * sim/vec/vf_conv_vk.txt (CAPS[30]): ATTR_DST[31:24] a VkFormat, every
- * value 0-255 against tools/fmtmodel.py ("vkformats"), and af_oob with any
+ * value 0-255 against mk/fmtmodel.py ("vkformats"), and af_oob with any
  * format ("oob").
  */
 

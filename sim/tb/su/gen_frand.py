@@ -4,7 +4,7 @@
 # conversions, fround/fract, the integer multiplies, the transcendentals and
 # the divider (long results right before their use: the scoreboard), sel and
 # masked sections; specials (0, -0, inf, NaN, denormals, huge) in some lanes.
-# Run by tools/su-tests.sh.
+# Run by su-tests.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import random
 import sys

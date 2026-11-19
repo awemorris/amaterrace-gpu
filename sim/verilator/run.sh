@@ -87,9 +87,9 @@ for m in ${*:-basic raster shade tex msaa compute core}; do
 	# The multisampling scene (MS4), the resolved image to a PNG.
 	msaa) build msaa -DMSAA $GFX $SU -GMS4=1 ;;
 	# The compute scene: GSI1 programs dispatched through the ring, the
-	# memory against tools/gsi1model.py, an ISA fault.
+	# memory against the reference model gsi1model, an ISA fault.
 	compute) build compute -DCOMPUTE $SU ;;
-	# The Vulkan 1.0 core scene (CAPS[30], tools/rx-core-scene.py).
+	# The Vulkan 1.0 core scene (CAPS[30], reference scene generator rx-core-scene).
 	core) build core -DCORE $GFX $SU -GMS4=1 ;;
 	*) echo "verilator: no mode $m" >&2; exit 1 ;;
 	esac

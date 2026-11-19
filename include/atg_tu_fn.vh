@@ -8,7 +8,7 @@
 /*
  * atg_tu_fn.vh: the TU's number functions without arithmetic of their
  * own (atg_tu_lsel, atg_tu_lod), included inside a module body;
- * tools/tumodel.py has the same functions (l2).  The ones with arithmetic
+ * the reference model tumodel has the same functions (l2).  The ones with arithmetic
  * are modules: atg_tu_fx32, atg_tu_coord, atg_tu_unnorm, atg_tu_wrap,
  * atg_tu_layer, atg_tu_cube_texel (rtl/gpu/tu).
  */

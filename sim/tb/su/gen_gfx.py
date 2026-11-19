@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Writes the warps of the SU graphics test (sim/tb/atg_su_gfx_tb.v,
 # gfx.s): gen_gfx.py WARPS INIT.
-#   WARPS: 5 words per slot 0..3 (tools/gsi1model.py --warps): slot 0 a
+#   WARPS: 5 words per slot 0..3 (the reference model gsi1model --warps): slot 0 a
 #     vertex warp (EXEC = mask = a random subset of lanes 0..27), slots 1-3
 #     fragment warps of 8, 3 and 5 quads with sequence numbers 1, 0, 2
 #     (EXEC = whole quads, mask = a random non-empty coverage per quad,

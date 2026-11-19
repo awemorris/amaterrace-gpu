@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # kernels.py: runs the firmware's built-in compute programs (fw/cp/programs)
-# on tools/gsi1model.py and checks their results against Python: the copies
+# on the reference model gsi1model and checks their results against Python: the copies
 # of 1-byte stencil values to and from D24_UNORM_S8_UINT texels (a 7 x 5
 # region, buffer rows of 8 bytes, image rows of 32 bytes).  Prints "PASS
 # kernels.<name>" per program and "PASS kernels"; exit status 1 on a
@@ -27,7 +27,11 @@ def run(name, words):
     mem = os.path.join(OUT, name + '.mem')
     texels = WIDTH * HEIGHT
     groups = (texels + 63) // 64
-    subprocess.run([sys.executable, '-I', os.path.join(ROOT, 'tools', 'gsi1model.py'),
+    gsi1model = os.path.join(ROOT, 'plan', 'tools', 'gsi1model.py')
+    if not os.path.exists(gsi1model):
+        sys.stderr.write('kernels.py: plan/tools/gsi1model.py not present (private plan repository unavailable); cannot run compute kernels\n')
+        sys.exit(1)
+    subprocess.run([sys.executable, '-I', gsi1model,
                     os.path.join(ROOT, 'fw', 'cp', 'programs', name + '.s'), '--lanes', '64',
                     '--groups', str(groups), '--nregs', '64', '--data', data,
                     '-o', os.path.join(OUT, name + '.regs'), '--mem-out', mem],

@@ -11,7 +11,7 @@
  * rm, denormals flushed on input and output, canonical NaN 0x7E00).  The
  * fused fma and packh's fp32 -> fp16 are the module atg_su_pk_half (the
  * shared arithmetic, docs/style.md "Arithmetic").  Reference:
- * tools/gsi1fp.py.  Included inside a module body after atg_su_fp.vh.
+ * the reference model gsi1fp.  Included inside a module body after atg_su_fp.vh.
  */
 
 function [15:0] atg_su_hflush;

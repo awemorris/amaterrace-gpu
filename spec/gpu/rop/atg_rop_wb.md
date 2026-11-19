@@ -93,7 +93,7 @@ IDLE →(beat)→ ROW (the row's or line's address from atg_rop_wpix; drop) → 
 - `PASS atg_rop_wb.drain` — busy falls only after the writes are answered
 - `PASS atg_rop_wb` at the end.
 
-`sim/tb/atg_rop_mrt_tb.v` (CAPS[30]; atg_rop_wb, atg_rop_wpix and atg_rop_blend against amb_mem and `sim/vec/rop_mrt.txt` from `tools/rop-vectors.py`: 72 runs of four attachments of every colour-attachment format, absent ones and attachment 0 by RT_FORMAT's code, random blends, write masks and both kinds of constants, 24 quads each as beats (some without colour), at 32- and 64-byte lines; the four targets' region word for word) prints:
+`sim/tb/atg_rop_mrt_tb.v` (CAPS[30]; atg_rop_wb, atg_rop_wpix and atg_rop_blend against amb_mem and `sim/vec/rop_mrt.txt` from `rop-vectors`: 72 runs of four attachments of every colour-attachment format, absent ones and attachment 0 by RT_FORMAT's code, random blends, write masks and both kinds of constants, 24 quads each as beats (some without colour), at 32- and 64-byte lines; the four targets' region word for word) prints:
 
 - `PASS atg_rop_mrt.one` — the runs with one sample
 - `PASS atg_rop_mrt.four` — the runs with four samples (rows of one line and of several)

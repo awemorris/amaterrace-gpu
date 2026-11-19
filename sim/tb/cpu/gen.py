@@ -3,7 +3,7 @@
 # every expected value is computed here by a reference model of RV32IM.
 # A program writes 1 to TOHOST (0xF000_0000) when every check passed, or
 # the number n of the first failing check to FAILHOST (0xF000_0010).
-#   python3 -I gen.py OUTDIR   (run by tools/cpu-tests.sh)
+#   python3 -I gen.py OUTDIR   (run by cpu-tests)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import random
 import sys

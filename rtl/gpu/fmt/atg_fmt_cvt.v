@@ -8,7 +8,7 @@
 /*
  * atg_fmt_cvt: one component of a texel to 32 bits, pipelined: bit for
  * bit atg_fmt_comp (its combinational form) of (i_raw, i_inf, i_k, i_sten)
- * (tools/fmtmodel.py unpack; spec/gpu/fmt/atg_fmt.md): UNORM and SNORM to
+ * (mk/fmtmodel.py unpack; spec/gpu/fmt/atg_fmt.md): UNORM and SNORM to
  * the nearest fp32, the 16-bit, packed unsigned and E5B9G9R9 floats
  * exactly, integers zero or sign extended, sRGB R, G, B through
  * atg_srgb_dec and A as UNORM, the stencil aspect, and the constants of

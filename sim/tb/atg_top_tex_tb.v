@@ -8,7 +8,7 @@
 /*
  * atg_top_tex_tb: the graphics pipeline with the texture unit (HAS_VF,
  * NSU 1, HAS_RX, HAS_TU, HAS_ROP): the ring runs
- * sim/vec/tex_scene.txt (tools/rx-tex-scene.py: twelve DRAWs of textured
+ * sim/vec/tex_scene.txt (rx-tex-scene: twelve DRAWs of textured
  * triangles: texb from a linear RGBA8 texture with mip levels; after
  * SET_REG changes the slot and the fragment program, texl from a 4x4
  * tiled BGRA8 copy; trilinear with clamp to border; a D24 compare sampler

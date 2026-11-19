@@ -6,7 +6,7 @@
 # build/verilator-fw/ (not in git).
 #   sim/verilator/fw-run.sh
 # Prints "PASS fw.<case>" per case and "PASS verilator fw" on success.
-# Needs cc, verilator and the images of tools/fw-build.sh (run it first
+# Needs cc, verilator and the images of fw/cp/Makefile (make -C fw/cp first
 # after changing fw/cp/).  Timeouts: 120 s for the host build and run,
 # 900 s for the Verilator build, 1800 s for the run.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

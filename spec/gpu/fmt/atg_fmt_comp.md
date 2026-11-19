@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-UNORM c / (2^b − 1) and SNORM max(c / (2^(b−1) − 1), −1) to the nearest fp32 (one atg_fmt_unorm: SNORM's magnitude by an am_sub, sRGB's alpha as UNORM 8); the 16-bit floats, the packed unsigned floats (B10G11R11) and E5B9G9R9 exactly through one normalisation (the leading zeros, an am_shift, two exponent adders; infinities kept, NaN 0x7FC00000); UINT and SINT zero and sign extended; sRGB R, G, B through `atg_srgb_dec`.  A component the format does not have reads 0 (R, G, B) or 1.0 (A; integer 1 for the integer formats); `sten`: the stencil aspect of D24_UNORM_S8_UINT, (s, 0, 0, 1) as integers; a format without an entry and a compressed block read (0, 0, 0, 1.0).  `tools/fmtmodel.py` (unpack) is the reference.
+UNORM c / (2^b − 1) and SNORM max(c / (2^(b−1) − 1), −1) to the nearest fp32 (one atg_fmt_unorm: SNORM's magnitude by an am_sub, sRGB's alpha as UNORM 8); the 16-bit floats, the packed unsigned floats (B10G11R11) and E5B9G9R9 exactly through one normalisation (the leading zeros, an am_shift, two exponent adders; infinities kept, NaN 0x7FC00000); UINT and SINT zero and sign extended; sRGB R, G, B through `atg_srgb_dec`.  A component the format does not have reads 0 (R, G, B) or 1.0 (A; integer 1 for the integer formats); `sten`: the stencil aspect of D24_UNORM_S8_UINT, (s, 0, 0, 1) as integers; a format without an entry and a compressed block read (0, 0, 0, 1.0).  `mk/fmtmodel.py` (unpack) is the reference.
 
 ## 5. State machine
 

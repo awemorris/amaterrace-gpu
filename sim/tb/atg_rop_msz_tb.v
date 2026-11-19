@@ -7,7 +7,7 @@
 
 /*
  * atg_rop_msz_tb: the depths of atg_rop_ms (CAPS[30]) against the model of
- * tools/rop-vectors.py (ms_depth; sim/vec/rop_msz.txt): one and four
+ * rop-vectors (ms_depth; sim/vec/rop_msz.txt): one and four
  * samples, exported depths, DEPTH_CLAMP 0-3 with random viewport depth
  * ranges (also reversed, n > f) and depths outside them, NaN and -0
  * ("clamp"), and DEPTH_CLAMP 0, the earlier behaviour ("legacy").  Every

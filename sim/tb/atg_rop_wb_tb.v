@@ -7,7 +7,7 @@
 
 /*
  * atg_rop_wb_tb: atg_rop_wb with atg_rop_blend against amb_mem and the
- * reference model (sim/vec/rop_wb.txt from tools/rx-vectors.py): for each
+ * reference model (sim/vec/rop_wb.txt from rx-vectors): for each
  * of BGRA8, RGBA8 and RGB565 a run of plain writes, source-over, a random
  * blend and a partial WRITE_MASK, 80 quads each (mostly walking a row,
  * sometimes jumping, so lines hit, miss and are written back), on a 32x16

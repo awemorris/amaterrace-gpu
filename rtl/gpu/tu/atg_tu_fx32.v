@@ -8,7 +8,7 @@
 /*
  * atg_tu_fx32: floor(f × 2^sh), saturated to 32 bits; zero, denormal and
  * NaN give 0 (the former function tu_fx32 of include/atg_tu_fn.vh;
- * tools/tumodel.py fx32).
+ * the reference model tumodel fx32).
  *
  * Latency:
  * - LAT = 0: combinational

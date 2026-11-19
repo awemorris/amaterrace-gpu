@@ -82,7 +82,7 @@ module atg_mc_atom_chk #(
 		.rsp_error(rsp_error)
 	);
 
-	/* The reference operations (tools/gsi1model.py's atom). */
+	/* The reference operations (the reference model gsi1model's atom). */
 	function [31:0] atom_ref;
 		input [3:0] op;
 		input [31:0] old, a, b;

@@ -10,7 +10,7 @@
  * with odd bounding box origins (xmin odd, ymin odd, both odd) across:
  * - MSAA 1 (MS_CTRL=0) and MSAA 4 (MS_CTRL=2)
  * - COARSE_SCAN=0 (direct bbox traversal) and COARSE_SCAN=1 (8x8 tile traversal)
- * Bit-exact match against reference model (tools/msmodel.py / tools/rxmodel.py).
+ * Bit-exact match against reference model (the reference model msmodel / the reference model rxmodel).
  */
 
 `timescale 1ns / 1ps

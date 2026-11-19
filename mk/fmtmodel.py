@@ -7,11 +7,11 @@
 # from the RTL: every conversion to fp32 is exact and then rounded to
 # nearest even, with exact integer arithmetic.
 #
-#   python3 -I tools/fmtmodel.py --selftest   checks the model against
+#   python3 -I mk/fmtmodel.py --selftest   checks the model against
 #       independent references (exact fractions, Python's struct 'e' for
 #       fp16, high-precision decimals for sRGB) and the D24 round trip for
 #       every code; prints "PASS fmtmodel.selftest" (about a minute).
-#   python3 -I tools/fmtmodel.py --vectors    writes sim/vec/fmt_unpack.txt,
+#   python3 -I mk/fmtmodel.py --vectors    writes sim/vec/fmt_unpack.txt,
 #       fmt_pack.txt, fmt_info.txt, fmt_required.txt and fmt_srgbenc.txt
 #       for sim/tb/atg_fmt_tb.v and atg_fmt_srgbenc_tb.v (in git; check
 #       `git diff sim/vec` after a change).
@@ -596,11 +596,11 @@ LETTERS = {'S': F_SAMPLED | F_BLIT_SRC, 'F': F_LINEAR, 'C': F_COLOR | F_BLIT_DST
 
 
 def read_required():
-    """tools/vk-required-formats.txt: {format: (optimal, buffer)} of the
+    """mk/vk-required-formats.txt: {format: (optimal, buffer)} of the
     fixed-function columns, and the "one of" groups."""
     req = {}
     oneof = []
-    with open(os.path.join(ROOT, 'tools', 'vk-required-formats.txt')) as fd:
+    with open(os.path.join(ROOT, 'mk', 'vk-required-formats.txt')) as fd:
         for line in fd:
             line = line.split('#')[0].split()
             if not line:

@@ -20,7 +20,7 @@
  *     both from gen_gfx.py).  Fragment EXEC is whole quads and the mask
  *     operand the coverage, so the program's qd, shfl, vote and ballot see
  *     helper lanes, while sw, atom, sts and exp must skip them and the
- *     killed lanes.  Checked against tools/gsi1model.py --warps: every
+ *     killed lanes.  Checked against gsi1model --warps: every
  *     register the model wrote (gfx.exp), the data memory (gfx.mexp), the
  *     quads at the ROP in sequence order with their positions, masks,
  *     colours and depths (gfx.xexp; the ROP is held off until every warp

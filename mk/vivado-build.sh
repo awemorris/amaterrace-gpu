@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds a board top with Vivado in non-project batch mode
-# (tools/vivado-build.tcl).  Output stays under build/vivado/ (not in git).
-#   tools/vivado-build.sh BOARD TOP     e.g. tools/vivado-build.sh kc705 atg_kc705_top
+# (mk/vivado-build.tcl).  Output stays under build/vivado/ (not in git).
+#   mk/vivado-build.sh BOARD TOP     e.g. mk/vivado-build.sh kc705 atg_kc705_top
 # BOARD is a directory of boards/ with TOP.v and TOP.xdc; the part is the
 # board's (kc705: xc7k325tffg900-2; PART overrides).
 # VIVADO is the installation's settings64.sh (default
@@ -18,7 +18,7 @@
 # VIVADO_LOCK (default /tmp/zedbsd-vivado.lock): the run holds it, one
 # Vivado at a time on the host.  VIVADO_OUT replaces the output directory
 # (default build/vivado/TOP).  VIVADO_STRATEGY, VIVADO_*_DIRECTIVE and
-# VIVADO_FROM_SYNTH: tools/vivado-build.tcl.
+# VIVADO_FROM_SYNTH: mk/vivado-build.tcl.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 trap 'sync' EXIT
@@ -59,8 +59,8 @@ mkdir -p "$out"
 start=$(date +%s)
 rc=0
 # Vivado writes its .Xil scratch into the current directory.
-(cd "$out" && timeout "${VIVADO_TIMEOUT:-1800}" "$root/tools/vivado-cmd.sh" -mode batch -nojournal \
-	-log vivado.log -source "$root/tools/vivado-build.tcl" \
+(cd "$out" && timeout "${VIVADO_TIMEOUT:-1800}" "$root/mk/vivado-cmd.sh" -mode batch -nojournal \
+	-log vivado.log -source "$root/mk/vivado-build.tcl" \
 	-tclargs "$root" "$topdir" "$top" "$out" "$part" "${VIVADO_IP:-}" </dev/null >/dev/null) || rc=$?
 sync
 if [ $rc -ne 0 ]; then

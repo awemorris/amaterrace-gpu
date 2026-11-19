@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_xu_tb: atg_su_xu (NPHYS 8) on the vectors of tools/gsi1fp.py
+ * atg_su_xu_tb: atg_su_xu (NPHYS 8) on the vectors of the reference model gsi1fp
  * --xu-vec (sim/tb/su/xu_vec.hex: op, x and the model's result; one op per
  * block of 8 = one lane group).
  *   funcs: every result equals the model bit for bit, and lies within the

@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_lod: the quad's level of detail of texb (part of atg_tu_addr,
- * tools/tumodel.py lod_quad is the reference, bit for bit).
+ * the reference model tumodel lod_quad is the reference, bit for bit).
  *
  * Latency:
  * - LAT = 0: combinational

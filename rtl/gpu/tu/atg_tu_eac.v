@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_eac: one EAC block's value of a texel for atg_tu_etc (the Khronos
- * Data Format Specification's EAC text; tools/etcmodel.py the reference,
+ * Data Format Specification's EAC text; the reference model etcmodel the reference,
  * bit for bit): i_w the block as its 64-bit big-endian integer, i_k =
  * {column, row}; i_r11: R11 (else RGBA8's 8-bit alpha), i_sg signed R11.
  * 8-bit alpha: base + modifier x multiplier, clamped to [0, 255]; R11:

@@ -8,7 +8,7 @@
 /*
  * atg_depth.vh: the depth compare shared by the ROP's depth test
  * (atg_rop_dtest) and the TU's compare samplers (atg_tu_fpre), included
- * inside a module.  tools/rxmodel.py (depth_pass) is the reference.  The
+ * inside a module.  the reference model rxmodel (depth_pass) is the reference.  The
  * conversions are modules: atg_fmt_depth_u24 (fp32 to unorm24) and
  * atg_fmt_depth_key (the fp32 order key).
  *   atg_depth_pass(fn, a, b, nan)  VkCompareOp fn of a against b (signed

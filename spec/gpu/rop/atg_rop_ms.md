@@ -49,7 +49,7 @@ One quad at a time: 2 cycles with one sample, 22 with four.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_rop_ms_tb.v` (the whole `atg_rop` against `sim/vec/rop_ms.txt` from `tools/rx-msaa-vectors.py` and `tools/msmodel.py`, LINE_BYTES 32 and 64; the RT and DS images word for word) prints:
+`sim/tb/atg_rop_ms_tb.v` (the whole `atg_rop` against `sim/vec/rop_ms.txt` from `rx-msaa-vectors` and `msmodel`, LINE_BYTES 32 and 64; the RT and DS images word for word) prints:
 
 - `PASS atg_rop_ms.depth` — four samples, D32F and D24S8, RGBA8, BGRA8, RGB565, the direct path among the quads
 - `PASS atg_rop_ms.a2c` — alpha to coverage, and with alpha to one
@@ -63,6 +63,6 @@ design §15.6; spec atg_rop.md, atg_rop_order.md, atg_rop_ds.md, atg_rop_wb.md, 
 
 ## 10. Status
 
-Implemented (the MSAA work).  2026-10-25 (CAPS[30]): the depth clamp and DEPTH_CLAMP[1] (§4), o_front; checked by `sim/tb/atg_rop_msz_tb.v` (`PASS atg_rop_msz.clamp`, `.legacy`, `atg_rop_msz`: the module alone against `ms_depth` of `tools/rop-vectors.py`, `sim/vec/rop_msz.txt`), the earlier TB unchanged.
+Implemented (the MSAA work).  2026-10-25 (CAPS[30]): the depth clamp and DEPTH_CLAMP[1] (§4), o_front; checked by `sim/tb/atg_rop_msz_tb.v` (`PASS atg_rop_msz.clamp`, `.legacy`, `atg_rop_msz`: the module alone against `ms_depth` of `rop-vectors`, `sim/vec/rop_msz.txt`), the earlier TB unchanged.
 
 2026-10-25 (CAPS[30], colour attachments): a quad comes as one beat per colour attachment (`i_aux`, was `i_ms`; new `o_beat`).  The first beat (qfirst) gives the coverage, the depths and alpha to coverage's alpha (the lowest attachment exported: attachment 0's when it is exported; Vulkan leaves the alpha undefined otherwise); a later beat goes IDLE → OUT with the first's o_smask and o_sdepth, or is dropped with it; alpha to one applies to every beat.  Checked by `sim/tb/atg_rop_beat_tb.v` (spec atg_rop.md §8); the earlier TBs drive single beats unchanged.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # gsi1dis.py: the GSI1 disassembler.  It turns 64-bit instructions back into
-# the assembly that tools/gsi1asm.py takes, from gsi1asm's own table (T, the
+# the assembly that mk/gsi1asm.py takes, from gsi1asm's own table (T, the
 # operand names, decode_fields/match/imm_of): nothing of the ISA is kept here.
 #
 #   gsi1dis.py IN [-o OUT.s] [--hex | --bin] [--no-labels]

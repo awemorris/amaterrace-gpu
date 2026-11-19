@@ -8,7 +8,7 @@
 /*
  * atg_tu_ffilt: the TU's fp32 filter path (docs/ghci.md section 8.5):
  * the formats of TEX_FORMAT that atg_tu_filter does not take (tc_ctl[20]
- * = 1).  tools/tumodel.py (FFilter) is the reference, bit for bit; the
+ * = 1).  the reference model tumodel (FFilter) is the reference, bit for bit; the
  * texel layout, borders, blocks, weights, bypass, gather and swizzle are
  * in spec/gpu/tu/atg_tu_ffilt.md section 4.
  *

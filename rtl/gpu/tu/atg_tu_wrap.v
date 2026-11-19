@@ -9,7 +9,7 @@
  * atg_tu_wrap: an integer texel coordinate into the level: {border texel,
  * index} by the address mode (0 repeat, 1 mirrored repeat, 2 clamp to
  * edge, 3 clamp to border).  The former functions tu_wrap and tu_mod of
- * include/atg_tu_fn.vh (tools/tumodel.py wrap_idx); i mod p for i in
+ * include/atg_tu_fn.vh (the reference model tumodel wrap_idx); i mod p for i in
  * [−9, p + 7]: one correction for p >= 16, a 5-bit remainder (a table of
  * constants) for p < 16.  Combinational.
  */

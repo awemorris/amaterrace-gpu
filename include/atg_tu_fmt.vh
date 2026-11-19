@@ -8,7 +8,7 @@
 /*
  * atg_tu_fmt.vh: the class of a texture slot's format (docs/ghci.md
  * sections 8.4 and 8.5), included inside a module after atg_fmt_info.vh.
- * tools/tumodel.py (fclass, gather_word) is the reference.
+ * the reference model tumodel (fclass, gather_word) is the reference.
  *   tu_fcls(tf, lfmt)  tf: the slot's TEX_FORMAT (21 bits), lfmt:
  *       TEX_IMAGE[7:4].  [2:0] log2 of a texel's bytes; [3] legacy
  *       (TEX_FORMAT[7:0] = 0: TEX_IMAGE's format, as before CAPS[30]);

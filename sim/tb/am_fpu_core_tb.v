@@ -7,7 +7,7 @@
 
 /*
  * am_fpu_core_tb: standalone unit testbench for am_fpu_core against the 6000
- * reference vectors in sim/tb/su/fpu_vec.hex (from tools/gsi1fp.py --fpu-vec).
+ * reference vectors in sim/tb/su/fpu_vec.hex (from the reference model gsi1fp --fpu-vec).
  * Tests all FP and integer multiplication operations across all rounding modes,
  * saturations, and special corner cases for both LAT=0 (combinational) and
  * LAT=4 (4-stage physical pipeline).

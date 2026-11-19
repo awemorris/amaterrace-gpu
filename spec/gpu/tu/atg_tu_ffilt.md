@@ -41,13 +41,13 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-The reference is `tools/tumodel.py` `FFilter`, bit for bit.
+The reference is `tumodel` `FFilter`, bit for bit.
 
 - **Texels** of lane k from its slots: 1- to 4-byte texels: slots 0-3 are texels 0-3 ((i0, j0), (i1, j0), (i0, j1), (i1, j1)); 8-byte texels: texel 0 = {slot 1, slot 0}, texel 1 = {slot 3, slot 2} ((i0, j) and (i1, j) of the pass's row); 16-byte texels: texel 0 = {slots 3-0}; gather: slot t holds the word of texel t that has the component (`tu_gwi`), placed back at its word.
 - **Blocks** (ETC2 and EAC, 8 or 16 bytes): an 8-byte block per texel as the 8-byte texels (texels 0 and 1 of a row pass), a 16-byte block per pass (tc_ctl[49]: the pass's texel {row, column tc_ctl[48]}); the texel's column and row in the block are bits 1:0 of the block's first and second slot address (`tc_lo`); `atg_tu_etc` decodes it: RGBA8 to UNORM (sRGB: R, G, B through `atg_srgb_dec`), R11 c / 2047, signed R11 max(c / 1023, −1).  Gather of blocks comes in the same passes (the footprint texel decides the word's place).
 - **Conversion**: `atg_fmt_unpack(raw, VkFormat, stencil)`: UNORM and SNORM to the nearest fp32, the floats exactly (NaN 0x7FC00000), integers zero or sign extended, sRGB R, G, B to linear (before filtering) and A as UNORM, the stencil aspect (s, 0, 0, 1) as integers; a format without an entry (a value without the sampled feature, ctl format 0) (0, 0, 0, 1.0).  A **border texel** is the border colour in the format's components (class 0 transparent black (0, 0, 0, 0), 1 opaque black (0, 0, 0, 1), 2 opaque white (1, 1, 1, 1); 1.0, or the integer 1 for the integer formats and the stencil aspect; an sRGB format's border is linear) and (0, 0, 0, 1) in the others (Vulkan: the border colour replaces the components of the image format).
 - **Weights**: texel t's integer weight is wu × wv × wa × wb: bilinear wu = 256 − fu (t = 0, 2) or fu (1, 3), wv = 256 − fv (0, 1) or fv (2, 3); row passes (tc_ctl[21]): texel 0 256 − fu, texel 1 fu, wv = 256 − fv in the first row and fv in the second, texels 2 and 3 none; without bilinear 65536 for texel 0; wa = fw or 256 − fw by tc_ctl[17], wb = fl or 256 − fl by tc_ctl[18].  As fp32 the weight is n × 2^-32 rounded to nearest even (n ≤ 2^32); a weight of 0 is skipped (an infinite texel with weight 0 does not make a NaN).
-- **Accumulation**: per lane and component c below the format's component count, A = fma(w, x_c, A) with one rounding to nearest even and denormals flushed (`atg_su_ffma`, the SU's rules, `tools/gsi1fp.py` fma), from A = −0.0 at the quad's first pass; texels in the order 0-3, passes in order (mip linear and 3D linear: up to 4, with row passes up to 8).  The components the format does not have are (0, 0, 0, 1).
+- **Accumulation**: per lane and component c below the format's component count, A = fma(w, x_c, A) with one rounding to nearest even and denormals flushed (`atg_su_ffma`, the SU's rules, `gsi1fp` fma), from A = −0.0 at the quad's first pass; texels in the order 0-3, passes in order (mip linear and 3D linear: up to 4, with row passes up to 8).  The components the format does not have are (0, 0, 0, 1).
 - **Bypass**: a lane with one texel of weight 1 (a quad of one pass without bilinear, or a bilinear lane with fu = fv = 0 in a quad of one pass) returns its converted texel as it is: nearest sampling, texf and the integer formats (always nearest) are exact, NaN payloads and denormals included.
 - **Gather** (tc_ctl[13]): words 0-3 of the lane are the component of texels 2, 3, 1, 0 that the swizzle puts in place tc_ctl[15:14] (ZERO 0, ONE 1.0 or 1), from the converted texels or the border colour.
 - **Swizzle** (tc_ctl[47:36]: R, G, B, A, 3 bits each: 0 IDENTITY, 1 ZERO, 2 ONE, 3-6 R, G, B, A, 7 as IDENTITY) last, ONE 1.0 or the integer 1; gather's words are not swizzled again.  Lanes outside tc_mask give 0.
@@ -69,7 +69,7 @@ A step is one component of a lane's texel (a term), a bypassed lane's component 
 
 ## 8. What the TB checks
 
-`sim/tb/atg_tu_ffilt_tb.v` (vectors `sim/vec/tu_ffilt.txt` from `tools/tu-vectors.py`, `tools/tumodel.py` `FFilter`; random gaps and tr_ready) prints, in this order (each group over every sampled format of the path and format 0, random swizzles, masks and border texels):
+`sim/tb/atg_tu_ffilt_tb.v` (vectors `sim/vec/tu_ffilt.txt` from `tu-vectors`, `tumodel` `FFilter`; random gaps and tr_ready) prints, in this order (each group over every sampled format of the path and format 0, random swizzles, masks and border texels):
 
 - `PASS atg_tu_ffilt.nearest` — one pass, the converted texel
 - `PASS atg_tu_ffilt.bilinear` — the formats with FILTER_LINEAR; 8-byte texels in two row passes
@@ -78,7 +78,7 @@ A step is one component of a lane's texel (a term), a bypassed lane's component 
 - `PASS atg_tu_ffilt.border` — half the texels border texels, every colour class
 - `PASS atg_tu_ffilt` at the end.
 
-`-DMUT_FFILT_ROW` (the second row weighted as the first) fails `bilinear` and `passes`.  `tools/tu-vectors.py` first checks the model's bilinear result against plain floating point (within 2^-20 of the exact blend of the converted texels).  `sim/tb/atg_tu_tb.v` runs the path inside the whole TU.
+`-DMUT_FFILT_ROW` (the second row weighted as the first) fails `bilinear` and `passes`.  `tu-vectors` first checks the model's bilinear result against plain floating point (within 2^-20 of the exact blend of the converted texels).  `sim/tb/atg_tu_tb.v` runs the path inside the whole TU.
 
 ## 9. References
 

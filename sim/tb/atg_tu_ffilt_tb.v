@@ -6,8 +6,8 @@
  */
 
 /*
- * atg_tu_ffilt_tb: atg_tu_ffilt, the fp32 path, against tools/tumodel.py
- * (FFilter; sim/vec/tu_ffilt.txt, tools/tu-vectors.py).
+ * atg_tu_ffilt_tb: atg_tu_ffilt, the fp32 path, against tumodel
+ * (FFilter; sim/vec/tu_ffilt.txt, tu-vectors).
  * Quads go in with random gaps and tr_ready is random (seeded); tr_data,
  * tr_tag and tr_last of every quad are checked in order.  Groups (each
  * over every sampled format of the path, with random swizzles, border

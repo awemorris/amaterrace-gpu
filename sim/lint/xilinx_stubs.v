@@ -7,7 +7,7 @@
 
 /*
  * xilinx_stubs.v: lint-only stand-ins for the Xilinx primitives that the
- * board tops instantiate (tools/lint.sh uses them, nothing else does): the
+ * board tops instantiate (mk/lint.sh uses them, nothing else does): the
  * ports the tops use, every output 0.  BUFG is I/O; PLLE2_BASE,
  * MMCME2_BASE and BUFGMUX (the clocking) have the ports and parameters the
  * tops use; IBUFDS, IBUFDS_GTE2, BSCANE2, ODDR and the KC705's IP cores

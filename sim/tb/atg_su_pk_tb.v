@@ -7,7 +7,7 @@
 
 /*
  * atg_su_pk_tb: atg_su_pk (NPHYS 8) with PACKED = 1 and PACKED = 0 against
- * the vectors of tools/gsi1fp.py --pk-vec (sim/tb/su/pk_vec.hex: op, rm,
+ * the vectors of the reference model gsi1fp --pk-vec (sim/tb/su/pk_vec.hex: op, rm,
  * hsel, sub, sat, a, b, c and the exact model's result).  One vector per
  * group in every lane, a random EXEC mask; the result SHORT_LAT cycles
  * later with rd and the mask.

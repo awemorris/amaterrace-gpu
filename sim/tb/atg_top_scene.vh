@@ -10,8 +10,8 @@
  * atg_top_shade_tb, atg_top_tex_tb and atg_top_msaa_tb: the GPU (HAS_RX,
  * HAS_ROP, and HAS_VF/NSU/HAS_TU/MS4 when given) driven only through its
  * host port runs the ring of a scene file (the I/R/E lines of
- * tools/rx-raster-scene.py, tools/rx-shade-scene.py, tools/rx-tex-scene.py
- * and tools/rx-msaa-scene.py) and the memory words of the E lines must
+ * rx-raster-scene, rx-shade-scene, rx-tex-scene
+ * and rx-msaa-scene) and the memory words of the E lines must
  * equal the model's.  A line "C NAME" among the E lines starts a case:
  * the harness prints "PASS TB(NAME).CASE" (or FAIL) for the E lines up to
  * the next C line.  CAPS[29] must be MS4 && HAS_VF && HAS_TU && NSU,

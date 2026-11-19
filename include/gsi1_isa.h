@@ -12,7 +12,7 @@
  * In GHCI 1.0, shaders execute as pure binaries without container headers
  * or reflection tables (§12.10.1); legacy pre-1.0 container header and
  * interface kinds are retained below for backward compatibility only.
- * tools/gsi1asm.py holds the same encoding.
+ * mk/gsi1asm.py holds the same encoding.
  */
 
 #ifndef GSI1_ISA_H

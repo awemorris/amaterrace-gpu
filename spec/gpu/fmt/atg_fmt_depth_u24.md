@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-RNE(f × (2^24 − 1)) for f in (0, 1); NaN, negative values (−0 included), denormals and values below 2^−25 give 0; values ≥ 1 and +infinity all ones.  The product is (m << 24) − m for the mantissa m = 1.f (am_sub), shifted right by 126 − e (am_shift), rounded to nearest even at bit 48 (am_add).  tools/rxmodel.py `f2u24` is the reference.
+RNE(f × (2^24 − 1)) for f in (0, 1); NaN, negative values (−0 included), denormals and values below 2^−25 give 0; values ≥ 1 and +infinity all ones.  The product is (m << 24) − m for the mantissa m = 1.f (am_sub), shifted right by 126 − e (am_shift), rounded to nearest even at bit 48 (am_add).  the reference model rxmodel `f2u24` is the reference.
 
 ## 5. State machine
 

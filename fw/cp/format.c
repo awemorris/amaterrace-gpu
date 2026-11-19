@@ -7,7 +7,7 @@
 
 /*
  * The formats: the table of the formats the GPU has (formats.inc,
- * generated from tools/fmtmodel.py) and the packing of a clear value
+ * generated from mk/fmtmodel.py) and the packing of a clear value
  * into a format's bits, with Vulkan's conversions (docs/ghci.md section
  * 8.5) done exactly in integers (the core has no FPU): UNORM and SNORM
  * rounded to nearest even, 16-bit and the packed unsigned floats rounded

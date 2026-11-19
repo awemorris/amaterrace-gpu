@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_su_dec_tb: the decode vectors of tools/gsi1asm.py --dec-table
+ * atg_su_dec_tb: the decode vectors of mk/gsi1asm.py --dec-table
  * (sim/tb/su/dec_table.hex: instruction, uop with NREGS 32 / PACKED 0 /
  * SUBGROUP 0 / HAS_SA 0, uop with NREGS 64 / PACKED 1 / SUBGROUP 1 /
  * HAS_SA 1 / MS4 1) through two decoders, plus the valid/ready register;

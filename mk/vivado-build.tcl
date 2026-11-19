@@ -1,5 +1,5 @@
 # Vivado non-project batch build of one board top with all of rtl/:
-#   vivado -mode batch -source tools/vivado-build.tcl -tclargs ROOT TOP_DIR TOP OUT PART [IPDIR]
+#   vivado -mode batch -source mk/vivado-build.tcl -tclargs ROOT TOP_DIR TOP OUT PART [IPDIR]
 # Reads TOP_DIR/TOP.v, TOP_DIR/lib/*.v (board helpers shared by the tops)
 # and TOP_DIR/TOP.xdc, every rtl/**/*.v, include/ for
 # `include, and with IPDIR every IPDIR/*/*.xci (the board's IP cores,

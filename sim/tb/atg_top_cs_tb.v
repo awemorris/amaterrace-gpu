@@ -8,13 +8,13 @@
 /*
  * atg_top_cs_tb: compute through the ring, end to end: the GPU
  * driven only through its host port runs sim/vec/cs_scene.txt
- * (tools/cs-scene.py): per GSI1 program of sim/tb/su (vadd over 2
+ * (cs-scene): per GSI1 program of sim/tb/su (vadd over 2
  * workgroups, reduce with LDS, bar and atom.add, mem with lw/sw/atom/fence,
  * lwc and the c operands) the host writes the program binary and the data
  * image to memory, then the ring's SET_REG (CS_BASE, CS_WORDS, WG_SIZE),
  * INVALIDATE (D$), LOAD_PROGRAM (compute), LOAD_CONST, DISPATCH and FENCE
  * (with IRQ_STATUS.FENCE).  After FENCE_LAST reaches the segment's value
- * the data image must equal tools/gsi1model.py's word for word, the fence
+ * the data image must equal the reference model gsi1model's word for word, the fence
  * word must be written, RING_RPTR must equal RING_WPTR, the CP must still
  * be RUNNING and IRQ_STATUS.FENCE must be set.  The last segment's warp
  * stores, then reaches an undefined instruction: the CP must be FAULTED with

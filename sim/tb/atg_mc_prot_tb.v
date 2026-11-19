@@ -9,7 +9,7 @@
  * atg_mc_prot_tb: session protection at the MC's root (atg_mc with
  * HAS_PROT: atg_mc_prot, atg_mc_grant; spec/gpu/mc/atg_mc_prot.md).  Five
  * clients on one axi_mem: 0..3 run the requests of sim/vec/prot.txt
- * (tools/protmodel.py: a protection table with owners, read-only and
+ * (the reference model protmodel: a protection table with owners, read-only and
  * public granules, four grants, requests with and without chk, writes into
  * the table with and without tbl, requests outside the aperture; client 3's
  * reads are judged as writes), client 4 is the DC on its own root entry and

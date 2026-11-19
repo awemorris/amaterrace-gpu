@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_cube: the face and the face coordinates of a cube map direction
- * (docs/ghci.md section 8.4; tools/tumodel.py cube_proj is the reference,
+ * (docs/ghci.md section 8.4; the reference model tumodel cube_proj is the reference,
  * bit for bit).
  *
  * go (one cycle, while !bsy) takes the direction (x, y, z, fp32) and either

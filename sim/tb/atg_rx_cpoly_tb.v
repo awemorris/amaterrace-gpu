@@ -6,8 +6,8 @@
  */
 
 /*
- * atg_rx_cpoly_tb: atg_rx_cpoly against the polygons of tools/rxmodel.py
- * (clip_cut; sim/vec/rx_cpoly.txt from tools/rx-clip-vectors.py).  Each
+ * atg_rx_cpoly_tb: atg_rx_cpoly against the polygons of the reference model rxmodel
+ * (clip_cut; sim/vec/rx_cpoly.txt from rx-clip-vectors).  Each
  * case loads a triangle or a line segment, then cuts it by one plane
  * ("planes"), by the seven planes in order ("seq", up to 10 vertices) or a
  * line by three planes ("line"); after each cut n_out and every vertex

@@ -8,7 +8,7 @@
 /*
  * atg_fmt_depth_tb: atg_fmt_depth_u24 and atg_fmt_depth_key against the
  * testbench's own reference (the former functions of include/atg_depth.vh,
- * tools/rxmodel.py f2u24): every exponent and sign with the mantissas 0,
+ * the reference model rxmodel f2u24): every exponent and sign with the mantissas 0,
  * 1, all ones and 4096 random ones, the specials, and 200,000 random fp32.
  * Prints PASS atg_fmt_depth.u24, .key and PASS atg_fmt_depth; the seed is
  * +seed.

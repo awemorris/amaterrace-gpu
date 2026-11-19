@@ -8,7 +8,7 @@
 /*
  * atg_tu_unnorm: an unnormalized coordinate, floor(u × 256) clamped to
  * [−2^28, 2^28] (the former function tu_unnorm of include/atg_tu_fn.vh;
- * tools/tumodel.py unnorm_c).
+ * the reference model tumodel unnorm_c).
  *
  * Latency:
  * - LAT = 0: combinational

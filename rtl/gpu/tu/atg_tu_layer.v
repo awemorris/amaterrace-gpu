@@ -8,7 +8,7 @@
 /*
  * atg_tu_layer: Vulkan's layer clamp(RNE(f), 0, cnt − 1); NaN, zeros,
  * denormals and negative values give 0 (the former function tu_layer of
- * include/atg_tu_fn.vh; tools/tumodel.py rne_layer).  Combinational.
+ * include/atg_tu_fn.vh; the reference model tumodel rne_layer).  Combinational.
  */
 
 `timescale 1ns / 1ps

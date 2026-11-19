@@ -42,7 +42,7 @@ None (two registers per bit).
 
 ## 8. What the TB checks
 
-There is no `sim/tb/am_sync_tb.v`. The module is only linted (`tools/lint.sh`, `am_sync` as its own top: clean). Not checked: anything about its timing; no user instantiates it yet.
+There is no `sim/tb/am_sync_tb.v`. The module is only linted (`mk/lint.sh`, `am_sync` as its own top: clean). Not checked: anything about its timing; no user instantiates it yet.
 
 ## 9. References
 

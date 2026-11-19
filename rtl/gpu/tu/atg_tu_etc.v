@@ -9,7 +9,7 @@
  * atg_tu_etc: the ETC2 and EAC block decoder of the TU (VkFormat 147-156,
  * docs/ghci.md section 8.5): one 4 x 4 block and the
  * texel's column s and row t in it to that texel, written from the
- * Khronos Data Format Specification's ETC2 and EAC text (tools/etcmodel.py
+ * Khronos Data Format Specification's ETC2 and EAC text (the reference model etcmodel
  * is the reference, bit for bit).  Pipelined: the inputs in cycle 0,
  * o_kind and o_texel in cycle 4 (registers), one texel a cycle; E0 the
  * words; E1 the mode, the colours and the modifier, EAC's modifier; E1b

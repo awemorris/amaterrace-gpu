@@ -7,13 +7,13 @@
 
 /*
  * atg_rop_ds_tb: atg_rop_ds against amb_mem and the reference model
- * (sim/vec/rop_ds.txt from tools/rx-vectors.py): each of the 8 depth
+ * (sim/vec/rop_ds.txt from rx-vectors): each of the 8 depth
  * functions with D32F and D24S8, with and without the write, on a 16x16
  * buffer of random depths (NaN, 0, 1 among them), 60 overlapping quads per
  * run in order (later quads read what earlier ones wrote), and a run with
  * the test off.  Checks the passing lanes on d_*, the colour (DEBUG_COLOR
  * or the SU's), and the buffer at the end (the stencil byte of D24S8
- * kept).  Then sim/vec/rop_ds2.txt (tools/rop-vectors.py, CAPS[30]): runs
+ * kept).  Then sim/vec/rop_ds2.txt (rop-vectors, CAPS[30]): runs
  * of D24S8 with the stencil test and ops (random faces per quad), of D16
  * (2-byte pixels) and of the depth bounds of the three formats, with the
  * same checks.

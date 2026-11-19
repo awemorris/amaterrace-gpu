@@ -20,7 +20,7 @@
  * datapath (am_fp_fma_p in atg_su_fpu_op, one per lane); fract = x - floor(x)
  * through the same datapath (RNE); compares write Boolean (all ones/0);
  * the sat bit clamps float results to [0, 1].  mul* are the integer
- * multiplies of RISC-V M.  The reference is tools/gsi1fp.py.
+ * multiplies of RISC-V M.  The reference is the reference model gsi1fp.
  *
  * PK_SHARED (with PACKED): this unit also takes the packed unit's fp16
  * operations (fadd2/fsub2/fmul2/ffma2/fmin2/fmax2/fcmp*2, atg_su_pk does

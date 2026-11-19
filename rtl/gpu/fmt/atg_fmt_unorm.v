@@ -8,7 +8,7 @@
 /*
  * atg_fmt_unorm: c / (2^w - 1) to the nearest fp32, w in 1, 2, 4-8, 10,
  * 11, 15, 16, 24 (the former function atg_fmt_unorm of
- * include/atg_fmt_unpack.vh; tools/fmtmodel.py): c / (2^w - 1) is 0.ccc...
+ * include/atg_fmt_unpack.vh; mk/fmtmodel.py): c / (2^w - 1) is 0.ccc...
  * in binary, so the leading 72 bits of c repeated give the fp32 and its
  * rounding (never a tie).  Combinational.
  */

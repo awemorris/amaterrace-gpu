@@ -33,7 +33,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-Bit for bit as `tools/tumodel.py` `cube_proj`:
+Bit for bit as `tumodel` `cube_proj`:
 
 - A component that is zero, a denormal or NaN reads as +0; an infinity as the largest finite value of its sign.
 - Face: the largest magnitude, z before y before x on ties (Vulkan's first two rules); its sign picks + or −.  With fix, fface.
@@ -55,7 +55,7 @@ IDLE →(go)→ DIV (26 cycles) → IDLE.
 
 ## 8. What the TB checks
 
-No unit testbench of its own: `sim/tb/atg_tu_addr_tb.v` (`PASS atg_tu_addr.cube`) checks it through atg_tu_addr; `tools/tu-vectors.py` checks the model's face coordinates against floating point.
+No unit testbench of its own: `sim/tb/atg_tu_addr_tb.v` (`PASS atg_tu_addr.cube`) checks it through atg_tu_addr; `tu-vectors` checks the model's face coordinates against floating point.
 
 ## 9. References
 

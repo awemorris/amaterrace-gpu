@@ -8,7 +8,7 @@
 /*
  * atg_fmt_comp: component k of a texel to 32 bits, combinational (the
  * former function atg_fmt_comp of include/atg_fmt_unpack.vh; atg_fmt_cvt
- * is its pipelined form; tools/fmtmodel.py unpack; spec/gpu/fmt/atg_fmt.md):
+ * is its pipelined form; mk/fmtmodel.py unpack; spec/gpu/fmt/atg_fmt.md):
  * UNORM c / (2^b - 1) and SNORM max(c / (2^(b-1) - 1), -1) to the nearest
  * fp32 (even), 16-bit floats, the packed unsigned floats and E5B9G9R9
  * exactly (infinities kept, NaN 0x7FC00000), UINT and SINT zero and sign

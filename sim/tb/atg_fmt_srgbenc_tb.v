@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_fmt_srgbenc_tb: atg_fmt_srgbenc against tools/fmtmodel.py
+ * atg_fmt_srgbenc_tb: atg_fmt_srgbenc against mk/fmtmodel.py
  * (sim/vec/fmt_srgbenc.txt: every threshold and the fp32 on each side of
  * it, every decoded code, the specials (0, -0, 1, +infinity, NaN, -1,
  * values above 1) and random values in [2^-37, 1)).  The values go in back

@@ -8,7 +8,7 @@
 /*
  * atg_top_shade_tb: the graphics pipeline through SU 0 (HAS_VF, NSU 1,
  * HAS_RX, HAS_ROP): the ring runs sim/vec/shade_scene.txt
- * (tools/rx-shade-scene.py: SET_REG of the VF, program, raster and ROP
+ * (rx-shade-scene: SET_REG of the VF, program, raster and ROP
  * state, one DRAW of a triangle list with per-vertex colours, a vertex and
  * a fragment program in GSI1, a final FENCE): VF → vertex warps → PT → RX
  * (clip, setup, fragment warps with the barycentrics) → fragment warps

@@ -10,9 +10,9 @@
  * BLEND words, i.e. every factor and operation, and source-over; random
  * BLEND_CONST and WRITE_MASK; sources with NaN, infinities, negative,
  * above one and exact c/255 values) against the reference model
- * (sim/vec/rop_blend.txt from tools/rx-vectors.py), b_pix LAT cycles
+ * (sim/vec/rop_blend.txt from rx-vectors), b_pix LAT cycles
  * after b_valid.  Then the same STATE for a burst of one quad per cycle.
- * Then sim/vec/rop_blend2.txt (tools/rop-vectors.py, CAPS[30]): the
+ * Then sim/vec/rop_blend2.txt (rop-vectors, CAPS[30]): the
  * attachment b_rt with its RT_FORMATS byte (R8, R8G8, A1R5G5B5 and the
  * earlier formats by VkFormat, a format the path does not have), BLEND1-3
  * and WRITE_MASK per attachment ("r8rg8"), and the fp32 constants with

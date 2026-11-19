@@ -8,7 +8,7 @@
 /*
  * atg_fmt_f2unorm: fp32 to a w-bit UNORM (w <= 16), RNE(clamp01(f) x
  * (2^w - 1)); NaN and negative values (-0 included) give 0 (the former
- * function atg_fmt_f2unorm of include/atg_fmt_pack.vh; tools/fmtmodel.py
+ * function atg_fmt_f2unorm of include/atg_fmt_pack.vh; mk/fmtmodel.py
  * is the reference).  Combinational.
  */
 

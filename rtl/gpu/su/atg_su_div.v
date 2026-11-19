@@ -15,7 +15,7 @@
  * one long beat (l_wr 1, l_last = the group's x_last, class x).  A group
  * without EXEC lanes returns at once.  Division by zero gives all ones
  * (div/divu) and the dividend (rem/remu); INT_MIN / -1 gives INT_MIN and
- * remainder 0 (RISC-V).  The reference is tools/gsi1fp.py div().
+ * remainder 0 (RISC-V).  The reference is the reference model gsi1fp div().
  *
  * States: IDLE →(group)→ DIV (lane loop) → RET →(l_ready)→ IDLE.
 */

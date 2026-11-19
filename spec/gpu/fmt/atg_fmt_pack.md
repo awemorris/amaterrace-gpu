@@ -22,7 +22,7 @@ Clock/reset domain: `clk` (gclk), synchronous reset `rst_n` (active low), clock 
 
 ## 4. Behaviour
 
-raw is the pixel as a little-endian integer, keep has a 1 for every bit not written (the masked components and the bits outside the pixel). UNORM components take `un`, SFLOAT16 `hf`, 32-bit floats and integer formats the low bits of c_k, sRGB formats R, G and B as 8-bit codes in [7:0] (atg_fmt_srgbenc) and A from `un`. A format without the colour-attachment feature, and a fmt not in FMTS, write nothing (keep all ones, raw 0). The places are a table of constants (PTAB, from atg_fmt_info) and every index is a constant once the loops are unrolled, so a simulator evaluates only the placement of fmt. `tools/fmtmodel.py` (pack) is the reference.
+raw is the pixel as a little-endian integer, keep has a 1 for every bit not written (the masked components and the bits outside the pixel). UNORM components take `un`, SFLOAT16 `hf`, 32-bit floats and integer formats the low bits of c_k, sRGB formats R, G and B as 8-bit codes in [7:0] (atg_fmt_srgbenc) and A from `un`. A format without the colour-attachment feature, and a fmt not in FMTS, write nothing (keep all ones, raw 0). The places are a table of constants (PTAB, from atg_fmt_info) and every index is a constant once the loops are unrolled, so a simulator evaluates only the placement of fmt. `mk/fmtmodel.py` (pack) is the reference.
 
 When `LAT = 2`:
 - Stage 1: Component field selection (`fsel`), masking, constant shifting, and reduction across the lower levels (1..L_SPLIT) of the binary OR tree, registered on clock edge when `en`.

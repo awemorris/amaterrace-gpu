@@ -103,7 +103,7 @@ line}, a round-robin pointer.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_mc_prot_tb.v` (sim/vec/prot.txt from `tools/protmodel.py --vectors`): groups vec,
+`sim/tb/atg_mc_prot_tb.v` (sim/vec/prot.txt from `the reference model protmodel --vectors`): groups vec,
 order, park, dc, mem, inv, race, recheck, walkerr (see the TB's header), and the mutations
 `MUT_PROT_NOCHK`, `MUT_PROT_STALE`, `MUT_PROT_RO`, `MUT_PROT_DATA`, `MUT_PROT_RECHECK`,
 `MUT_PROT_LIMIT`, `MUT_PROT_TBL` (each must fail it).  `sim/tb/atg_mc_tb.v` shape C: `HAS_PROT`
@@ -112,7 +112,7 @@ built in, no chk: the same behaviour as shape B.
 ## 9. References
 
 docs/ghci.md §11.6; `spec/gpu/mc/atg_mc.md`, `spec/gpu/mc/atg_mc_grant.md`,
-`spec/library/bus/am_amb_to_rt.md`; `tools/protmodel.py`.
+`spec/library/bus/am_amb_to_rt.md`; `protmodel`.
 
 ## 10. Status
 

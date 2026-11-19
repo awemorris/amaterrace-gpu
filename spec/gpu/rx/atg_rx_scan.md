@@ -89,7 +89,7 @@ IDLE →(triangle)→ SEQ → TILE_WAIT →(coarse tile valid)→ WALK → (dire
 - `PASS atg_rx_scan.direct` — HAS_SU 0: dx quads (and nothing on fq_*)
 - `PASS atg_rx_scan.free` — pt_free once per flagged vertex
 - `PASS atg_rx_scan.ms1x` — a second instance with HAS_SU 1: the same triangles as non-raw ones with MS_CTRL 0 on the warp path (fq_scov, fq_ccov as the one-sample coverage; an end marker per triangle with a bbox)
-- `PASS atg_rx_scan.ms` — `sim/vec/rx_scan_ms.txt` (`tools/rx-msaa-vectors.py`, `tools/msmodel.py`): 4 samples and 1, SAMPLE_KILL 0, 2, 5, 8, 15, shared edges through sample locations, a sliver across empty quads; `-DMUT_SAMPLE_SWAP` (samples 1 and 2 swapped) and `-DMUT_COV_SKIP` (a skip bound too small) fail it
+- `PASS atg_rx_scan.ms` — `sim/vec/rx_scan_ms.txt` (`rx-msaa-vectors`, `msmodel`): 4 samples and 1, SAMPLE_KILL 0, 2, 5, 8, 15, shared edges through sample locations, a sliver across empty quads; `-DMUT_SAMPLE_SWAP` (samples 1 and 2 swapped) and `-DMUT_COV_SKIP` (a skip bound too small) fail it
 - `PASS atg_rx_scan` at the end.
 
 ## 9. References

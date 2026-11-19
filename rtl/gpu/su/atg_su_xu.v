@@ -14,7 +14,7 @@
  * computes its EXEC lanes one after the other in a sequential engine,
  * then returns the group as one long beat (l_wr 1, l_last = the group's
  * x_last, class x); a group without EXEC lanes returns at once.  The
- * algorithms are integer and exact step for step with tools/gsi1fp.py
+ * algorithms are integer and exact step for step with the reference model gsi1fp
  * xu() (the model the SU testbench compares with):
  *   rcp    2^50 / m by a 28-step restoring division, RNE with the
  *          remainder as sticky (correctly rounded);

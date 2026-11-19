@@ -25,7 +25,7 @@
 #define GSI1_KIND_SCRATCH 14u
 #endif
 
-/* The AMB line, set per board by tools/fw-build.sh (64 KC705). */
+/* The AMB line, set per board by fw/cp/Makefile (64 KC705). */
 #ifndef FW_LINE_BYTES
 #define FW_LINE_BYTES 64u
 #endif
@@ -213,7 +213,7 @@ struct fw_format {
 	struct fw_format_component comp[4];
 };
 
-/* The types and flags of struct fw_format (tools/fmtmodel.py's numbers). */
+/* The types and flags of struct fw_format (mk/fmtmodel.py's numbers). */
 #define FW_FMT_UNORM 0u
 #define FW_FMT_SNORM 1u
 #define FW_FMT_UINT 2u

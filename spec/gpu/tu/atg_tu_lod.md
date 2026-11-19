@@ -33,7 +33,7 @@ Combinational.
 
 ## 4. Behaviour
 
-As `tools/tumodel.py` `lod_quad`: per axis A, with the lanes' fixed-point values A0-A2 (u, v and w as floor(x × 2^16); a cube's s and t >> 8), the largest of |A1 − A0| and |A2 − A0| = m, λA = L2(m) + L2(size) − 4096 (L2(x) = 256 × the msb position + the 8 bits below the msb), −32768 for m = 0; sizes: u w0, v h0 (a cube w0), w d0.  λq = the largest λA (w only for 3D).
+As `tumodel` `lod_quad`: per axis A, with the lanes' fixed-point values A0-A2 (u, v and w as floor(x × 2^16); a cube's s and t >> 8), the largest of |A1 − A0| and |A2 − A0| = m, λA = L2(m) + L2(size) − 4096 (L2(x) = 256 × the msb position + the 8 bits below the msb), −32768 for m = 0; sizes: u w0, v h0 (a cube w0), w d0.  λq = the largest λA (w only for 3D).
 
 ## 5. State machine
 

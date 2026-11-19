@@ -9,7 +9,7 @@
  * atg_su_fp.vh: combinational fp32 helpers of the SU without arithmetic
  * (design §3.1 precision: IEEE single, denormals flushed on input and
  * output, NaN results are the canonical 0x7FC00000; reference:
- * tools/gsi1fp.py).  Included inside a module body.  The arithmetic is in
+ * the reference model gsi1fp).  Included inside a module body.  The arithmetic is in
  * modules (docs/style.md, "Arithmetic"): atg_su_fadd, atg_su_ffma,
  * atg_su_ffma_p, atg_su_rnd, atg_su_rint, atg_su_i2f and atg_su_f2i.
  */

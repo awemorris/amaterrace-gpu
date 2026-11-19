@@ -482,20 +482,20 @@ SU は SIMD レーン幅の物理スケーリングに伴い、ALU 分配ツリ�
 
 ## 4. OOC 単体合成の自動実行フロー
 
-単体 OOC 合成は `tools/synth-module.sh` を使用して以下のように即座に実行できる。
+単体 OOC 合成スクリプト（`synth-module`）を使用して以下のように実行できる。
 
 ```bash
 # 基本実行構文 (デフォルトクロック周期: 5.000 ns = 200 MHz)
-tools/synth-module.sh <モジュール名> [クロック周期_ns] [追加定義...]
+synth-module <モジュール名> [クロック周期_ns] [追加定義...]
 
 # 例1: vf (atg_vf_conv) の 200 MHz OOC 合成
-tools/synth-module.sh atg_vf_conv 5.000
+synth-module atg_vf_conv 5.000
 
 # 例2: rop (atg_rop_ds) の 200 MHz OOC 合成
-tools/synth-module.sh atg_rop_ds 5.000
+synth-module atg_rop_ds 5.000
 
 # 例3: tu (atg_tu) の 200 MHz OOC 合成
-tools/synth-module.sh atg_tu 5.000
+synth-module atg_tu 5.000
 ```
 
 ### 結果出力先

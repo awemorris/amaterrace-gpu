@@ -14,7 +14,7 @@
  * fcvt.s.w*) and the fused datapath (am_fp_fma_p: fadd, fsub, fmul,
  * the fmadd family, fract = x - floor(x) with RNE).  ist: the sat bit
  * (float results clamped to [0, 1]).  The former function fpu of
- * atg_su_fpu (tools/gsi1fp.py).  Combinational.
+ * atg_su_fpu (the reference model gsi1fp).  Combinational.
  */
 
 `timescale 1ns / 1ps

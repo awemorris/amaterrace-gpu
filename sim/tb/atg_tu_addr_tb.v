@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_addr_tb: atg_tu_addr against the reference addressing of
- * tools/tumodel.py (sim/vec/tu_addr.txt, tools/tu-vectors.py).  The STATE
+ * the reference model tumodel (sim/vec/tu_addr.txt, tu-vectors).  The STATE
  * writes go in between quads; the quads go in with random gaps (seeded)
  * and ta_ready is random, and every ta_* of every quad is checked in
  * order (a mip linear quad has two outputs, both checked).  Groups:

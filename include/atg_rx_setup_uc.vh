@@ -7,7 +7,7 @@
 
 /*
  * atg_rx_setup_uc.vh: the micro-program of atg_rx_setup, written by
- * tools/rx-ucode.py (do not edit).  {op, d, a, b}: op 0 END, 1 ADD,
+ * rx-ucode (do not edit).  {op, d, a, b}: op 0 END, 1 ADD,
  * 2 SUB, 3 MUL, 4 DIV, 5 MOV, 6 INT, 7 JMP d, 8 ENDR, 9 ABS, 10 MAX,
  * 11 ULP, 12 BCL, 13 BRA d if condition a, 14 OUT.  Entry 0 for raw
  * triangles, ATG_RX_UC_PERSP for the others.

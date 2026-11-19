@@ -53,7 +53,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by the parent's testbench and `tools/lint.sh`.
+No unit testbench (wiring only): covered by the parent's testbench and `mk/lint.sh`.
 
 ## 9. References
 

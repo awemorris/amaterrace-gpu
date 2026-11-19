@@ -14,7 +14,7 @@ How the tree was made (WS288 p023)
 The GPU was split top-down into modules.  Each module that did not exist got an empty
 Verilog module with its parameters and full port list (every output tied to 0, every input
 collected in `unused_ok`) and is instantiated and wired in its parent, so the whole tree
-elaborates and `tools/lint.sh` checks the connections.  Blocks that a build does not have
+elaborates and `mk/lint.sh` checks the connections.  Blocks that a build does not have
 are present in `atg_top` behind parameters (`HAS_CPU`, `NSU`, `HAS_VF`, ...; the defaults
 are the smallest GPU: CP, BLT and MC).  In `atg_cp` and `atg_mc`, which already work, the new
 children run beside the existing inline logic as a scaffold: they are wired to the real

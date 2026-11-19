@@ -7,8 +7,8 @@
 
 /*
  * atg_fmt_tb: the format table of include/atg_fmt_info.vh and the format
- * modules of rtl/gpu/fmt against tools/fmtmodel.py
- * (python3 -I tools/fmtmodel.py --vectors):
+ * modules of rtl/gpu/fmt against mk/fmtmodel.py
+ * (python3 -I mk/fmtmodel.py --vectors):
  *   info      sim/vec/fmt_info.txt: atg_fmt_info and atg_fmt_feat (with and
  *             without the ETC2 decoder) for every 8-bit format value;
  *   unpack    sim/vec/fmt_unpack.txt: four atg_fmt_comp (with atg_fmt_unorm),
@@ -22,7 +22,7 @@
  *             the fp32 next to it;
  *   h2f       atg_fmt_h2f for all 65536 fp16 values against atg_fmt_comp of
  *             R16_SFLOAT (checked by the unpack vectors);
- *   required  sim/vec/fmt_required.txt (from tools/vk-required-formats.txt,
+ *   required  sim/vec/fmt_required.txt (from mk/vk-required-formats.txt,
  *             Vulkan 1.0's required features, not from the model):
  *             atg_fmt_feat with the decoder has every required
  *             fixed-function bit, and one format or family of each "one

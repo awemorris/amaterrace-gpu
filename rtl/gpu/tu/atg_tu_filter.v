@@ -11,7 +11,7 @@
  * compare sampler, and blends nearest, bilinear, and over the passes of
  * 3D linear and mip linear filtering, per lane.
  *
- * tools/tumodel.py is the reference; the rules (the bytes and compares,
+ * the reference model tumodel is the reference; the rules (the bytes and compares,
  * bilinear R, the passes' sums A and A / (255 × 2^32) as fp32, depth
  * without compare, gather, texsz and texqlod, RGB565, R8 and R8G8, D16
  * compare, the swizzle) are in spec/gpu/tu/atg_tu_filter.md section 4.

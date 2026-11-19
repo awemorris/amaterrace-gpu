@@ -47,7 +47,7 @@ x/0 = ±inf (x ≠ 0), 0/0 and inf/inf = NaN, a denormal operand counts as 0.
 
 ## 8. What the TB checks
 
-`sim/tb/atg_rx_fp_tb.v` compares atg_rx_fdiv with `tools/rxmodel.py`'s fp model on the vectors in `sim/vec/` (6000 operations across the three units, including zeros, denormals, infinities, NaNs, overflow, ties) and prints `PASS atg_rx_fp`.
+`sim/tb/atg_rx_fp_tb.v` compares atg_rx_fdiv with `rxmodel`'s fp model on the vectors in `sim/vec/` (6000 operations across the three units, including zeros, denormals, infinities, NaNs, overflow, ties) and prints `PASS atg_rx_fp`.
 
 ## 9. References
 

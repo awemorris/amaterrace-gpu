@@ -12,11 +12,11 @@
  * from one amb_mem behind their I$ port, and access data through a second
  * amb_mem behind their D$ port; at_* goes to atg_mc_atom, whose AMB port
  * shares that second amb_mem with the D$ through am_amb_mux.
- * For each program of sim/tb/su (built by tools/su-tests.sh) the data image
+ * For each program of sim/tb/su (built by su-tests) the data image
  * NAME.dat goes to 0x8000 of both memories, LOAD_CONST loads its first 256
  * words into the constant bank, and the program runs as a compute dispatch
  * (DISPATCH groups x 1 x 1); when the SU is idle every register that
- * tools/gsi1model.py says the program wrote is compared, lane by lane, and
+ * the reference model gsi1model says the program wrote is compared, lane by lane, and
  * the data memory with the model's NAME.mexp.  The graphics and SA ports
  * are tied off.
  *   alu: integer ops, dependent chains, specials (128 lanes)

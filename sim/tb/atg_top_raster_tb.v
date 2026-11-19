@@ -8,11 +8,11 @@
 /*
  * atg_top_raster_tb: the GPU with the RX and the ROP (HAS_RX, HAS_ROP),
  * driven only through its host port: the ring runs the scene of
- * sim/vec/raster_scene.txt (tools/rx-raster-scene.py: SET_REG of the
+ * sim/vec/raster_scene.txt (rx-raster-scene: SET_REG of the
  * raster state, overlapping triangles by DRAW_RAW with DEBUG_COLOR, depth
  * LESS with write, the last ones blended over, a final FENCE), and the
  * colour and depth buffers must equal the reference model's
- * (tools/rxmodel.py) word for word.  In the KC705's shape.
+ * (the reference model rxmodel) word for word.  In the KC705's shape.
  */
 
 `timescale 1ns / 1ps

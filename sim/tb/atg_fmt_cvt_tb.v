@@ -7,7 +7,7 @@
 
 /*
  * atg_fmt_cvt_tb: atg_fmt_cvt against atg_fmt_comp (its combinational
- * form, checked against tools/fmtmodel.py by atg_fmt_tb), one conversion a cycle (seeded): every
+ * form, checked against mk/fmtmodel.py by atg_fmt_tb), one conversion a cycle (seeded): every
  * VkFormat code 0-255 (atg_fmt_info, entries or not), the block kinds of
  * atg_tu_ffilt (atg_fmt_i of RGBA8 and the 11- and 10-bit EAC words),
  * each component, the stencil aspect, and texels of random bits, small

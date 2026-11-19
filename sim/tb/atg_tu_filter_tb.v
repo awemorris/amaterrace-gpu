@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_filter_tb: atg_tu_filter against the reference conversion and
- * filter of tools/tumodel.py (sim/vec/tu_filter.txt, tools/tu-vectors.py).
+ * filter of the reference model tumodel (sim/vec/tu_filter.txt, tu-vectors).
  * Passes go in as soon as they are taken, with random gaps, and tr_ready
  * is random (seeded), sometimes low for 40 cycles (the unit keeps several
  * quads); tr_data, tr_tag and tr_last of every quad are checked in order

@@ -10,7 +10,7 @@
  * the texel coordinate: repeat floor(u × 2^24) mod 2^24, mirrored repeat
  * mod 2^25, clamp to edge and border floor(u × 2^24) clamped to
  * [−16, 17] × 2^24 (the former function tu_coord of
- * include/atg_tu_fn.vh; tools/tumodel.py coord_t).
+ * include/atg_tu_fn.vh; the reference model tumodel coord_t).
  *
  * Latency:
  * - LAT = 0: combinational

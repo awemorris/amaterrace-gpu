@@ -9,7 +9,7 @@
  * atg_top_core_tb: Vulkan 1.0 core rendering (CAPS[30]) through the whole
  * pipeline in the KC705's shape (64-byte lines, 512-bit AXI, the KC705's
  * SU with 64 varying words, HAS_VF, HAS_RX, HAS_TU, HAS_ROP, MS4): the ring
- * runs sim/vec/core_scene.txt (tools/rx-core-scene.py: the cases of the
+ * runs sim/vec/core_scene.txt (rx-core-scene: the cases of the
  * generator's header: stencil with front and back state, D16, four
  * colour attachments, the fp32 blend, lines and points, depth bias, depth
  * clamp and clipping, the occlusion query, texture and vertex formats,

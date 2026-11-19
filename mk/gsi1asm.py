@@ -18,7 +18,7 @@
 # is rm 7, which GSI1 runs as RNE).  Half select (word1[16:15], packed): a last
 # mnemonic suffix .hlo (01, low half only), .hhi (10) or .hswap (11, rs2's
 # halves swapped), after .sat.  ".inst 0x<64 bits>" puts a raw instruction
-# (tools/gsi1dis.py writes it for words that have no other text).
+# (mk/gsi1dis.py writes it for words that have no other text).
 # Atomics: atom.<op> on global memory, atoms.<op> on shared memory (sub[4]).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import argparse

@@ -47,7 +47,7 @@
 #                       atg_kc705_mig's MIG_DEBUG 1 puts the debug ports
 #                       behind its registers at 0x1F000).
 # Every core is generated (instantiation template, synthesis) and
-# synthesised out of context (synth_ip), so that tools/vivado-build.tcl
+# synthesised out of context (synth_ip), so that mk/vivado-build.tcl
 # reads OUT/*/*.xci.  NAMES (optional, after OUT) makes only those.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 

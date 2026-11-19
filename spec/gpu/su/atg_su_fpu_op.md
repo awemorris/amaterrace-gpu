@@ -4,7 +4,7 @@ RTL: `rtl/gpu/su/atg_su_fpu_op.v`.  Parents: atg_su_fpu (one per lane).
 
 ## 1. Purpose and place
 
-One lane's operation of atg_su_fpu, given its multiplier's product; it replaces the function `fpu` of atg_su_fpu (tools/gsi1fp.py).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+One lane's operation of atg_su_fpu, given its multiplier's product; it replaces the function `fpu` of atg_su_fpu (the reference model gsi1fp).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ Through atg_su_fpu: `sim/tb/atg_su_fpu_tb.v` and `atg_su_pk_tb.v` (PK_SHARED), a
 
 ## 9. References
 
-design §3.1 (precision), tools/gsi1fp.py.
+design §3.1 (precision), the reference model gsi1fp.
 
 ## 10. Status
 

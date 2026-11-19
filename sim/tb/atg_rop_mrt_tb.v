@@ -8,7 +8,7 @@
 /*
  * atg_rop_mrt_tb: four colour attachments (CAPS[30]) through atg_rop_wb,
  * atg_rop_wpix (with atg_rop_fblend) and atg_rop_blend against amb_mem and
- * the reference model (sim/vec/rop_mrt.txt from tools/rop-vectors.py):
+ * the reference model (sim/vec/rop_mrt.txt from rop-vectors):
  * 72 runs, one and four samples in turn, of attachments of every format
  * with the colour-attachment feature (pixels of 1 to 16 bytes, rows of one
  * line or several), absent attachments (RT_FORMATS byte 0) and attachment

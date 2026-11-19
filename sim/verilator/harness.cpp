@@ -460,9 +460,9 @@ void write_png(const char *path, uint32_t base, unsigned w, unsigned h, unsigned
 	std::fclose(f);
 }
 
-/* The scene of sim/vec/raster_scene.txt (tools/rx-raster-scene.py; SHADE:
- * sim/vec/shade_scene.txt, tools/rx-shade-scene.py; TEX: sim/vec/tex_scene.txt,
- * tools/rx-tex-scene.py; MSAA: sim/vec/msaa_scene.txt, tools/rx-msaa-scene.py)
+/* The scene of sim/vec/raster_scene.txt (reference generator rx-raster-scene; SHADE:
+ * sim/vec/shade_scene.txt, rx-shade-scene; TEX: sim/vec/tex_scene.txt,
+ * rx-tex-scene; MSAA: sim/vec/msaa_scene.txt, rx-msaa-scene)
  * through the ring; the colour and depth buffers against the model (a C
  * line starts a case, reported by name when its words differ); the colour
  * buffer at 0x20000 to build/verilator/raster.png (shade.png, tex.png;
@@ -580,10 +580,10 @@ int scene_main()
 
 #ifdef COMPUTE
 /*
- * The compute scene of sim/vec/cs_scene.txt (tools/cs-scene.py, the same as
+ * The compute scene of sim/vec/cs_scene.txt (reference generator cs-scene, the same as
  * sim/tb/atg_top_cs_tb.v): per segment the program binary and the data
  * image, the ring's SET_REG, INVALIDATE, LOAD_PROGRAM, LOAD_CONST, DISPATCH
- * and FENCE; after the fence the memory against tools/gsi1model.py.  The
+ * and FENCE; after the fence the memory against the reference model gsi1model.  The
  * last segment ends in an ISA fault (FAULTED, FAULT_ADDR = the PC).
  */
 int compute_main()

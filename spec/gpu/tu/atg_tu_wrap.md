@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_wrap.v`.  Parent: atg_tu_foot (the slice and the footpri
 
 ## 1. Purpose and place
 
-An integer texel coordinate into the level, {border texel, index}; it replaces the functions `tu_wrap` and `tu_mod` of include/atg_tu_fn.vh (tools/tumodel.py wrap_idx).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+An integer texel coordinate into the level, {border texel, index}; it replaces the functions `tu_wrap` and `tu_mod` of include/atg_tu_fn.vh (the reference model tumodel wrap_idx).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ The module against the former function on 1,000,000 random inputs, 0 errors (the
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

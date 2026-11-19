@@ -47,7 +47,7 @@ PG055 was not read: the INTX_MSI_* handshake and axi_aresetn (PERST#) are taken 
 
 ## 8. What the TB checks
 
-Replaced in simulation by `sim/models/kc705/atg_kc705_pcie.v` (same ports: host tasks bar0_read/write, bar2_read/write(4), MSI acknowledgement and counts, a host memory for the GPU's host accesses with host_read/host_write, DECERR at 0x8000_0000 and above); `sim/tb/atg_kc705_pcie_tb.v` (`PASS atg_kc705_pcie.host`: the GPU's debug-port read and write below HOST_LIMIT reach the host memory).  Linted by `tools/lint.sh` with the generated cores' port lists as stubs (`sim/lint/xilinx_stubs.v`).
+Replaced in simulation by `sim/models/kc705/atg_kc705_pcie.v` (same ports: host tasks bar0_read/write, bar2_read/write(4), MSI acknowledgement and counts, a host memory for the GPU's host accesses with host_read/host_write, DECERR at 0x8000_0000 and above); `sim/tb/atg_kc705_pcie_tb.v` (`PASS atg_kc705_pcie.host`: the GPU's debug-port read and write below HOST_LIMIT reach the host memory).  Linted by `mk/lint.sh` with the generated cores' port lists as stubs (`sim/lint/xilinx_stubs.v`).
 
 ## 9. References
 

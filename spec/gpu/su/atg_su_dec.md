@@ -68,10 +68,10 @@ One instruction per cycle, 1 cycle latency.
 
 `sim/tb/atg_su_dec_tb.v` prints, in this order:
 
-- `PASS atg_su_dec.table` — every opcode of design §3.4.1 against a table produced by the ISA model (sim/models or tools/gsi1asm.py)
+- `PASS atg_su_dec.table` — every opcode of design §3.4.1 against a table produced by the ISA model (sim/models or mk/gsi1asm.py)
 - `PASS atg_su_dec.operands` — 7-bit operand numbers and immediates with random word1
 - `PASS atg_su_dec.fault` — illegal encodings, NREGS, PACKED/SUBGROUP/HAS_SA = 0 give ILL
-- `PASS atg_su_dec.texszs` — texsz.s faults without MS4 and decodes to TEX op 0x4B (no rs1) with it (the table's second decoder has MS4 1; `sim/tb/su/dec_table.hex` made again by `tools/gsi1asm.py --dec-table`)
+- `PASS atg_su_dec.texszs` — texsz.s faults without MS4 and decodes to TEX op 0x4B (no rs1) with it (the table's second decoder has MS4 1; `sim/tb/su/dec_table.hex` made again by `mk/gsi1asm.py --dec-table`)
 - `PASS atg_su_dec` at the end.
 
 ## 9. References
@@ -80,7 +80,7 @@ design §3.2-§3.4, include/atg_su_uop.vh; docs/ghci.md section 12 (the GSI1 sta
 
 ## 10. Status
 
-Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_dec_tb.v` on 4976 vectors of `tools/gsi1asm.py --dec-table`).  Choices made here (recorded in include/atg_su_uop.vh and gsi1asm.py, now in docs/ghci.md section 12):
+Implemented in WS288 p008 (branch p1-su; TB `sim/tb/atg_su_dec_tb.v` on 4976 vectors of `mk/gsi1asm.py --dec-table`).  Choices made here (recorded in include/atg_su_uop.vh and gsi1asm.py, now in docs/ghci.md section 12):
 
 - The OP field values per unit are the `ATG_<UNIT>_*` localparams of include/atg_su_uop.vh; ALU OP bit 7 (`ATG_ALU_IMMB`) means operand b is the immediate (I forms).
 - An ILL uop has only the ILL bit set (all other fields 0).  U forms (lui/movi) have RS1-3, MOD, HSEL, SUB and RM 0; other forms carry all operand fields as encoded (used or not), RM = funct3.

@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_cube_texel.v`.  Parent: atg_tu_foot (the four texels of 
 
 ## 1. Purpose and place
 
-A texel of a cube face's bilinear footprint, taking a texel beyond one edge from the adjacent face; it replaces the function `tu_cube_texel` of include/atg_tu_fn.vh (tools/tumodel.py cube_texel).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+A texel of a cube face's bilinear footprint, taking a texel beyond one edge from the adjacent face; it replaces the function `tu_cube_texel` of include/atg_tu_fn.vh (the reference model tumodel cube_texel).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ The module against the former function on 1,000,000 random inputs, 0 errors (202
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

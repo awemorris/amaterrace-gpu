@@ -7,7 +7,7 @@
 
 /*
  * atg_su_fpu_tb: atg_su_fpu (NPHYS 8) against the vectors of
- * tools/gsi1fp.py --fpu-vec (sim/tb/su/fpu_vec.hex: op, rm, sat, a, b, c and
+ * the reference model gsi1fp --fpu-vec (sim/tb/su/fpu_vec.hex: op, rm, sat, a, b, c and
  * the reference result of the exact soft-float model).  One vector per
  * group, lane l gets the vector rotated by l (so every lane sees every
  * vector), a random EXEC mask; the result must come exactly SHORT_LAT

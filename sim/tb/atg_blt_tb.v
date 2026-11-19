@@ -7,7 +7,7 @@
 
 /*
  * atg_blt_tb: the blitter (atg_blt with MS4: the 2D engine and RESOLVE)
- * against tools/blt-vectors.py (sim/vec/blt.txt), with 32-byte and
+ * against blt-vectors (sim/vec/blt.txt), with 32-byte and
  * 64-byte (KC705) lines.  Each case starts from memory byte a of
  * 0x0000-0x7FFF = ((a >> 2) x 0x9E3779B1) >> 8 (a mod 4), writes the BLT
  * state, kicks and waits for done or error (its kind is checked); then

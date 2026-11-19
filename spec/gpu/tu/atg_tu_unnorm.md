@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_unnorm.v`.  Parent: atg_tu_tcrd.
 
 ## 1. Purpose and place
 
-An unnormalized coordinate floor(u × 256) clamped to [−2^28, 2^28]; it replaces the function `tu_unnorm` of include/atg_tu_fn.vh (tools/tumodel.py unnorm_c).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+An unnormalized coordinate floor(u × 256) clamped to [−2^28, 2^28]; it replaces the function `tu_unnorm` of include/atg_tu_fn.vh (the reference model tumodel unnorm_c).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ The module against the former function on 300,000 random inputs, 0 errors (2026-
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

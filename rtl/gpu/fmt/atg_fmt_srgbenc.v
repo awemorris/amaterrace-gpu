@@ -20,7 +20,7 @@
  * i_valid/i_ready: one component, taken in IDLE.  o_valid/o_ready: the
  * code, held until taken: o_valid comes 9 cycles after the accept (eight
  * steps), one component at a time.
- * spec/gpu/fmt/atg_fmt_srgbenc.md; tools/fmtmodel.py (srgb_encode) is the
+ * spec/gpu/fmt/atg_fmt_srgbenc.md; mk/fmtmodel.py (srgb_encode) is the
  * reference.
  */
 

@@ -7,7 +7,7 @@
 
 /*
  * atg_cpu_core_tb: runs the RV32IM test programs of sim/tb/cpu/ (built by
- * tools/cpu-tests.sh; rv32i and rv32m are generated with their expected
+ * cpu-tests; rv32i and rv32m are generated with their expected
  * values by gen.py) on atg_cpu_core with a behavioural IMEM (synchronous
  * read, held while i_en is 0) and a data memory at 0x0002_0000.  A
  * program reports through TOHOST (0xF000_0000: 1 pass) or FAILHOST

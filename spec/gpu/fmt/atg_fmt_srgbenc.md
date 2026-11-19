@@ -46,7 +46,7 @@ o_valid 9 cycles after the accept; one component at a time (a caller with four c
 
 ## 8. What the TB checks
 
-`sim/tb/atg_fmt_srgbenc_tb.v` (sim/vec/fmt_srgbenc.txt from `tools/fmtmodel.py --vectors`) prints, in this order:
+`sim/tb/atg_fmt_srgbenc_tb.v` (sim/vec/fmt_srgbenc.txt from `mk/fmtmodel.py --vectors`) prints, in this order:
 
 - `PASS atg_fmt_srgbenc.exhaustive` — every threshold and the fp32 on each side, every decoded code, the specials (0, -0, 1, +infinity, NaN, -1, values above 1) and random values in [2^-37, 1), with random gaps and o_ready; each code in order, o_valid 9 cycles after the accept, i_ready low while one is in flight
 - `PASS atg_fmt_srgbenc` at the end.

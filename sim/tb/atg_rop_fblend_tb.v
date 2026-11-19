@@ -6,8 +6,8 @@
  */
 
 /*
- * atg_rop_fblend_tb: atg_rop_fblend against the model of tools/rxmodel.py
- * (fblend_lane; sim/vec/rop_fblend.txt from tools/rop-vectors.py): beats of
+ * atg_rop_fblend_tb: atg_rop_fblend against the model of the reference model rxmodel
+ * (fblend_lane; sim/vec/rop_fblend.txt from rop-vectors): beats of
  * the seven formats (and one the path does not have) with random BLEND
  * words (every op and factor), constants, write masks, lanes and sources
  * with specials ("ops"), and the sRGB formats with ZERO x source + ONE x

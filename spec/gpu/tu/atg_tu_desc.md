@@ -43,7 +43,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 - A write of TEX_SIZE, TEX_IMAGE, TEX_FORMAT or TEX_ROW marks the slot.  One slot at a time, the lowest marked first, its offsets of levels 1-12 are computed again, one level a cycle: O_0 = 0, O_{l+1} = O_l + P_l × D_l (32-bit wrap), P_l = the plane of level l rounded up to a multiple of 64 (linear r_l × h_l × ps, r_l = w_l rounded up to a multiple of 2^TEX_ROW[1:0] (17 bits: 65535 rounds to 65536), w_l for tiled, compressed and multisampled slots, ps the texel's bytes of the format (`include/atg_tu_fmt.vh`: 1-16 for TEX_FORMAT's formats; 4, or 2 for the earlier RGB565 code), tiled (only 4-byte texels and the earlier RGB565) ceil(w_l / 4) × ceil(h_l / 4) × 16 ps, compressed blocks (ETC2, EAC) ceil(w_l / 4) × ceil(h_l / 4) × the block's bytes, w_l = max(1, w >> l), h_l likewise), D_l = max(1, count >> l) for the view type 3D as written (TEX_IMAGE[11:9] = 2), 1 otherwise.  The offsets are kept as bits 31:6.
 - A write to a slot while it is computed marks it again (it is computed once more).
 - The read port is combinational; atg_tu_addr reads its quad's slot (tx_slot in IDLE).
-- The reference is `tools/tumodel.py` (`plane`, `level_offset`).
+- The reference is `tumodel` (`plane`, `level_offset`).
 
 ## 5. State machine
 

@@ -84,7 +84,7 @@ None beyond the above.
 `sim/tb/atg_rop_ds_tb.v` prints, in this order:
 
 - `PASS atg_rop_ds.funcs` — all 8 depth functions
-- `PASS atg_rop_ds.stencil` — (CAPS[30], `sim/vec/rop_ds2.txt` from `tools/rop-vectors.py`) D24S8 runs with the stencil test and ops, random faces per quad, the buffer at the end
+- `PASS atg_rop_ds.stencil` — (CAPS[30], `sim/vec/rop_ds2.txt` from `rop-vectors`) D24S8 runs with the stencil test and ops, random faces per quad, the buffer at the end
 - `PASS atg_rop_ds.raw` — overlapping quads in order
 - `PASS atg_rop_ds.d16` — D16 runs (2-byte pixels)
 - `PASS atg_rop_ds.bounds` — the depth bounds of the three formats

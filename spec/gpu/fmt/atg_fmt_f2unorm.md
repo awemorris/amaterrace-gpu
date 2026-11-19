@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-RNE(clamp01(f) × (2^w − 1)): NaN, negative values (−0 included) and values below 2^−24 give 0, values ≥ 1 and +infinity 2^w − 1.  The product is (m << w) − m for the mantissa m = 1.f (am_shift, am_sub), shifted right by 150 − e (am_shift) and rounded to nearest even (am_add).  `tools/fmtmodel.py` (pack) is the reference.
+RNE(clamp01(f) × (2^w − 1)): NaN, negative values (−0 included) and values below 2^−24 give 0, values ≥ 1 and +infinity 2^w − 1.  The product is (m << w) − m for the mantissa m = 1.f (am_shift, am_sub), shifted right by 150 − e (am_shift) and rounded to nearest even (am_add).  `mk/fmtmodel.py` (pack) is the reference.
 
 ## 5. State machine
 

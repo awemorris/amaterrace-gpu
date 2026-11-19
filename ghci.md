@@ -141,9 +141,9 @@ earlier work has completed.
 - [`include/ghci_packets.h`](include/ghci_packets.h) and
   [`include/ghci_frame.h`](include/ghci_frame.h) hold the packet formats
   of section 7.
-- `tools/gsi1asm.py`, `tools/gsi1dis.py`, `tools/gsi1model.py` and
-  `tools/gsi1fp.py` are the reference assembler, disassembler, execution
-  model and arithmetic of the shader ISA.
+- `mk/gsi1asm.py`, `mk/gsi1dis.py`, and the reference execution and
+  bit-exact arithmetic models (`gsi1model` and `gsi1fp`) cover the
+  shader ISA.
 
 2. Conventions
 --------------
@@ -2076,10 +2076,10 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA`, legacy GSI1 CAPS[29]).
   - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`, legacy GSI1 CAPS[30]).
   - Systolic-array instructions (legacy `rq`, `sactl`): legacy GSI1 CAPS[25] reserved (reads 0 in GHCI 1.0; executing these instructions raises `GHCI_FAULT_KIND_INVALID_OP`). Special operands 126..127 are reserved (read 0).
-- Reference implementation: `tools/gsi1asm.py` (the assembler and the
-  decode table), `tools/gsi1dis.py` (the disassembler),
-  `tools/gsi1model.py` (the execution model) and
-  `tools/gsi1fp.py` (the arithmetic, bit for bit).
+- Reference implementation: `mk/gsi1asm.py` (the assembler and the
+  decode table), `mk/gsi1dis.py` (the disassembler), together with the
+  reference execution model (`gsi1model`) and bit-exact arithmetic model
+  (`gsi1fp`).
 
 ### 12.2 Execution model
 

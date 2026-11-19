@@ -78,7 +78,7 @@ Two instances (NATOM 2; 32-byte and 64-byte lines) in front of sim/models/amb_me
 - `PASS atg_mc_atom.multi` — both requesters on 8 shared words in two lines, mostly offering the next request as soon as one is taken: each response goes to its requester with the old value of the order of taking, and when both are valid the other one than last time is taken (round-robin)
 - `PASS atg_mc_atom` at the end.
 
-The SU's atomics through this unit (behind am_amb_mux, sharing the D$'s memory) are checked by `sim/tb/atg_su_tb.v` (programs mem.s and reduce.s against tools/gsi1model.py).
+The SU's atomics through this unit (behind am_amb_mux, sharing the D$'s memory) are checked by `sim/tb/atg_su_tb.v` (programs mem.s and reduce.s against gsi1model).
 
 ## 9. References
 

@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_fx32.v`.  Parent: atg_tu_lod (the lanes' coordinates), a
 
 ## 1. Purpose and place
 
-floor(f × 2^sh) saturated to 32 bits; it replaces the function `tu_fx32` of include/atg_tu_fn.vh (tools/tumodel.py fx32).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+floor(f × 2^sh) saturated to 32 bits; it replaces the function `tu_fx32` of include/atg_tu_fn.vh (the reference model tumodel fx32).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ The module against the former function on 1,000,000 random inputs (fp32 near 1 t
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

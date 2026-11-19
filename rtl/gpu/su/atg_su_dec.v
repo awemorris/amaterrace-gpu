@@ -14,7 +14,7 @@
  * d_* -> u_*: one pipeline register with valid/ready (d_ready when the
  * register is empty or u_ready takes it).  An undefined or disallowed
  * instruction gives a uop with only ILL set (unit NONE); atg_su_sb faults
- * on it.  The op codes are those of include/atg_su_uop.vh; tools/gsi1asm.py
+ * on it.  The op codes are those of include/atg_su_uop.vh; mk/gsi1asm.py
  * holds the same table (its --dec-table output is this module's reference).
  * The opcode table is in the children atg_su_dec_tab and atg_su_dec_tabc.
  */

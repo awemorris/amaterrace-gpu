@@ -4,7 +4,7 @@ RTL: `rtl/gpu/su/atg_su_pk_half.v`.  Parent: atg_su_pk (two per lane: the low an
 
 ## 1. Purpose and place
 
-One 16-bit half of a lane of the packed unit: packh's fp32 to fp16 of one source and, with ARITH, the per-half packed operation.  It replaces the functions `atg_su_hfma` and `atg_su_f2h` of include/atg_su_fp16.vh and atg_su_pk's function `half`, written with the shared arithmetic (docs/style.md, "Arithmetic").  Reference: tools/gsi1fp.py.
+One 16-bit half of a lane of the packed unit: packh's fp32 to fp16 of one source and, with ARITH, the per-half packed operation.  It replaces the functions `atg_su_hfma` and `atg_su_f2h` of include/atg_su_fp16.vh and atg_su_pk's function `half`, written with the shared arithmetic (docs/style.md, "Arithmetic").  Reference: the reference model gsi1fp.
 
 ## 2. Parameters
 
@@ -48,7 +48,7 @@ None beyond 4.
 
 ## 9. References
 
-`spec/gpu/su/atg_su_pk.md`, `spec/gpu/su/atg_su_hrnd.md`, design §3.4.1, tools/gsi1fp.py.
+`spec/gpu/su/atg_su_pk.md`, `spec/gpu/su/atg_su_hrnd.md`, design §3.4.1, the reference model gsi1fp.
 
 ## 10. Status
 

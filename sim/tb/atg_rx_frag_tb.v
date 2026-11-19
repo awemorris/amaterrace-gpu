@@ -7,7 +7,7 @@
 
 /*
  * atg_rx_frag_tb: atg_rx_frag with the set-up triangles and their covered
- * quads of sim/vec/rx_frag.txt (tools/rx-vectors.py: clip-space triangles
+ * quads of sim/vec/rx_frag.txt (rx-vectors: clip-space triangles
  * through the model's setup, VARYING_COUNT 0, 1, 4 and 32; the testbench
  * gives triangles 5, 13, ... 64 words and 7, 15, ... 200, read as 64), a PT
  * model (word w of entry e reads {e, w, 0xC0DE}, one cycle after pt_rd), an SU
@@ -20,8 +20,8 @@
  *           the model's bit for bit, then fl_go with the quads' EXEC, the
  *           coverage, a new sequence number and the facing.  One
  *           sample (MS_CTRL 0): r6 = the lane's coverage bit.
- *   ms    — sim/vec/rx_frag_ms.txt (tools/rx-msaa-vectors.py from
- *           tools/msmodel.py): 4 samples (fq_scov, fq_ccov), with and
+ *   ms    — sim/vec/rx_frag_ms.txt (rx-msaa-vectors from
+ *           the reference model msmodel): 4 samples (fq_scov, fq_ccov), with and
  *           without CENTROID, and one sample with CENTROID: r0-r6 (r3 not
  *           clamped with 4 samples) and r7-r9, and with 4 samples the
  *           triangle's d_s as table words 0xFF8-0xFFB after the map of

@@ -15,7 +15,7 @@
 # and OUTDIR/link.flags: what a C++ linker needs after the program's
 # objects.  The firmware images are read when the model starts, from this
 # tree (their absolute paths are in the build).  Prints "PASS link-build" on success.  Needs verilator and a
-# C++ compiler, and the images of tools/fw-build.sh.  Timeout: 1200 s for
+# C++ compiler, and the images of fw/cp/Makefile.  Timeout: 1200 s for
 # the Verilator build.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu

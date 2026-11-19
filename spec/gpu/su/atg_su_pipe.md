@@ -75,4 +75,4 @@ Verification is performed via:
 - `sim/tb/atg_su_pipe_real_tb.v`: Real pipeline 6-cycle fixed latency, 1-op/cycle throughput, and pipeline stall/freeze behavior under `en = 0`.
 - `sim/tb/atg_su_alu_tb.v`: Arithmetic, logical, shift, and compare correctness across all operations.
 - `sim/tb/atg_su_fpu_tb.v`: Full IEEE-754 single-precision and packed half-precision floating-point compliance on 6,000 reference test vectors.
-- Arithmetic lint: 0 operators outside `rtl/library/arith/` (checked with `tools/arith-lint.py`).
+- Arithmetic lint: 0 operators outside `rtl/library/arith/` (checked with `arith-lint`).

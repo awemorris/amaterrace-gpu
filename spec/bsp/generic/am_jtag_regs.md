@@ -62,7 +62,7 @@ gclk side: IDLE →(request toggle seen)→ WAIT_BUS →(!bus_busy)→ ACCESS (o
 
 ## 6. Latency and throughput
 
-One register access per scan pair; the host tool (plan/tools/kc705/jtag-reg.sh) is the bottleneck (milliseconds).
+One register access per scan pair; the host tool (the host tool jtag-reg) is the bottleneck (milliseconds).
 
 ## 7. Corner cases and errors
 

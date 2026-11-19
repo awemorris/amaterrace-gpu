@@ -59,7 +59,7 @@ In compliance with `plan/guardrail.md` and `plan/ws002/phase009/phase.md`:
 - Signal arithmetic operators (`+`, `-`, `*`) are strictly forbidden outside `rtl/library/arith/`.
 - Multiplications $Z \times \text{slice\_stride}$ and $Y \times \text{row\_stride}$ are calculated using `am_mul` instances directly mapped to Kintex-7 DSP48E1 slices.
 - Address summations and counter increments strictly instantiate `am_add`.
-- `tools/arith-lint.py` enforces 0 violations.
+- `arith-lint` enforces 0 violations.
 
 ## 5. State Machine
 
@@ -141,4 +141,4 @@ Amaterrace GPU supports dedicated asynchronous command queues (`VK_QUEUE_TRANSFE
 
 ## 9. Status
 
-Complete; passes `tools/arith-lint.py` (0 violations) and `sim/run.sh atg_blt_async`.
+Complete; passes `arith-lint` (0 violations) and `sim/run.sh atg_blt_async`.

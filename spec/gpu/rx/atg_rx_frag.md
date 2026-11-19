@@ -74,7 +74,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
   - with CENTROID, r7-r9 = b0, b1, b2 at the centroid: the centre when fq_ccov's bit is set or the lane has no sample, else at the covered sample of the lowest index (`atg_rx_bary` with the sample's offset: i, j plus multiples of 1/8, exact), a second pass for a quad that has such a lane.
   The registers go out lane by lane (r0 to r6 or r9), quad by quad; then fl_go with a new sequence number.
 - Four samples: before the first warp's copy of a triangle, d_s = Az dx_s + Bz dy_s (`atg_rx_bary`, once per triangle: reset at t_load); every warp's copy ends with the 4 words at 0xFF8-0xFFB after the map.
-- tools/rxmodel.py (`warps`, `frag_lane`) is the reference.
+- the reference model rxmodel (`warps`, `frag_lane`) is the reference.
 
 ## 5. State machine
 
@@ -95,9 +95,9 @@ About 200 cycles per quad plus 3 × VARYING_COUNT + 2 cycles per warp; one quad 
 `sim/tb/atg_rx_frag_tb.v` prints, in this order:
 
 - `PASS atg_rx_frag.copy` — per warp the 3 × VARYING_COUNT table writes from the PT and the map, after the grant, with pt_busy; VARYING_COUNT of the file (0, 1, 4, 32) and, from the testbench, 64 and 200 (read as 64)
-- `PASS atg_rx_frag.warps` — the warps of sim/vec/rx_frag.txt (tools/rx-vectors.py, unchanged by the multisampling work): r0-r5 of every lane bit for bit and r6 the lane's coverage bit, fl_go with EXEC, coverage, sequence number and facing
-- `PASS atg_rx_frag.ms` — sim/vec/rx_frag_ms.txt (tools/rx-msaa-vectors.py, tools/msmodel.py): 4 samples with and without CENTROID and 1 sample with it: r0-r9, the d_s words after the map; `-DMUT_R3_CLAMP` and `-DMUT_DZ_SIGN` (in atg_rx_bary) fail it
-- `PASS atg_rx_frag.r3` — (CAPS[30]) sim/vec/rx_frag_dc.txt (tools/rx-vectors.py): the warps of 20 more triangles with depths in [-0.5, 1.5] and DEPTH_CLAMP[1]: r3 not clamped; `-DMUT_RX_DCLIP` fails it
+- `PASS atg_rx_frag.warps` — the warps of sim/vec/rx_frag.txt (rx-vectors, unchanged by the multisampling work): r0-r5 of every lane bit for bit and r6 the lane's coverage bit, fl_go with EXEC, coverage, sequence number and facing
+- `PASS atg_rx_frag.ms` — sim/vec/rx_frag_ms.txt (rx-msaa-vectors, the reference model msmodel): 4 samples with and without CENTROID and 1 sample with it: r0-r9, the d_s words after the map; `-DMUT_R3_CLAMP` and `-DMUT_DZ_SIGN` (in atg_rx_bary) fail it
+- `PASS atg_rx_frag.r3` — (CAPS[30]) sim/vec/rx_frag_dc.txt (rx-vectors): the warps of 20 more triangles with depths in [-0.5, 1.5] and DEPTH_CLAMP[1]: r3 not clamped; `-DMUT_RX_DCLIP` fails it
 - `PASS atg_rx_frag` at the end.
 
 ## 9. References

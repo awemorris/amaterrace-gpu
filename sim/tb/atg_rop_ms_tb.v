@@ -9,7 +9,7 @@
  * atg_rop_ms_tb: the render output with multisampling: atg_rop as a whole
  * (atg_rop_order, atg_rop_ms, atg_rop_ds, atg_rop_wb, atg_rop_blend)
  * against amb_mem and the reference model (sim/vec/rop_ms.txt from
- * tools/rx-msaa-vectors.py, tools/msmodel.py rop_quad_ms), in the two line
+ * rx-msaa-vectors, the reference model msmodel rop_quad_ms), in the two line
  * sizes at once.  Per run: the STATE (MS_CTRL, DEPTH, RT_FORMAT, BLEND,
  * WRITE_MASK, DEBUG_COLOR; the RT and DS of a 16x8 image in the
  * sample-interleaved layout), the RT and DS images, 60 quads in sequence

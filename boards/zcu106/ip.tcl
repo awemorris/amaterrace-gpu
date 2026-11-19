@@ -12,7 +12,7 @@
 #                       - pl_ps_irq0: PL-to-PS level-sensitive interrupt
 #
 # Every core is generated (instantiation template, synthesis) and
-# synthesised out of context (synth_ip), so that tools/vivado-build.tcl
+# synthesised out of context (synth_ip), so that mk/vivado-build.tcl
 # reads OUT/*/*.xci. NAMES (optional, after OUT) makes only those.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 

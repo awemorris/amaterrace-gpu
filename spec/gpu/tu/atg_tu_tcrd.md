@@ -36,7 +36,7 @@ atg_tu_addr's former and new versions on 100,000 random cycles (2026-10-25); sim
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

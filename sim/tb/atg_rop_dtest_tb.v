@@ -7,7 +7,7 @@
 
 /*
  * atg_rop_dtest_tb: atg_rop_dtest (combinational) against the model of
- * tools/rxmodel.py (dtest; sim/vec/rop_dtest.txt from tools/rop-vectors.py):
+ * the reference model rxmodel (dtest; sim/vec/rop_dtest.txt from rop-vectors):
  * D24S8 with the stencil test (every op and compare op, both faces, random
  * masks and references, the clamp and wrap edges), D16 (codes next to the
  * new depth's), depth bounds of the three formats (at the bounds, NaN), and

@@ -272,9 +272,8 @@ make oxc           # Run openXC7 (Yosys + nextpnr) open-source FPGA flow
 
 ### Verification & Linting Tools
 
-- **Verilator Lint:** `tools/lint.sh` enforces strict `-Wall -lint-only` compliance with **0 warnings**.
-- **Arithmetic Linter:** `python3 tools/arith-lint.py` verifies that all signal arithmetic operators (`+`, `-`, `*`, etc.) remain strictly confined to `rtl/library/arith/`, guaranteeing DSP primitive mapping and 0 bare operators.
-- **Golden Reference Models:** Reference simulators for rasterization, barycentric interpolation, texture filtering, and floating-point arithmetic are located under `tools/`.
+- **Verilator Lint:** `mk/lint.sh` enforces strict `-Wall -lint-only` compliance with **0 warnings**.
+- **Arithmetic Linter:** Verification ensures all signal arithmetic operators (`+`, `-`, `*`, etc.) remain strictly confined to `rtl/library/arith/`, guaranteeing DSP primitive mapping and 0 bare operators.
 - **Diagram Verification:** `python3 docs/svg/generate_svgs.py` generates and validates all architecture SVG diagrams with 100% compliant XML parsing.
 
 ### FPGA Synthesis & Timing Results (Minimal Preset)
@@ -376,13 +375,12 @@ amaterrace-gpu/
 │   └── svg/                      # Vector Architecture & Datapath Diagrams (11 SVGs)
 ├── fw/cp/                        # Command Processor Firmware (C / Assembly for RV32IM)
 ├── include/                      # Shared RTL Verilog Headers & C Definitions
-├── plan/                         # Awesome Plan Local-Only Project Management Records
+├── mk/                           # Build, Linting, Configuration, and Firmware Tools
 ├── sim/                          # Testbenches & Simulation Harnesses
 │   ├── tb/                       # Directed Unit Testbenches (Icarus Verilog)
 │   ├── verilator/                # Full-System C++ Cycle-Accurate Verilator Harness
 │   └── vectors/                  # Golden Test Vectors & Geometry Datasets
-├── spec/                         # Formal Module Specifications (One per RTL module)
-└── tools/                        # Compilers, Linters, and Golden Reference Simulators
+└── spec/                         # Formal Module Specifications (One per RTL module)
 ```
 
 ---

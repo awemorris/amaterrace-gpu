@@ -8,7 +8,7 @@
 /*
  * atg_top_msaa_tb: 4x multisampling through the whole pipeline (HAS_VF,
  * NSU 1, HAS_RX, HAS_TU, HAS_ROP, MS4): the ring runs
- * sim/vec/msaa_scene.txt (tools/rx-msaa-scene.py: fourteen cases on 16x12
+ * sim/vec/msaa_scene.txt (rx-msaa-scene: fourteen cases on 16x12
  * images in the sample-interleaved layout: a fan of triangles sharing
  * edges with additive blend, triangles crossing in depth (D32F), alpha to
  * coverage and alpha to one, SAMPLE_MASK exported twice (the last wins)

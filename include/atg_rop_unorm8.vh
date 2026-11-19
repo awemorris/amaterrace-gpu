@@ -7,7 +7,7 @@
 
 /*
  * atg_rop_unorm8.vh: c -> fp32(c / 255), round to nearest even, written
- * by tools/rx-ucode.py (do not edit).
+ * by rx-ucode (do not edit).
  */
 
 function [31:0] atg_rop_unorm8;

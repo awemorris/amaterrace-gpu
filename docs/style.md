@@ -32,7 +32,7 @@ Verilog
   and `rtl/bsp/xilinx7/`.
 - Register offsets and fields come from `include/ghci_regs.vh`, never as
   bare numbers.
-- Lint clean: `tools/lint.sh` reports no warning.  An unavoidable warning
+- Lint clean: `mk/lint.sh` reports no warning.  An unavoidable warning
   (an unused bit of a bus, a constant truncated on purpose) is silenced
   locally: unused bits are collected in a wire named `unused_ok` (Verilator
   ignores names with "unused"), a deliberate truncation is wrapped in
@@ -92,7 +92,7 @@ a carry chain) where it can be checked once.
   by a constant amount, and `*`, `/` or `%` by a constant power of two;
   testbenches and `sim/`.  The comparisons (`<`, `==`, ...) are not
   arithmetic in this rule.
-- `tools/arith-lint.py` counts the signal arithmetic outside `rtl/library/arith/`
+- The arithmetic linter (`arith-lint`) counts the signal arithmetic outside `rtl/library/arith/`
   in the elaborated design (Verilator); it reports 0 when the rule holds.
   A file that must keep its arithmetic is listed in the script's exception
   table with the reason, and here.

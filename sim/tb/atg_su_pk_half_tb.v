@@ -9,7 +9,7 @@
  * atg_su_pk_half_tb: atg_su_pk_half (ARITH 1 FP 1, ARITH 1 FP 0 and
  * ARITH 0) against the testbench's own reference: the former functions
  * atg_su_hrnd, atg_su_hfma and atg_su_f2h of include/atg_su_fp16.vh and
- * atg_su_pk's former function half (tools/gsi1fp.py).  Every operation
+ * atg_su_pk's former function half (the reference model gsi1fp).  Every operation
  * and rounding mode on random halves whose exponents are chosen to reach
  * every alignment of the fma (the addend far above, near, below and far
  * below the product), cancellations (a - a, a * b - a * b's neighbours),

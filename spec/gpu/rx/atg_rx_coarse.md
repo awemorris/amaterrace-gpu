@@ -60,4 +60,4 @@ At tile origin edge value $E_{tl}$:
 
 ## 4. Verification & Constraints
 - Verilog-2005 compliant.
-- Raw arithmetic operators prohibited outside `rtl/library/arith/` (checked via `tools/arith-lint.py`).
+- Raw arithmetic operators prohibited outside `rtl/library/arith/` (checked via `arith-lint`).

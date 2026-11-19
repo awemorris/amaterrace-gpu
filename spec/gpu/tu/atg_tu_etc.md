@@ -40,11 +40,11 @@ Four stages (p038): E0 the block's words (the colour block's word chosen); E1 th
 ## 7. Corner cases and errors
 
 - i_fmt 10-15: the output is (0, 0, 0, 0) with kind 0.
-- The bit layouts, the mode selection, the modifier, distance and EAC tables and the punch-through rules were taken from the Khronos Data Format Specification's ETC2 text (the asciidoc source, 2026-10-25); `tools/etcmodel.py --selftest` checks the specification's worked examples (the planar block's 16 texels, T and H paint colours, the EAC alpha, R11 with multiplier 0, signed R11).
+- The bit layouts, the mode selection, the modifier, distance and EAC tables and the punch-through rules were taken from the Khronos Data Format Specification's ETC2 text (the asciidoc source, 2026-10-25); `the reference model etcmodel --selftest` checks the specification's worked examples (the planar block's 16 texels, T and H paint colours, the EAC alpha, R11 with multiplier 0, signed R11).
 
 ## 8. What the TB checks
 
-`sim/tb/atg_tu_etc_tb.v` (vectors from `tools/etcmodel.py`) prints, in this order:
+`sim/tb/atg_tu_etc_tb.v` (vectors from `etcmodel`) prints, in this order:
 
 - `PASS atg_tu_etc.modes` — hand-made blocks of every colour mode, punch-through and EAC rule, every texel
 - `PASS atg_tu_etc.random` — random blocks of every format against the model

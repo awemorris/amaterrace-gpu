@@ -6,7 +6,7 @@
  */
 
 /*
- * atg_fmt_lint.v: a lint-only top (tools/lint.sh) that calls the format
+ * atg_fmt_lint.v: a lint-only top (mk/lint.sh) that calls the format
  * functions of include/atg_fmt_info.vh for any format value, so Verilator
  * checks them (the conversions are the modules of rtl/gpu/fmt).
  * Never used for simulation or synthesis.

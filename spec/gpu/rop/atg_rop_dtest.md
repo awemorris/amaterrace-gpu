@@ -59,7 +59,7 @@ Combinational; atg_rop_ds registers around it (it tests 2 or 8 entries per cycle
 
 ## 8. What the TB checks
 
-`sim/tb/atg_rop_dtest_tb.v` (vectors from `tools/rxmodel.py`) prints, in this order:
+`sim/tb/atg_rop_dtest_tb.v` (vectors from `rxmodel`) prints, in this order:
 
 - `PASS atg_rop_dtest.stencil` — the 8 ops × 8 compare ops × front/back × random masks and references against the model
 - `PASS atg_rop_dtest.d16` — D16 compare and write, the RNE and saturation
@@ -75,7 +75,7 @@ docs/ghci.md §8.5 (ROP range, the per-sample operations), `spec/gpu/rop/atg_rop
 
 ## 10. Status
 
-Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_dtest.txt` from `tools/rop-vectors.py`, the model `dtest` in `tools/rxmodel.py`); `-DMUT_STENCIL_FACE` and `-DMUT_STENCIL_WRAP` fail `.stencil` (and the sections with a stencil).  wword's bytes outside wbe are unspecified (the TB compares the enabled ones).
+Implemented 2026-10-25: every PASS of §8 (`sim/vec/rop_dtest.txt` from `rop-vectors`, the model `dtest` in `rxmodel`); `-DMUT_STENCIL_FACE` and `-DMUT_STENCIL_WRAP` fail `.stencil` (and the sections with a stencil).  wword's bytes outside wbe are unspecified (the TB compares the enabled ones).
 
 2026-10-25 (p037, P1): the D24 conversion and the D32F keys are instances of atg_fmt_depth_u24 and atg_fmt_depth_key (the shared arithmetic, docs/style.md); the behaviour is unchanged (the old module and the new one compared on 200,000 random inputs).
 

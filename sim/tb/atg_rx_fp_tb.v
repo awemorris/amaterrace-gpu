@@ -7,7 +7,7 @@
 
 /*
  * atg_rx_fp_tb: atg_rx_fadd, atg_rx_fmul and atg_rx_fdiv against the
- * reference model's results (sim/vec/rx_fp.hex from tools/rx-vectors.py:
+ * reference model's results (sim/vec/rx_fp.hex from rx-vectors:
  * random operands, special values, near cancellation, overflow and
  * underflow).  The adder and the multiplier get one operation per cycle
  * (their pipelines full); the divider one at a time.

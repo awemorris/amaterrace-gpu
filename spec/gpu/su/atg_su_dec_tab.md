@@ -54,11 +54,11 @@ Undefined combinations give def = 0.
 
 ## 8. What the TB checks
 
-No testbench of its own: covered by `sim/tb/atg_su_dec_tb.v` (every table entry) and `tools/lint.sh`.
+No testbench of its own: covered by `sim/tb/atg_su_dec_tb.v` (every table entry) and `mk/lint.sh`.
 
 ## 9. References
 
-design §3.4.1, §3.4.2; include/atg_su_uop.vh; tools/gsi1asm.py (the same table).
+design §3.4.1, §3.4.2; include/atg_su_uop.vh; mk/gsi1asm.py (the same table).
 
 ## 10. Status
 

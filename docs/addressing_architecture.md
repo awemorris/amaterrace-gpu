@@ -175,11 +175,11 @@ $$\text{Address}[63:0] = \{ r[2k+1][31:0],\; r[2k][31:0] \}$$
 `define CFG_PPN_BITS         (`CFG_HOST_PA_BITS - 12) /* Physical Page Number width (28-bit) */
 ```
 
-### 5.2 `menuconfig` / ビルドシステム連携 (`tools/menuconfig.py`, `config.mk.template`, `Makefile`)
+### 5.2 `menuconfig` / ビルドシステム連携 (`mk/menuconfig.py`, `config.mk.template`, `Makefile`)
 
-TUI / CLI コンフィグレーションツール `tools/menuconfig.py`、プロジェクト設定テンプレート `config.mk.template`、およびビルドシステム `Makefile` に以下の項目を追加し、対話的設定および自動ヘッダ生成を行う。
+TUI / CLI コンフィグレーションツール `mk/menuconfig.py`、プロジェクト設定テンプレート `config.mk.template`、およびビルドシステム `Makefile` に以下の項目を追加し、対話的設定および自動ヘッダ生成を行う。
 
-#### 1. `tools/menuconfig.py` 項目定義
+#### 1. `mk/menuconfig.py` 項目定義
 
 **A. アドレス空間設定 (Section 5: CP & Memory)**:
 - **`CONFIG_GPU_VA_BITS`**:
@@ -377,7 +377,7 @@ module atg_top #(
 
 | フェーズ | 対象領域 | 主要タスク | 検証・ゲート基準 |
 |:---|:---|:---|:---|
-| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `tools/menuconfig.py` に `CONFIG_GPU_VA_BITS`, `CONFIG_HOST_PA_BITS` および各種テクスチャ圧縮・イメージ形式選択肢追加<br>- `config.mk.template` および `Makefile` への自動生成ルール追加<br>- `include/atg_config.vh` にアドレス幅・フォーマットマクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期 | - `python3 tools/menuconfig.py --show` 正当性確認<br>- `tools/arith-lint.py` 0 違反<br>- `tools/lint.sh` 全通過 |
+| **Phase A**<br>(基盤・設定) | コンフィグ & 定義層 | - `mk/menuconfig.py` に `CONFIG_GPU_VA_BITS`, `CONFIG_HOST_PA_BITS` および各種テクスチャ圧縮・イメージ形式選択肢追加<br>- `config.mk.template` および `Makefile` への自動生成ルール追加<br>- `include/atg_config.vh` にアドレス幅・フォーマットマクロ追加<br>- `docs/ghci.md` およびヘッダの PTE 定義同期 | - `python3 mk/menuconfig.py --show` 正当性確認<br>- `arith-lint` 0 違反<br>- `mk/lint.sh` 全通過 |
 | **Phase B**<br>(CP & ホスト DMA) | コマンドプロセッサ & PCIe | - `atg_cp_ring.v` の 64-bit PA フェッチ実装<br>- `atg_cp_fence.v` の 64-bit 書戻し対応<br>- `atg_kc705_pcie.v` の 64-bit AXI 接続拡張<br>- `ip.tcl` の 64-bit アドレス設定 | - `atg_kc705_pcie_tb` PASS<br>- 4 GiB 超高位アドレス DMA テスト PASS |
 | **Phase C**<br>(MMU & 内部 LSB 削減) | 仮想記憶 & バス層 | - `atg_mmu` 64-bit PTE 展開<br>- TLB CAM の VPN 幅（`VA_BITS-12`）最適化<br>- ワードバス（-2bit）/ ラインバス（-6bit）配線適用 | - `atg_mmu_tb`, `atg_top_tb` PASS<br>- 配線 LUT 使用量削減の確認 |
 | **Phase D**<br>(SU & パイプライン) | シェーダ & 固定機能 | - `atg_su_rf.v` 偶数レジスタペア読出し論理の検証<br>- LSU 64-bit ポインタ処理<br>- `atg_tu` / `atg_vf` アドレス幅追従 | - 全ユニットテスト・シーンテスト PASS<br>- Vivado 合成・インプリタイミング検証 |

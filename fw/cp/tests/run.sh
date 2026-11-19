@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds the CP firmware for the host (FW_HOST: the window and the DMA are
 # fwhost.c's) with the tests of fwtest.c and runs them, then the built-in
-# compute programs on tools/gsi1model.py (kernels.py); prints "PASS
+# compute programs on the reference model gsi1model (kernels.py); prints "PASS
 # fwtest.<case>" per case and "PASS fwtest", "PASS kernels.<name>" and
 # "PASS kernels"; exit status 1 on a failure.  Needs a host C compiler
 # (cc) and python3; the build goes to build/fw-host/.  About ten seconds.

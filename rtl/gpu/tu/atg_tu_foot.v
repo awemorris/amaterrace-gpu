@@ -7,7 +7,7 @@
 
 /*
  * atg_tu_foot: one lane's footprint (stage B of atg_tu_addr,
- * tools/tumodel.py lane_addr is the reference, bit for bit).
+ * the reference model tumodel lane_addr is the reference, bit for bit).
  *
  * Latency:
  * - LAT = 0: combinational

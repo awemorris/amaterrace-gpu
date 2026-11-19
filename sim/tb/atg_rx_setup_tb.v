@@ -9,12 +9,12 @@
  * atg_rx_setup_tb: 160 triangles (raw screen-space and clip-space ones
  * with weights; small, large and off-screen; scissor; every CULL value; a
  * zero-area one) through atg_rx_setup, the sp_tri compared with the
- * reference model's (sim/vec/rx_setup.txt from tools/rx-vectors.py) in
+ * reference model's (sim/vec/rx_setup.txt from rx-vectors) in
  * three groups: the edges and the bbox, the facing and culling, the
  * planes; the same comparison of all 768 bits (the kind 2 in [766:765])
  * is the vec-diff check that the CAPS[30] setup keeps the earlier
- * triangles bit for bit.  Then sim/vec/rx_setup2.txt (tools/rx-setup-
- * vectors.py, the model's setup2): lines, points, the viewport's rectangle
+ * triangles bit for bit.  Then sim/vec/rx_setup2.txt (the reference
+ * generator rx-setup-vectors, the model's setup2): lines, points, the viewport's rectangle
  * and depth bias, each with its STATE writes; every output (two for a line
  * or a point) and sp_last compared.  sp_ready is random.
  */

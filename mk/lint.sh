@@ -3,7 +3,7 @@
 # of rtl/ as its own top, and atg_top in its defaults (32-byte lines,
 # 64-bit AXI) and in the KC705's shapes (64-byte lines, 512-bit AXI, and
 # the block sets of design §3.6 and §7.6).  Exit status 1 on any warning.
-#   tools/lint.sh
+#   mk/lint.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 trap 'sync' EXIT

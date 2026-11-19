@@ -16,7 +16,7 @@ None.
 
 ## 4. Behaviour
 
-c / (2^w − 1) to the nearest fp32: the quotient is 0.ccc... in binary, so the leading 72 bits of c repeated (a case on w) give the mantissa after a shift by their leading zeros (am_shift), and the rounding is never a tie (am_add); the exponent is 126 − lz (127 − lz on a carry, am_sub).  0 gives +0.  `tools/fmtmodel.py` (unpack) is the reference.
+c / (2^w − 1) to the nearest fp32: the quotient is 0.ccc... in binary, so the leading 72 bits of c repeated (a case on w) give the mantissa after a shift by their leading zeros (am_shift), and the rounding is never a tie (am_add); the exponent is 126 − lz (127 − lz on a carry, am_sub).  0 gives +0.  `mk/fmtmodel.py` (unpack) is the reference.
 
 ## 5. State machine
 

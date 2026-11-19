@@ -4,7 +4,7 @@ RTL: `rtl/gpu/tu/atg_tu_layer.v`.  Parent: atg_tu_addr (a 2D array's layer).
 
 ## 1. Purpose and place
 
-Vulkan's layer clamp(RNE(f), 0, cnt − 1); it replaces the function `tu_layer` of include/atg_tu_fn.vh (tools/tumodel.py rne_layer).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
+Vulkan's layer clamp(RNE(f), 0, cnt − 1); it replaces the function `tu_layer` of include/atg_tu_fn.vh (the reference model tumodel rne_layer).  Written with the shared arithmetic (docs/style.md, "Arithmetic").
 
 ## 2. Parameters
 
@@ -36,7 +36,7 @@ The module against the former function on 1,000,000 random inputs, 0 errors (202
 
 ## 9. References
 
-`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, tools/tumodel.py.
+`spec/gpu/tu/atg_tu_addr.md`, `spec/gpu/tu/atg_tu_foot.md`, the reference model tumodel.
 
 ## 10. Status
 

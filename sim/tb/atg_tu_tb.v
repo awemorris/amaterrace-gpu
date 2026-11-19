@@ -7,8 +7,8 @@
 
 /*
  * atg_tu_tb: the whole TU (atg_tu: addressing, the cache on a memory
- * model, the 8-bit and the fp32 filter paths) against tools/tumodel.py
- * (sample; sim/vec/tu_quad.txt, tools/tu-vectors.py), with 32-byte and
+ * model, the 8-bit and the fp32 filter paths) against tumodel
+ * (sample; sim/vec/tu_quad.txt, tu-vectors), with 32-byte and
  * 64-byte (KC705) lines.  Memory word a is (a >> 2) x 0x9E3779B1; requests
  * are taken and answered after random delays.  The STATE writes go in
  * between quads (after the TU is idle); the quads go in back to back with

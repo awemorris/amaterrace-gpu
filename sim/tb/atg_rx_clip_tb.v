@@ -9,10 +9,10 @@
  * atg_rx_clip_tb: 60 primitives read from a PT model (all inside, all
  * outside, one and two vertices behind the near plane, random) and 4
  * DRAW_RAW triangles through atg_rx_clip; each cl_tri compared with the
- * reference model's (sim/vec/rx_clip.txt from tools/rx-vectors.py).
+ * reference model's (sim/vec/rx_clip.txt from rx-vectors).
  * pt_busy is random and no PT read may happen under it; cl_ready is
  * random.  Then the CAPS[30] cases of sim/vec/rx_clip2.txt (from
- * tools/rx-clip-vectors.py, the model's clip2): lines, points, DEPTH_CLAMP,
+ * rx-clip-vectors, the model's clip2): lines, points, DEPTH_CLAMP,
  * the w, far and guard-band planes, the last-use flags and rasterizer
  * discard, each with its STATE writes; every output word by word, the
  * kind included.

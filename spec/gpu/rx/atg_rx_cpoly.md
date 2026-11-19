@@ -37,7 +37,7 @@ Clock/reset domain: clk (gclk).  Resets are synchronous and active low.
 
 ## 4. Behaviour
 
-For each vertex the plane's distance (fp32) is computed; inside is dist ≥ 0 (-0 and denormals inside, NaN outside).  The polygon is replaced by Sutherland-Hodgman's: for each edge (p, q) (for a line only the one edge), p inside → p; exactly one of p, q inside → the intersection a + (b - a)·t, t = d_a / (d_a - d_b), from the inside vertex a to the outside one b, every one of the 7 words interpolated (so the weights stay relative to the original vertices).  A triangle's edges start at the first inside vertex after an outside one, a line's at vertex 0: one cut then gives the earlier near-plane clip's vertices, order and arithmetic bit for bit.  Distances of planes 3-6: x_off·w, x_scale·x, their sum, G·w, then G·w minus (3, 5) or plus (4, 6) the sum, in that order.  When every vertex is inside the polygon is unchanged and done comes after the distances; when every vertex is outside n_out = 0.  A triangle grows by at most one vertex per plane: 3 + 7 = 10.  The arithmetic is the RX's fp32 (atg_rx_fadd, atg_rx_fmul, atg_rx_fdiv: round to nearest even, denormals flushed; tools/rxmodel.py is the reference).
+For each vertex the plane's distance (fp32) is computed; inside is dist ≥ 0 (-0 and denormals inside, NaN outside).  The polygon is replaced by Sutherland-Hodgman's: for each edge (p, q) (for a line only the one edge), p inside → p; exactly one of p, q inside → the intersection a + (b - a)·t, t = d_a / (d_a - d_b), from the inside vertex a to the outside one b, every one of the 7 words interpolated (so the weights stay relative to the original vertices).  A triangle's edges start at the first inside vertex after an outside one, a line's at vertex 0: one cut then gives the earlier near-plane clip's vertices, order and arithmetic bit for bit.  Distances of planes 3-6: x_off·w, x_scale·x, their sum, G·w, then G·w minus (3, 5) or plus (4, 6) the sum, in that order.  When every vertex is inside the polygon is unchanged and done comes after the distances; when every vertex is outside n_out = 0.  A triangle grows by at most one vertex per plane: 3 + 7 = 10.  The arithmetic is the RX's fp32 (atg_rx_fadd, atg_rx_fmul, atg_rx_fdiv: round to nearest even, denormals flushed; the reference model rxmodel is the reference).
 
 ## 5. State machine
 
@@ -55,7 +55,7 @@ Distances: 1 fadd (planes 0, 2), none (1) or 3 fmul and 2 fadd (3-6) per vertex;
 
 ## 8. What the TB checks
 
-`sim/tb/atg_rx_cpoly_tb.v` (vectors from `tools/rxmodel.py`) prints, in this order:
+`sim/tb/atg_rx_cpoly_tb.v` (vectors from `rxmodel`) prints, in this order:
 
 - `PASS atg_rx_cpoly.planes` — each plane alone on random triangles against the model's polygon (vertex by vertex, word by word)
 - `PASS atg_rx_cpoly.seq` — the seven planes in order on triangles that cross several (up to 10 vertices)
@@ -68,4 +68,4 @@ Distances: 1 fadd (planes 0, 2), none (1) or 3 fmul and 2 fadd (3-6) per vertex;
 
 ## 10. Status
 
-Implemented 2026-10-25 (every PASS of §8).  The ports changed from the first text: one 224-bit vertex per ld and rd instead of one word (16 ports, not 18); the start of a triangle's edges and the order of the guard-band distance (§4) are fixed so that the model (`tools/rxmodel.py` clip_cut) and the RTL agree bit for bit.
+Implemented 2026-10-25 (every PASS of §8).  The ports changed from the first text: one 224-bit vertex per ld and rd instead of one word (16 ports, not 18); the start of a triangle's edges and the order of the guard-band distance (§4) are fixed so that the model (`rxmodel` clip_cut) and the RTL agree bit for bit.

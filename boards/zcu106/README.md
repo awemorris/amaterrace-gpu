@@ -76,6 +76,6 @@ Generation & Build
   ```
 - Top-level synthesis & implementation:
   ```sh
-  VIVADO_IP=OUT tools/vivado-build.sh zcu106 atg_zcu106_top
+  VIVADO_IP=OUT mk/vivado-build.sh zcu106 atg_zcu106_top
   ```
   *(Note: Vivado synthesis is not run during active runs of other agents)*

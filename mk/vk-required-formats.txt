@@ -5,7 +5,7 @@
 # 32-bit, 64-bit/uneven, Depth/Stencil and BCn/ETC2/ASTC formats, the marks
 # of Vulkan 1.0 only; later versions' rows and marks left out).  Values
 # referenced: Vulkan specification, VkFormat values and the Required Format
-# Support tables.  Read by tools/fmtmodel.py (--selftest, and --vectors for
+# Support tables.  Read by mk/fmtmodel.py (--selftest, and --vectors for
 # sim/vec/fmt_required.txt and sim/tb/atg_fmt_tb.v).
 #
 # Lines: VkFormat value, name, the required features:

@@ -9,7 +9,7 @@
  * atg_rx_scan_tb: 43 set-up triangles (large, small, slivers, empty and
  * off-screen ones on a 128x96 target) through atg_rx_scan with HAS_SU 0;
  * the direct quads (position, coverage, depth, last flag) compared with
- * the reference rasterizer (sim/vec/rx_scan.txt from tools/rx-vectors.py:
+ * the reference rasterizer (sim/vec/rx_scan.txt from rx-vectors:
  * top-left rule, exact edges, fp32 depth); one sequence number per
  * triangle with quads; pt_free once per flagged vertex of the non-raw
  * ones.  dx_ready is random.  HAS_SU 0: no quad goes to atg_rx_frag (fq_*).
@@ -17,8 +17,8 @@
  *   ms1x — the same triangles as non-raw ones with MS_CTRL 0: the quads
  *          with coverage, fq_scov bit 4 l = the lane's coverage, fq_ccov
  *          = the coverage (one sample: as before)
- *   ms   — sim/vec/rx_scan_ms.txt (tools/rx-msaa-vectors.py from
- *          tools/msmodel.py): 4 samples and 1, SAMPLE_KILL, shared edges
+ *   ms   — sim/vec/rx_scan_ms.txt (rx-msaa-vectors from
+ *          the reference model msmodel): 4 samples and 1, SAMPLE_KILL, shared edges
  *          through sample locations, a sliver across empty quads (the
  *          skip): fq_scov and fq_ccov of every quad with a sample.
  */

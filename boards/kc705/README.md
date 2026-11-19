@@ -25,10 +25,10 @@ The IP cores of the PCIe endpoint, the memory's AXI path and the MIG
 preset with the AXI interface) are generated and synthesised out of
 context by `ip.tcl` (`vivado -mode batch -source boards/kc705/ip.tcl
 -tclargs OUT [NAME...]`; not committed; Vivado 2026.1, 2026-10-25).
-Built with `VIVADO_IP=OUT tools/vivado-build.sh kc705 TOP` (part
+Built with `VIVADO_IP=OUT mk/vivado-build.sh kc705 TOP` (part
 xc7k325tffg900-2).  gclk is 1000 MHz / GCLK_DIVIDE (the board top's
 localparam; 50 for now, a placeholder until the timing work, p025).  Linted by
-`tools/lint.sh` and simulated by `sim/tb/atg_kc705_top_tb.v`, where `lib/atg_kc705_clk.v` and
+`mk/lint.sh` and simulated by `sim/tb/atg_kc705_top_tb.v`, where `lib/atg_kc705_clk.v` and
 `lib/atg_kc705_mig.v` are replaced by `sim/models/kc705/` (same names and
 ports) and the primitives by `sim/models/xilinx/`.  Not yet built or tried
 on the board.

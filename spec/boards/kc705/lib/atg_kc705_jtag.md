@@ -49,7 +49,7 @@ None beyond the above.
 
 ## 8. What the TB checks
 
-No unit testbench (wiring only): covered by `sim/tb/atg_kc705_top_tb.v` (through the BSCANE2 model) and `tools/lint.sh`; am_jtag_regs has its own.
+No unit testbench (wiring only): covered by `sim/tb/atg_kc705_top_tb.v` (through the BSCANE2 model) and `mk/lint.sh`; am_jtag_regs has its own.
 
 ## 9. References
 
