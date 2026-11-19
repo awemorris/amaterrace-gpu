@@ -401,8 +401,23 @@ assign step_tab_atn_lo[gsta] = step_tab_atan[gsta];
 		default:           nv_hi1 = {5'd0, cy[35:31]};
 		endcase
 	end
+	wire [40:0] nv_comb = {nv_hi1, nv_hi0, nv_lo1, nv_lo0};
+	wire [5:0] np_comb;
+	wire np_msb_nz_unused;
+	am_msb #(.W(41), .SW(6)) u_np_msb (.a(nv_comb), .n(np_comb), .nz(np_msb_nz_unused));
+
+	wire [15:0] fr_lo16 = {
+		fr[14], fr[15], fr[16], fr[17], fr[18], fr[19], fr[20], fr[21],
+		fr[22], fr[23], fr[24], fr[25], fr[26], fr[27], fr[28], fr[29]
+	};
+	wire [15:0] fr_hi16 = {
+		2'b00, fr[0], fr[1], fr[2], fr[3], fr[4], fr[5], fr[6],
+		fr[7], fr[8], fr[9], fr[10], fr[11], fr[12], fr[13]
+	};
+	wire fbit_comb = step_fbit_lo[4] ? fr_hi16[step_fbit_hi[3:0]] : fr_lo16[step_fbit_lo[3:0]];
+
 	always @(*) begin
-		nv = {nv_hi1, nv_hi0, nv_lo1, nv_lo0};
+		nv = nv_comb;
 		{ns, nst, nz, ne} = {3'b000, ex};
 		case (rop_fin_ctl)
 		ATG_XU_RCP[2:0]:   {ns, nst} = {ls_res, rem != 34'd0};
@@ -412,17 +427,8 @@ assign step_tab_atn_lo[gsta] = step_tab_atan[gsta];
 		ATG_XU_LOG2[2:0]:  {ns, ne, nz} = {lv[40], -12'sd30, lv == 41'd0};
 		default:           {ns, ne, nz} = {qneg, -12'sd34, cy <= 36'sd0};
 		endcase
-		np = 6'd0;
-		for (pi = 0; pi < 41; pi = pi + 1)
-			if (nv[pi])
-				np = pi[5:0];
-		fbit = 1'b0;
-		for (pi = 0; pi < 15; pi = pi + 1)
-			if (step_fbit_lo[4:0] == pi[4:0])
-				fbit = fr[29 - pi];
-		for (pi = 15; pi < 30; pi = pi + 1)
-			if (step_fbit_hi[4:0] == pi[4:0])
-				fbit = fr[29 - pi];
+		np = np_comb;
+		fbit = fbit_comb;
 	end
 	wire [5:0] nsh;
 	reg [5:0] nsh_r;
@@ -596,18 +602,14 @@ assign cx35_sh = cx[35];
 	wire sub_st_co_unused;
 	am_add #(.W(4)) u_sub_st (.a(sub_st), .b(4'd0), .ci(1'b1), .s(sub_st1), .co(sub_st_co_unused));
 
-	/* Sliced wide registers to bound CE fanout <= 16 */
-	wire idle_mine = (st == IDLE) && mine;
-	wire idle_mine_lane_lo, idle_mine_lane_hi, idle_mine_ctl;
-assign idle_mine_lane_lo = idle_mine;
-	assign idle_mine_lane_hi = idle_mine;
-	assign idle_mine_ctl     = idle_mine;
-
+	/* Replicated per-lane idle register to bound rx_we/rq_clr fanout <= 32 */
+	wire idle_mine_ctl = (st == IDLE) && mine;
+	(* keep = "true", dont_touch = "true" *) reg [NPHYS-1:0] st_idle_rep;
 
 	genvar gxl, gxh;
 	generate
 	for (gxl = 0; gxl < NPHYS; gxl = gxl + 1) begin : g_xu_lane_reg
-		wire im_lane = (gxl < 4) ? idle_mine_lane_lo : idle_mine_lane_hi;
+		wire im_lane = st_idle_rep[gxl] && mine;
 		for (gxh = 0; gxh < 2; gxh = gxh + 1) begin : g_xu_half
 			wire rx_we_h, rq_clr_h, rq_we_h;
 assign rx_we_h = im_lane;
@@ -1307,6 +1309,7 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 	always @(posedge clk or posedge rst_p) begin
 		if (rst_p) begin
 			st <= IDLE;
+			st_idle_rep <= {NPHYS{1'b1}};
 			sub_st <= 4'd0;
 			sub_st_load <= 4'd0;
 			sub_st_step <= 4'd0;
@@ -1376,6 +1379,7 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 			prod_r <= prod;
 			case (st)
 			IDLE: if (mine) begin
+				st_idle_rep <= {NPHYS{1'b0}};
 				sub_st <= 4'd0;
 				sub_st_load <= 4'd0;
 				sub_st_step <= 4'd0;
@@ -1505,8 +1509,10 @@ assign lue_we = (st == FIN) && (sub_st_fin == 4'd0);
 					st <= LOAD;
 				end
 			end
-			default: if (l_ready)
+			default: if (l_ready) begin
 				st <= IDLE;
+				st_idle_rep <= {NPHYS{1'b1}};
+			end
 			endcase
 		end
 	end
@@ -1527,7 +1533,8 @@ assign l_valid_buf = st == RET;
 
 	wire unused_ok = &{1'b0, x_pc, x_b, x_c, x_mask[2*NPHYS-1:NPHYS], x_info, x_uop,
 		snext, prod_r, tp_r[82:40], tps[82:40], y[41], esh_r[10:4], carry_unused[27],
-		sub_st_co_unused, step_end, nr_ep1_co_unused, nr_mp1_r[23], nw_r[40], nw_r[15:0], (NWARPS != 0)};
+		sub_st_co_unused, step_end, nr_ep1_co_unused, nr_mp1_r[23], nw_r[40], nw_r[15:0],
+		np_msb_nz_unused, step_fbit_hi[4], step_fbit_lo[3:0], (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

@@ -51,6 +51,8 @@ module atg_dc_hdr #(
 
 `ifdef SYNTH_KINTEX7
 	localparam HDR_LAT = 2;
+`elsif SYNTH_ASIC
+	localparam HDR_LAT = 2;
 `else
 	localparam HDR_LAT = 0;
 `endif
@@ -92,6 +94,29 @@ module atg_dc_hdr #(
 	wire [21:0] d_g0 = p_g0_q, d_g1 = p_g1_q, d_g2 = p_g2_q;
 	wire [21:0] d_b0 = p_b0_q, d_b1 = p_b1_q, d_b2 = p_b2_q;
 	wire [9:0]  d_in_r = in_r_q, d_in_g = in_g_q, d_in_b = in_b_q;
+`elsif SYNTH_ASIC
+	reg [9:0] in_r_q0, in_g_q0, in_b_q0;
+	reg hdr_en_q0;
+	reg [21:0] p_r0_q, p_r1_q, p_r2_q;
+	reg [21:0] p_g0_q, p_g1_q, p_g2_q;
+	reg [21:0] p_b0_q, p_b1_q, p_b2_q;
+	reg [9:0] in_r_q, in_g_q, in_b_q;
+	reg hdr_en_q;
+
+	always @(posedge pclk) begin
+		in_r_q0 <= in_r; in_g_q0 <= in_g; in_b_q0 <= in_b;
+		hdr_en_q0 <= hdr_en;
+		p_r0_q <= p_r0; p_r1_q <= p_r1; p_r2_q <= p_r2;
+		p_g0_q <= p_g0; p_g1_q <= p_g1; p_g2_q <= p_g2;
+		p_b0_q <= p_b0; p_b1_q <= p_b1; p_b2_q <= p_b2;
+		in_r_q <= in_r_q0; in_g_q <= in_g_q0; in_b_q <= in_b_q0;
+		hdr_en_q <= hdr_en_q0;
+	end
+
+	wire [21:0] d_r0 = p_r0_q, d_r1 = p_r1_q, d_r2 = p_r2_q;
+	wire [21:0] d_g0 = p_g0_q, d_g1 = p_g1_q, d_g2 = p_g2_q;
+	wire [21:0] d_b0 = p_b0_q, d_b1 = p_b1_q, d_b2 = p_b2_q;
+	wire [9:0]  d_in_r = in_r_q, d_in_g = in_g_q, d_in_b = in_b_q;
 `else
 	wire [21:0] d_r0 = p_r0, d_r1 = p_r1, d_r2 = p_r2;
 	wire [21:0] d_g0 = p_g0, d_g1 = p_g1, d_g2 = p_g2;
@@ -99,28 +124,40 @@ module atg_dc_hdr #(
 	wire [9:0]  d_in_r = in_r, d_in_g = in_g, d_in_b = in_b;
 `endif
 
+	/* 3:2 CSA + single 22-bit adder per channel */
 	/* verilator lint_off UNUSEDSIGNAL */
-	wire [21:0] sum_r01, sum_r;
+	wire [21:0] sum_r, sum_g, sum_b;
+	wire [21:0] csa_r_c = (d_r0 & d_r1) | (d_r0 & d_r2) | (d_r1 & d_r2);
+	wire [21:0] csa_g_c = (d_g0 & d_g1) | (d_g0 & d_g2) | (d_g1 & d_g2);
+	wire [21:0] csa_b_c = (d_b0 & d_b1) | (d_b0 & d_b2) | (d_b1 & d_b2);
 	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_r_unused;
-	am_add #(.W(22)) u_add_r01 (.a(d_r0), .b(d_r1), .ci(1'b0), .s(sum_r01), .co(co_r_unused[0]));
-	am_add #(.W(22)) u_add_r   (.a(sum_r01), .b(d_r2), .ci(1'b0), .s(sum_r), .co(co_r_unused[1]));
-
-	/* verilator lint_off UNUSEDSIGNAL */
-	wire [21:0] sum_g01, sum_g;
-	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_g_unused;
-	am_add #(.W(22)) u_add_g01 (.a(d_g0), .b(d_g1), .ci(1'b0), .s(sum_g01), .co(co_g_unused[0]));
-	am_add #(.W(22)) u_add_g   (.a(sum_g01), .b(d_g2), .ci(1'b0), .s(sum_g), .co(co_g_unused[1]));
-
-	/* verilator lint_off UNUSEDSIGNAL */
-	wire [21:0] sum_b01, sum_b;
-	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_b_unused;
-	am_add #(.W(22)) u_add_b01 (.a(d_b0), .b(d_b1), .ci(1'b0), .s(sum_b01), .co(co_b_unused[0]));
-	am_add #(.W(22)) u_add_b   (.a(sum_b01), .b(d_b2), .ci(1'b0), .s(sum_b), .co(co_b_unused[1]));
+	wire [21:0] csa_r_s = d_r0 ^ d_r1 ^ d_r2;
+	wire [21:0] csa_g_s = d_g0 ^ d_g1 ^ d_g2;
+	wire [21:0] csa_b_s = d_b0 ^ d_b1 ^ d_b2;
+	wire [1:0] co_r_unused, co_g_unused, co_b_unused;
+	assign co_r_unused[0] = 1'b0;
+	assign co_g_unused[0] = 1'b0;
+	assign co_b_unused[0] = 1'b0;
+	am_add #(.W(22)) u_add_r (.a(csa_r_s), .b({csa_r_c[20:0], 1'b0}), .ci(1'b0), .s(sum_r), .co(co_r_unused[1]));
+	am_add #(.W(22)) u_add_g (.a(csa_g_s), .b({csa_g_c[20:0], 1'b0}), .ci(1'b0), .s(sum_g), .co(co_g_unused[1]));
+	am_add #(.W(22)) u_add_b (.a(csa_b_s), .b({csa_b_c[20:0], 1'b0}), .ci(1'b0), .s(sum_b), .co(co_b_unused[1]));
 
 `ifdef SYNTH_KINTEX7
+	reg [21:0] sum_r_q, sum_g_q, sum_b_q;
+	reg [9:0]  in_r_q2, in_g_q2, in_b_q2;
+	reg hdr_en_q2;
+	always @(posedge pclk) begin
+		sum_r_q   <= sum_r;
+		sum_g_q   <= sum_g;
+		sum_b_q   <= sum_b;
+		in_r_q2   <= in_r_q;
+		in_g_q2   <= in_g_q;
+		in_b_q2   <= in_b_q;
+		hdr_en_q2 <= hdr_en_q;
+	end
+	wire [21:0] pipe_sum_r = sum_r_q, pipe_sum_g = sum_g_q, pipe_sum_b = sum_b_q;
+	wire [9:0]  pipe_in_r  = in_r_q2, pipe_in_g  = in_g_q2, pipe_in_b  = in_b_q2;
+`elsif SYNTH_ASIC
 	reg [21:0] sum_r_q, sum_g_q, sum_b_q;
 	reg [9:0]  in_r_q2, in_g_q2, in_b_q2;
 	reg hdr_en_q2;
@@ -168,6 +205,19 @@ module atg_dc_hdr #(
 		in_b_q3   <= in_b_q2;
 		hdr_en_q3 <= hdr_en_q2;
 	end
+`elsif SYNTH_ASIC
+	(* max_fanout = 16 *) reg [9:0] r_idx_q, g_idx_q, b_idx_q;
+	reg [9:0] in_r_q3, in_g_q3, in_b_q3;
+	reg hdr_en_q3;
+	always @(posedge pclk) begin
+		r_idx_q   <= r_idx;
+		g_idx_q   <= g_idx;
+		b_idx_q   <= b_idx;
+		in_r_q3   <= in_r_q2;
+		in_g_q3   <= in_g_q2;
+		in_b_q3   <= in_b_q2;
+		hdr_en_q3 <= hdr_en_q2;
+	end
 `endif
 
 	/* SMPTE ST 2084 (PQ) 1024-entry LUT */
@@ -182,6 +232,16 @@ module atg_dc_hdr #(
 			out_g <= 10'd0;
 			out_b <= 10'd0;
 `ifdef SYNTH_KINTEX7
+		end else if (!hdr_en_q3) begin
+			out_r <= in_r_q3;
+			out_g <= in_g_q3;
+			out_b <= in_b_q3;
+		end else begin
+			out_r <= lut[r_idx_q];
+			out_g <= lut[g_idx_q];
+			out_b <= lut[b_idx_q];
+		end
+`elsif SYNTH_ASIC
 		end else if (!hdr_en_q3) begin
 			out_r <= in_r_q3;
 			out_g <= in_g_q3;

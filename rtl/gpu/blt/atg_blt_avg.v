@@ -115,21 +115,29 @@ module atg_blt_avg (
 			assign v[sm] = v_val;
 		end
 
-		wire [11:0] s01, s23, sum;
-		wire [2:0] sum_co_unused;
-		wire q_co_unused;
-
-		am_add #(.W(12)) a_01 (.a({2'd0, v[0]}), .b({2'd0, v[1]}), .ci(1'b0), .s(s01), .co(sum_co_unused[0]));
-		am_add #(.W(12)) a_23 (.a({2'd0, v[2]}), .b({2'd0, v[3]}), .ci(1'b0), .s(s23), .co(sum_co_unused[1]));
-		am_add #(.W(12)) a_s (.a(s01), .b(s23), .ci(1'b0), .s(sum), .co(sum_co_unused[2]));
+		/* Two-level 3:2 CSA of v[0..3], then parallel sum0 and sum1 (sum + 4) adders */
+		wire [11:0] w0 = {2'd0, v[0]};
+		wire [11:0] w1 = {2'd0, v[1]};
+		wire [11:0] w2 = {2'd0, v[2]};
+		wire [11:0] w3 = {2'd0, v[3]};
+		wire [11:0] csa1_s = w0 ^ w1 ^ w2;
+		wire [11:0] csa1_c = {((w0[10:0] & w1[10:0]) | (w1[10:0] & w2[10:0]) | (w0[10:0] & w2[10:0])), 1'b0};
+		wire [11:0] csa2_s = csa1_s ^ csa1_c ^ w3;
+		wire [11:0] csa2_c = {((csa1_s[10:0] & csa1_c[10:0]) | (csa1_c[10:0] & w3[10:0]) | (csa1_s[10:0] & w3[10:0])), 1'b0};
+		wire [11:0] sum, sum_p4;
+		wire [1:0] sum_co_unused;
+		am_add #(.W(12)) a_s (.a(csa2_s), .b(csa2_c), .ci(1'b0), .s(sum), .co(sum_co_unused[0]));
+		wire [9:0] p4_csa_s = csa2_s[11:2] ^ csa2_c[11:2] ^ 10'd1;
+		wire [9:0] p4_csa_c = {((csa2_s[10:2] & csa2_c[10:2]) | (csa2_s[10:2] & 9'd1) | (csa2_c[10:2] & 9'd1)), 1'b0};
+		am_add #(.W(12)) a_sp4 (.a({p4_csa_s, csa2_s[1:0]}), .b({p4_csa_c, csa2_c[1:0]}), .ci(1'b0), .s(sum_p4), .co(sum_co_unused[1]));
 `ifdef MUT_RSV_RNE
 		wire round_up = sum[1];
 `else
 		wire round_up = sum[1] && (sum[0] || sum[2]);
 `endif
-		am_add #(.W(10)) a_q (.a(sum[11:2]), .b(10'd0), .ci(round_up), .s(q[10 * j +: 10]), .co(q_co_unused));
+		assign q[10 * j +: 10] = round_up ? sum_p4[11:2] : sum[11:2];
 
-		wire unused_ok = &{1'b0, sum_co_unused, q_co_unused};
+		wire unused_ok = &{1'b0, sum_co_unused, sum_p4[1:0]};
 	end
 	endgenerate
 

@@ -51,7 +51,8 @@ module am_fifo_key #(
 	am_sub #(.W(DEPTH_LOG2 + 1)) u_used (
 		.a(wp), .b(rp), .bi(1'b0), .d(used), .bo(unused_used_bo)
 	);
-	wire push = in_valid && in_ready;
+	reg not_full_r, not_empty_r;
+	wire push = in_valid && not_full_r;
 	wire pop = out_valid && out_ready;
 
 	wire [DEPTH_LOG2:0] wp_next;
@@ -66,9 +67,12 @@ module am_fifo_key #(
 		.a(rp), .b({(DEPTH_LOG2 + 1){1'b0}}), .ci(1'b1), .s(rp_next), .co(unused_rp_co)
 	);
 
+	wire [DEPTH_LOG2:0] wp_xor_rp = wp_next ^ rp;
+	wire next_full_on_push = wp_xor_rp[DEPTH_LOG2] && (wp_xor_rp[DEPTH_LOG2-1:0] == {DEPTH_LOG2{1'b0}});
+
 	assign count = used;
-	assign in_ready = used != DEPTH;
-	assign out_valid = used != {(DEPTH_LOG2 + 1){1'b0}};
+	assign in_ready = not_full_r;
+	assign out_valid = not_empty_r;
 	assign out_data = mem[rp[DEPTH_LOG2-1:0]];
 
 	reg match;
@@ -94,11 +98,20 @@ module am_fifo_key #(
 			rp <= {(DEPTH_LOG2 + 1){1'b0}};
 			full <= {D{1'b0}};
 			keys <= {(D * KEY_W){1'b0}};
+			not_full_r <= 1'b1;
+			not_empty_r <= 1'b0;
 		end else begin
 			if (push)
 				wp <= wp_next;
 			if (pop)
 				rp <= rp_next;
+			if (push && !pop) begin
+				not_full_r <= !next_full_on_push;
+				not_empty_r <= 1'b1;
+			end else if (!push && pop) begin
+				not_full_r <= 1'b1;
+				not_empty_r <= (rp_next != wp);
+			end
 			for (i = 0; i < D; i = i + 1) begin
 				if (pop && rp[DEPTH_LOG2-1:0] == i[DEPTH_LOG2-1:0])
 					full[i] <= 1'b0;

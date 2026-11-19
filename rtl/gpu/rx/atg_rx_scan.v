@@ -1147,7 +1147,7 @@ module atg_rx_scan #(
 	end
 `endif
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
 			dx_valid <= 1'b0;
 			dx_seq <= 16'd0;
@@ -1195,7 +1195,7 @@ module atg_rx_scan #(
 		endcase
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
 			`SET_ZC(5'd0);
 			`SET_ZL(2'd0);
@@ -1257,7 +1257,7 @@ module atg_rx_scan #(
 		endcase
 	end
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
 			zmask <= 4'd0;
 			r_lve_sign <= 12'd0;
@@ -1287,14 +1287,16 @@ module atg_rx_scan #(
 		endcase
 	end
 
-	always @(posedge clk) begin
-		pt_free <= 1'b0;
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
+			pt_free <= 1'b0;
 			coarse_tri_valid <= 1'b0;
 			coarse_tile_ready <= 1'b0;
 			fend <= 1'b0;
 			fi <= 2'd0;
-		end else case (st_fsm_m7)
+		end else begin
+		pt_free <= 1'b0;
+		case (st_fsm_m7)
 		S_IDLE: begin
 			coarse_tile_ready <= 1'b0;
 			if (sp_val_ctrl) begin
@@ -1336,10 +1338,11 @@ module atg_rx_scan #(
 		end
 		default: ;
 		endcase
+		end
 	end
 
 `ifdef SYNTH_KINTEX7
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
 			`SET_ST_HI(S_IDLE);
 		end else case (st_fsm_8)
@@ -1379,7 +1382,7 @@ module atg_rx_scan #(
 	end
 `endif
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_n_inv) begin
 		if (rst_n_inv) begin
 			`SET_ST(S_IDLE);
 `ifndef SYNTH_KINTEX7

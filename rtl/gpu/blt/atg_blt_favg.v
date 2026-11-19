@@ -56,8 +56,9 @@ module atg_blt_favg (
 	reg [2:0] m_fmt, m_psl, m_n;
 	reg [1:0] p;		/* the pixel */
 	reg [2:0] j;		/* its channel */
+	reg [2:0] step_d;
 	reg [1:0] step;
-	reg [2:0] fma_wait;
+	reg [3:0] fma_wait;
 	reg [31:0] r01, r23, sm, r_final;
 	reg [31:0] r_fa, r_fb, r_fc;
 	reg [31:0] r_xa, r_xc;
@@ -114,33 +115,20 @@ module atg_blt_favg (
 	am_add #(.W(32)) a_iaf (.a({ta_ps[28:0], 3'b000}), .b({24'd0, j, 5'b00000}), .ci(1'b0), .s(ia_f), .co(idx_co_unused[4]));
 	am_add #(.W(32)) a_icf (.a({tc_ps[28:0], 3'b000}), .b({24'd0, j, 5'b00000}), .ci(1'b0), .s(ic_f), .co(idx_co_unused[5]));
 
-	/* Sample sn of channel j of pixel p, as fp32 (the places are 32-bit, as the former expressions were). */
-	wire [31:0] ha, hc;	/* the two fp16 samples as fp32 */
-	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(s_in[ia_h_r +: 16]), .f(ha));
-	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(s_in[ic_h_r +: 16]), .f(hc));
-	/* verilator lint_off UNUSEDSIGNAL */
-	function [31:0] xs;	/* (everything it reads is an argument) */
-		input [511:0] si;
-		input [2:0] fm;
-		input [31:0] i_s;
-		input [31:0] hv;
-		input [31:0] i_f;
-		begin
-			if (fm == 3'd3)
-				xs = atg_srgb_dec(si[{i_s[28:0], 3'b000} +: 8]);
-			else if (fm == 3'd4)
-				xs = hv;
-			else
-				xs = si[i_f +: 32];
-		end
-	endfunction
-	/* verilator lint_on UNUSEDSIGNAL */
-	wire [31:0] xa = xs(s_in, m_fmt, ia_s_r, ha, ia_f_r);
-	wire [31:0] xc = xs(s_in, m_fmt, ic_s_r, hc, ic_f_r);
+	/* Sample sn of channel j of pixel p: Stage A extracts raw slice from s_in; Stage B decodes (u_ha/atg_srgb_dec). */
+	wire [31:0] raw_xa = (m_fmt == 3'd3) ? {24'd0, s_in[{ia_s_r[28:0], 3'b000} +: 8]} :
+	                     (m_fmt == 3'd4) ? {16'd0, s_in[ia_h_r +: 16]} : s_in[ia_f_r +: 32];
+	wire [31:0] raw_xc = (m_fmt == 3'd3) ? {24'd0, s_in[{ic_s_r[28:0], 3'b000} +: 8]} :
+	                     (m_fmt == 3'd4) ? {16'd0, s_in[ic_h_r +: 16]} : s_in[ic_f_r +: 32];
+	wire [31:0] ha, hc;	/* the two fp16 samples as fp32, from registered 16-bit slice */
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_ha (.h(r_xa[15:0]), .f(ha));
+	am_fp_h2f #(.DENORM(1), .LAT(0)) u_hc (.h(r_xc[15:0]), .f(hc));
+	wire [31:0] xa = (m_fmt == 3'd3) ? atg_srgb_dec(r_xa[7:0]) : (m_fmt == 3'd4) ? ha : r_xa;
+	wire [31:0] xc = (m_fmt == 3'd3) ? atg_srgb_dec(r_xc[7:0]) : (m_fmt == 3'd4) ? hc : r_xc;
 	/* The fma: fb is 1.0 or 0.25 (a significand of 2^23), so the product of
 	 * the significands is fa's shifted (no multiplier). */
 	wire [31:0] fr;
-	am_fp_fma_p #(.LAT(4)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
+	am_fp_fma_p #(.LAT(6)) u_fma (.clk(clk), .rst_n(rst_n), .en(1'b1), .a0(r_fa), .b0(r_fb), .c0(r_fc), .rm(3'd0), .noc(1'b0),
 		.p({1'b0, r_fa[30:23] != 8'd0 ? {1'b1, r_fa[22:0]} : 24'd0, 23'd0}), .r(fr));
 	wire [15:0] fh;
 	am_fp_f2h #(.LAT(0)) u_fh (.f(r_final), .h(fh));
@@ -166,18 +154,23 @@ module atg_blt_favg (
 	genvar q;
 	generate
 		for (q = 0; q < 4; q = q + 1) begin : g_alpha
-			wire [9:0] a01, a23, asum;
-			wire [3:0] a_co_unused;
+			wire [9:0] aw0 = {2'd0, s_in[8 * (4 * (4 * q) + 3) +: 8]};
+			wire [9:0] aw1 = {2'd0, s_in[8 * (4 * (4 * q + 1) + 3) +: 8]};
+			wire [9:0] aw2 = {2'd0, s_in[8 * (4 * (4 * q + 2) + 3) +: 8]};
+			wire [9:0] aw3 = {2'd0, s_in[8 * (4 * (4 * q + 3) + 3) +: 8]};
+			wire [9:0] ac1_s = aw0 ^ aw1 ^ aw2;
+			wire [9:0] ac1_c = {((aw0[8:0] & aw1[8:0]) | (aw1[8:0] & aw2[8:0]) | (aw0[8:0] & aw2[8:0])), 1'b0};
+			wire [9:0] ac2_s = ac1_s ^ ac1_c ^ aw3;
+			wire [9:0] ac2_c = {((ac1_s[8:0] & ac1_c[8:0]) | (ac1_c[8:0] & aw3[8:0]) | (ac1_s[8:0] & aw3[8:0])), 1'b0};
+			wire [9:0] asum, asum_p4;
+			wire [1:0] a_co_unused;
+			am_add #(.W(10)) a_s (.a(ac2_s), .b(ac2_c), .ci(1'b0), .s(asum), .co(a_co_unused[0]));
+			wire [7:0] ap4_s = ac2_s[9:2] ^ ac2_c[9:2] ^ 8'd1;
+			wire [7:0] ap4_c = {((ac2_s[8:2] & ac2_c[8:2]) | (ac2_s[8:2] & 7'd1) | (ac2_c[8:2] & 7'd1)), 1'b0};
+			am_add #(.W(10)) a_sp4 (.a({ap4_s, ac2_s[1:0]}), .b({ap4_c, ac2_c[1:0]}), .ci(1'b0), .s(asum_p4), .co(a_co_unused[1]));
+			assign aq[8 * q +: 8] = (asum[1] && (asum[0] || asum[2])) ? asum_p4[9:2] : asum[9:2];
 
-			am_add #(.W(10)) a_01 (.a({2'd0, s_in[8 * (4 * (4 * q) + 3) +: 8]}), .b({2'd0, s_in[8 * (4 * (4 * q + 1) + 3) +: 8]}),
-				.ci(1'b0), .s(a01), .co(a_co_unused[0]));
-			am_add #(.W(10)) a_23 (.a({2'd0, s_in[8 * (4 * (4 * q + 2) + 3) +: 8]}), .b({2'd0, s_in[8 * (4 * (4 * q + 3) + 3) +: 8]}),
-				.ci(1'b0), .s(a23), .co(a_co_unused[1]));
-			am_add #(.W(10)) a_s (.a(a01), .b(a23), .ci(1'b0), .s(asum), .co(a_co_unused[2]));
-			am_add #(.W(8)) a_q (.a(asum[9:2]), .b(8'd0), .ci(asum[1] && (asum[0] || asum[2])), .s(aq[8 * q +: 8]),
-				.co(a_co_unused[3]));
-
-			wire unused_ok = &{1'b0, a_co_unused};
+			wire unused_ok = &{1'b0, a_co_unused, asum_p4[1:0]};
 		end
 	endgenerate
 
@@ -211,7 +204,7 @@ module atg_blt_favg (
 			p <= 2'd0;
 			j <= 3'd0;
 			step <= 2'd0;
-			fma_wait <= 3'd0;
+			fma_wait <= 4'd0;
 			r01 <= 32'd0;
 			r23 <= 32'd0;
 			sm <= 32'd0;
@@ -238,37 +231,39 @@ module atg_blt_favg (
 				p <= 2'd0;
 				j <= 3'd0;
 				step <= 2'd0;
-				fma_wait <= 3'd0;
+				fma_wait <= 4'd0;
 				st <= RUN;
 			end
 			RUN: begin
 				case (fma_wait)
-				3'd0: begin
+				4'd0: begin
 					ia_s_r <= ia_s;
 					ic_s_r <= ic_s;
 					ia_h_r <= ia_h;
 					ic_h_r <= ic_h;
 					ia_f_r <= ia_f;
 					ic_f_r <= ic_f;
-					fma_wait <= 3'd1;
+					fma_wait <= 4'd1;
 				end
-				3'd1: begin
-					r_xa <= xa;
-					r_xc <= xc;
-					fma_wait <= 3'd2;
+				4'd1: begin
+					r_xa <= raw_xa;
+					r_xc <= raw_xc;
+					fma_wait <= 4'd2;
 				end
-				3'd2: begin
-					r_fa <= step[1] ? (step[0] ? sm : r01) : r_xa;
+				4'd2: begin
+					r_fa <= step[1] ? (step[0] ? sm : r01) : xa;
 					r_fb <= step == 2'd3 ? QUARTER : ONE;
-					r_fc <= step[1] ? (step[0] ? 32'h80000000 : r23) : r_xc;
-					fma_wait <= 3'd3;
+					r_fc <= step[1] ? (step[0] ? 32'h80000000 : r23) : xc;
+					fma_wait <= 4'd3;
 				end
-				3'd3: fma_wait <= 3'd4;
-				3'd4: fma_wait <= 3'd5;
-				3'd5: fma_wait <= 3'd6;
-				3'd6: fma_wait <= 3'd7;
-				3'd7: begin
-					fma_wait <= 3'd0;
+				4'd3: fma_wait <= 4'd4;
+				4'd4: fma_wait <= 4'd5;
+				4'd5: fma_wait <= 4'd6;
+				4'd6: fma_wait <= 4'd7;
+				4'd7: fma_wait <= 4'd8;
+				4'd8: fma_wait <= 4'd9;
+				4'd9: begin
+					fma_wait <= 4'd0;
 					if (step == 2'd0) begin
 						r01 <= fr;
 						step <= step_inc;
@@ -287,7 +282,7 @@ module atg_blt_favg (
 							st <= COMMIT;
 					end
 				end
-				default: fma_wait <= 3'd0;
+				default: fma_wait <= 4'd0;
 				endcase
 			end
 			ENC_START: begin
@@ -301,7 +296,7 @@ module atg_blt_favg (
 			end
 			endcase
 			if (take) begin
-				fma_wait <= 3'd0;
+				fma_wait <= 4'd0;
 				if (m_fmt == 3'd3)
 					out_p[8 * {p, j[1:0]} +: 8] <= e_code;
 				else if (m_fmt == 3'd4)

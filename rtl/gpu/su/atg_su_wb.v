@@ -391,8 +391,9 @@ module atg_su_wb #(
 				.out_data(fi_data[s*IW +: IW]), .count(unused_count)
 			);
 `ifndef SYNTHESIS
-			always @(posedge clk)
-				if (rst_n && in_we[s] && !in_rdy)
+			always @(posedge clk or negedge rst_n)
+				if (!rst_n) begin
+				end else if (in_we[s] && !in_rdy)
 					$display("ERROR atg_su_wb: input %0d FIFO full, a write lost", s);
 `else
 			wire unused_rdy = &{1'b0, in_rdy};

@@ -64,15 +64,13 @@ module atg_cpu_muldiv (
 	 * one with the result's sign fix (0 - the remainder or the quotient, at
 	 * the end of the division); 0 - b has its own.
 	 */
-	wire [31:0] neg_x, neg_b;
-	wire [3:0] ar_bo;
+	wire [31:0] neg_a, neg_b, neg_res;
+	wire [4:0] ar_bo;
 
-	am_sub #(.W(32)) neg_x_sub (
-		.a(32'd0), .b(state == S_DIV ? (op_r[1] ? dr[31:0] : dq) : a), .bi(1'b0), .d(neg_x),
-		.bo(ar_bo[0])
-	);
+	am_sub #(.W(32)) neg_a_sub (.a(32'd0), .b(a), .bi(1'b0), .d(neg_a), .bo(ar_bo[0]));
 	am_sub #(.W(32)) neg_b_sub (.a(32'd0), .b(b), .bi(1'b0), .d(neg_b), .bo(ar_bo[1]));
-	wire [31:0] a_abs = (d_signed && a[31]) ? neg_x : a;
+	am_sub #(.W(32)) neg_res_sub (.a(32'd0), .b(op_r[1] ? dr[31:0] : dq), .bi(1'b0), .d(neg_res), .bo(ar_bo[4]));
+	wire [31:0] a_abs = (d_signed && a[31]) ? neg_a : a;
 	wire [31:0] b_abs = (d_signed && b[31]) ? neg_b : b;
 
 	/* One restoring step. */
@@ -150,9 +148,9 @@ module atg_cpu_muldiv (
 					if (dzero)
 						y <= op_r[1] ? a_r : 32'hFFFF_FFFF;
 					else if (op_r[1])
-						y <= neg_r ? neg_x : dr[31:0];
+						y <= neg_r ? neg_res : dr[31:0];
 					else
-						y <= neg_q ? neg_x : dq;
+						y <= neg_q ? neg_res : dq;
 					done <= 1'b1;
 					state <= S_IDLE;
 				end

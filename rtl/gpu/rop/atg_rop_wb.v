@@ -1554,8 +1554,9 @@ module atg_rop_wb #(
 
 `ifndef SYNTHESIS
 	/* A quad's row on one line stays in it; several lines start a line. */
-	always @(posedge clk)
-		if (rst_n && st == S_ROW && !p_drop && p_lw &&
+	always @(posedge clk or negedge rst_n)
+		if (!rst_n) begin
+		end else if (st == S_ROW && !p_drop && p_lw &&
 		    (p_multi ? wb_addr_comb[LINE_SHIFT-1:0] != {LINE_SHIFT{1'b0}} :
 		    {{(32-LINE_SHIFT){1'b0}}, wb_addr_comb[LINE_SHIFT-1:0]} + 32'd2 * ({30'd0, p_np} + 32'd1) * {27'd0, p_ps} >
 		    LINE_BYTES))

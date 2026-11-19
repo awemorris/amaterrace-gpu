@@ -814,6 +814,13 @@ module atg_dc_cursor #(
 	reg st0c_valid, s0c_in;
 	(* keep = "true" *) reg [1:0] s0c_fmt_p, s0c_fmt_c, s0c_fmt_st1;
 	reg [15:0] s0c_px_lo, s0c_px_hi;
+`ifdef SYNTH_ASIC
+	reg [23:0] s0c_mix_p;
+	wire [7:0] s0b_r8 = {s0b_px_lo[15:11], s0b_px_lo[15:13]};
+	wire [7:0] s0b_g8 = {s0b_px_lo[10:5], s0b_px_lo[10:9]};
+	wire [7:0] s0b_b8 = {s0b_px_lo[4:0], s0b_px_lo[4:2]};
+	wire [23:0] s0b_mix_p = (s0b_fmt == 2'd2) ? {s0b_r8, s0b_g8, s0b_b8} : {s0b_px_hi[7:0], s0b_px_lo};
+`endif
 
 	always @(posedge clk) begin
 		if (pipe_en)
@@ -856,14 +863,29 @@ module atg_dc_cursor #(
 			s0c_px_hi <= s0b_px_hi;
 	end
 
-	/* Stage 1: Mul (am_mul LAT=1) */
+`ifdef SYNTH_ASIC
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			s0c_mix_p <= 24'd0;
+		else if (pe_s0c_pxl)
+			s0c_mix_p <= s0b_mix_p;
+	end
+`endif
+
+	/* Stage 1: Mul (am_mul LAT=1; LAT=2 CSA+CPA across Stage 1/1b under SYNTH_ASIC) */
 	wire [7:0] cb = q_direct[7:0], cg = q_direct[15:8], cr = q_direct[23:16], ca = q_direct[31:24];
+`ifdef SYNTH_ASIC
+	wire [23:0] mix_c = (s0c_fmt_c == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
+	wire [23:0] mix_p = s0c_mix_p;
+	wire unused_s0c_fmt_p = &{1'b0, s0c_fmt_p};
+`else
 	wire [7:0] r8 = {s0c_px_lo[15:11], s0c_px_lo[15:13]};
 	wire [7:0] g8 = {s0c_px_lo[10:5], s0c_px_lo[10:9]};
 	wire [7:0] b8 = {s0c_px_lo[4:0], s0c_px_lo[4:2]};
 
 	wire [23:0] mix_c = (s0c_fmt_c == 2'd1) ? {cb, cg, cr} : {cr, cg, cb};
 	wire [23:0] mix_p = (s0c_fmt_p == 2'd2) ? {r8, g8, b8} : {s0c_px_hi[7:0], s0c_px_lo};
+`endif
 
 	reg st1_valid, st1_in;
 	reg [7:0] st1_c0, st1_c1, st1_c2;
@@ -871,6 +893,12 @@ module atg_dc_cursor #(
 	(* max_fanout = 16 *) reg [1:0] st1_fmt;
 
 `ifdef SYNTH_KINTEX7
+	localparam CURSOR_MUL_LAT = 2;
+	wire [7:0] not_ca_arr [0:2];
+	assign not_ca_arr[0] = ~ca;
+	assign not_ca_arr[1] = ~ca;
+	assign not_ca_arr[2] = ~ca;
+`elsif SYNTH_ASIC
 	localparam CURSOR_MUL_LAT = 2;
 	wire [7:0] not_ca_arr [0:2];
 	assign not_ca_arr[0] = ~ca;
@@ -937,8 +965,15 @@ module atg_dc_cursor #(
 			st1_px_hi <= s0c_px_hi;
 	end
 
-	/* Stage 1b: Register DSP outputs (Rule 1: Post-DSP LUTs <= 1) */
+	/* Stage 1b: Register DSP outputs (or wire directly when am_mul uses LAT=2 CSA+CPA) */
+`ifdef SYNTH_ASIC
+	wire [15:0] st1b_pa0 = st1_pa[0];
+	wire [15:0] st1b_pa1 = st1_pa[1];
+	wire [15:0] st1b_pa2 = st1_pa[2];
+	wire unused_pe_s1b_pa = &{1'b0, pe_s1b_pa0, pe_s1b_pa1, pe_s1b_pa2};
+`else
 	reg [15:0] st1b_pa0, st1b_pa1, st1b_pa2;
+`endif
 	reg [7:0] st1b_c0, st1b_c1, st1b_c2;
 	reg [15:0] st1b_px_lo, st1b_px_hi;
 	reg st1b_valid, st1b_in;
@@ -960,6 +995,7 @@ module atg_dc_cursor #(
 		end
 	end
 
+`ifndef SYNTH_ASIC
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n)
 			st1b_pa0 <= 16'd0;
@@ -980,6 +1016,7 @@ module atg_dc_cursor #(
 		else if (pe_s1b_pa2)
 			st1b_pa2 <= st1_pa[2];
 	end
+`endif
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin

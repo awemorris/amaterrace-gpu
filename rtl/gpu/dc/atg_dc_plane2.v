@@ -106,6 +106,18 @@ module atg_dc_plane2 #(
 		end
 	end
 	wire in_box = (cur_x >= pos_x) && (cur_x < end_x_r) && (cur_y >= pos_y) && (cur_y < end_y_r);
+`elsif SYNTH_ASIC
+	reg [11:0] end_x_r, end_y_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			end_x_r <= 12'd0;
+			end_y_r <= 12'd0;
+		end else begin
+			end_x_r <= end_x;
+			end_y_r <= end_y;
+		end
+	end
+	wire in_box = (cur_x >= pos_x) && (cur_x < end_x_r) && (cur_y >= pos_y) && (cur_y < end_y_r);
 `else
 	wire in_box = (cur_x >= pos_x) && (cur_x < end_x) && (cur_y >= pos_y) && (cur_y < end_y);
 `endif
@@ -124,27 +136,54 @@ module atg_dc_plane2 #(
 
 `ifdef SYNTH_KINTEX7
 	localparam P2_MUL_LAT = 2;
+`elsif SYNTH_ASIC
+	localparam P2_MUL_LAT = 2;
+	reg [8:0] diff_u_q, diff_v_q;
+	reg [7:0] ov_y_q;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			diff_u_q <= 9'd0;
+			diff_v_q <= 9'd0;
+			ov_y_q   <= 8'd0;
+		end else begin
+			diff_u_q <= diff_u;
+			diff_v_q <= diff_v;
+			ov_y_q   <= ov_y;
+		end
+	end
 `else
 	localparam P2_MUL_LAT = 0;
 `endif
 
+`ifdef SYNTH_ASIC
+	wire [8:0] m_diff_u = diff_u_q;
+	wire [8:0] m_diff_v = diff_v_q;
+	wire [7:0] m_ov_y   = ov_y_q;
+`else
+	wire [8:0] m_diff_u = diff_u;
+	wire [8:0] m_diff_v = diff_v;
+	wire [7:0] m_ov_y   = ov_y;
+`endif
+
 	wire [18:0] p_rv, p_gu, p_gv, p_bu;
 	/* Signed multipliers */
-	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_rv (.clk(clk), .en(1'b1), .a(diff_v), .b(10'sd359),  .p(p_rv));
-	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_gu (.clk(clk), .en(1'b1), .a(diff_u), .b(-10'sd88),  .p(p_gu));
-	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_gv (.clk(clk), .en(1'b1), .a(diff_v), .b(-10'sd183), .p(p_gv));
-	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_bu (.clk(clk), .en(1'b1), .a(diff_u), .b(10'sd454),  .p(p_bu));
+	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_rv (.clk(clk), .en(1'b1), .a(m_diff_v), .b(10'sd359),  .p(p_rv));
+	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_gu (.clk(clk), .en(1'b1), .a(m_diff_u), .b(-10'sd88),  .p(p_gu));
+	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_gv (.clk(clk), .en(1'b1), .a(m_diff_v), .b(-10'sd183), .p(p_gv));
+	am_mul #(.AW(9), .BW(10), .SIGNED(1), .LAT(P2_MUL_LAT)) u_mul_bu (.clk(clk), .en(1'b1), .a(m_diff_u), .b(10'sd454),  .p(p_bu));
 
-	wire [18:0] y_scaled = {3'd0, ov_y, 8'd0};
+	wire [18:0] y_scaled = {3'd0, m_ov_y, 8'd0};
 
 	/* verilator lint_off UNUSEDSIGNAL */
-	wire [18:0] r_raw, g_sum_u, g_raw, b_raw;
+	wire [18:0] r_raw, g_raw, b_raw;
+	wire [18:0] g_csa_c = (y_scaled & p_gu) | (y_scaled & p_gv) | (p_gu & p_gv);
 	/* verilator lint_on UNUSEDSIGNAL */
+	wire [18:0] g_csa_s = y_scaled ^ p_gu ^ p_gv;
 	wire [3:0] yuv_co_unused;
-	am_add #(.W(19)) a_r_raw   (.a(y_scaled), .b(p_rv),    .ci(1'b0), .s(r_raw),   .co(yuv_co_unused[0]));
-	am_add #(.W(19)) a_g_sum_u (.a(y_scaled), .b(p_gu),    .ci(1'b0), .s(g_sum_u), .co(yuv_co_unused[1]));
-	am_add #(.W(19)) a_g_raw   (.a(g_sum_u),  .b(p_gv),    .ci(1'b0), .s(g_raw),   .co(yuv_co_unused[2]));
-	am_add #(.W(19)) a_b_raw   (.a(y_scaled), .b(p_bu),    .ci(1'b0), .s(b_raw),   .co(yuv_co_unused[3]));
+	assign yuv_co_unused[1] = 1'b0;
+	am_add #(.W(19)) a_r_raw   (.a(y_scaled), .b(p_rv),                 .ci(1'b0), .s(r_raw), .co(yuv_co_unused[0]));
+	am_add #(.W(19)) a_g_raw   (.a(g_csa_s),  .b({g_csa_c[17:0], 1'b0}), .ci(1'b0), .s(g_raw), .co(yuv_co_unused[2]));
+	am_add #(.W(19)) a_b_raw   (.a(y_scaled), .b(p_bu),                 .ci(1'b0), .s(b_raw), .co(yuv_co_unused[3]));
 
 	/* Clamping to [0, 255] */
 	wire [7:0] r_yuv = r_raw[18] ? 8'd0 : (r_raw[17:16] != 2'd0 ? 8'hFF : r_raw[15:8]);
@@ -176,6 +215,18 @@ module atg_dc_plane2 #(
 	wire [23:0] p2_sel_ov_rgb = sel_ov_rgb_q;
 	wire [23:0] p2_prim_rgb   = prim_rgb_q;
 	wire [7:0]  p2_alpha      = alpha_q;
+`elsif SYNTH_ASIC
+	(* keep = "true", dont_touch = "true" *) reg [23:0] sel_ov_rgb_q;
+	(* keep = "true", dont_touch = "true" *) reg [23:0] prim_rgb_q;
+	(* keep = "true", dont_touch = "true" *) reg [7:0]  alpha_q;
+	always @(posedge clk) begin
+		sel_ov_rgb_q <= sel_ov_rgb;
+		prim_rgb_q   <= prim_rgb;
+		alpha_q      <= alpha;
+	end
+	wire [23:0] p2_sel_ov_rgb = sel_ov_rgb_q;
+	wire [23:0] p2_prim_rgb   = prim_rgb_q;
+	wire [7:0]  p2_alpha      = alpha_q;
 `else
 	wire [23:0] p2_sel_ov_rgb = sel_ov_rgb;
 	wire [23:0] p2_prim_rgb   = prim_rgb;
@@ -190,21 +241,53 @@ module atg_dc_plane2 #(
 	wire [7:0] inv_alpha;
 	wire alpha_bo_unused;
 	am_sub #(.W(8)) s_inv_alpha (.a(8'hFF), .b(p2_alpha), .bi(1'b0), .d(inv_alpha), .bo(alpha_bo_unused));
+`ifdef SYNTH_ASIC
+	reg [7:0] inv_alpha_q;
+	reg [7:0] p2_alpha_q;
+	reg [23:0] p2_sel_ov_rgb_q, p2_prim_rgb_q;
+	reg active_overlay_q;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			inv_alpha_q <= 8'd0;
+			p2_alpha_q <= 8'd0;
+			p2_sel_ov_rgb_q <= 24'd0;
+			p2_prim_rgb_q <= 24'd0;
+			active_overlay_q <= 1'b0;
+		end else begin
+			inv_alpha_q <= inv_alpha;
+			p2_alpha_q <= p2_alpha;
+			p2_sel_ov_rgb_q <= p2_sel_ov_rgb;
+			p2_prim_rgb_q <= p2_prim_rgb;
+			active_overlay_q <= active_overlay;
+		end
+	end
+	wire [7:0] b_alpha = p2_alpha_q;
+	wire [7:0] b_inv_alpha = inv_alpha_q;
+	wire [23:0] b_sel_ov_rgb = p2_sel_ov_rgb_q;
+	wire [23:0] b_prim_rgb = p2_prim_rgb_q;
+	wire b_active_overlay = active_overlay_q;
+`else
+	wire [7:0] b_alpha = p2_alpha;
+	wire [7:0] b_inv_alpha = inv_alpha;
+	wire [23:0] b_sel_ov_rgb = p2_sel_ov_rgb;
+	wire [23:0] b_prim_rgb = p2_prim_rgb;
+	wire b_active_overlay = active_overlay;
+`endif
 
 	/* Red channel blending */
 	wire [15:0] p_r_ov, p_r_prim;
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_r_ov   (.clk(clk), .en(1'b1), .a(p2_alpha),  .b(p2_sel_ov_rgb[23:16]), .p(p_r_ov));
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_r_prim (.clk(clk), .en(1'b1), .a(inv_alpha), .b(p2_prim_rgb[23:16]),   .p(p_r_prim));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_r_ov   (.clk(clk), .en(1'b1), .a(b_alpha),     .b(b_sel_ov_rgb[23:16]), .p(p_r_ov));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_r_prim (.clk(clk), .en(1'b1), .a(b_inv_alpha), .b(b_prim_rgb[23:16]),   .p(p_r_prim));
 
 	/* Green channel blending */
 	wire [15:0] p_g_ov, p_g_prim;
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_g_ov   (.clk(clk), .en(1'b1), .a(p2_alpha),  .b(p2_sel_ov_rgb[15:8]),  .p(p_g_ov));
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_g_prim (.clk(clk), .en(1'b1), .a(inv_alpha), .b(p2_prim_rgb[15:8]),   .p(p_g_prim));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_g_ov   (.clk(clk), .en(1'b1), .a(b_alpha),     .b(b_sel_ov_rgb[15:8]),  .p(p_g_ov));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_g_prim (.clk(clk), .en(1'b1), .a(b_inv_alpha), .b(b_prim_rgb[15:8]),    .p(p_g_prim));
 
 	/* Blue channel blending */
 	wire [15:0] p_b_ov, p_b_prim;
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_b_ov   (.clk(clk), .en(1'b1), .a(p2_alpha),  .b(p2_sel_ov_rgb[7:0]),   .p(p_b_ov));
-	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_b_prim (.clk(clk), .en(1'b1), .a(inv_alpha), .b(p2_prim_rgb[7:0]),    .p(p_b_prim));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_b_ov   (.clk(clk), .en(1'b1), .a(b_alpha),     .b(b_sel_ov_rgb[7:0]),   .p(p_b_ov));
+	am_mul #(.AW(8), .BW(8), .SIGNED(0), .LAT(P2_MUL_LAT)) u_mul_b_prim (.clk(clk), .en(1'b1), .a(b_inv_alpha), .b(b_prim_rgb[7:0]),     .p(p_b_prim));
 
 `ifdef SYNTH_KINTEX7
 	(* max_fanout = 16 *) reg [15:0] p_r_ov_q, p_r_prim_q;
@@ -237,6 +320,39 @@ module atg_dc_plane2 #(
 	wire [23:0] d_sel_ov_rgb = sel_ov_rgb_q2, d_prim_rgb = prim_rgb_q2;
 	wire [7:0]  d_alpha = alpha_q2;
 	wire d_active_overlay = active_overlay_q2;
+`elsif SYNTH_ASIC
+	reg [15:0] p_r_ov_q, p_r_prim_q;
+	reg [15:0] p_g_ov_q, p_g_prim_q;
+	reg [15:0] p_b_ov_q, p_b_prim_q;
+	reg [23:0] sel_ov_rgb_q1, prim_rgb_q1, sel_ov_rgb_q2, prim_rgb_q2;
+	reg [7:0] alpha_q1, alpha_q2;
+	reg active_overlay_q1, active_overlay_q2;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			p_r_ov_q <= 16'd0; p_r_prim_q <= 16'd0;
+			p_g_ov_q <= 16'd0; p_g_prim_q <= 16'd0;
+			p_b_ov_q <= 16'd0; p_b_prim_q <= 16'd0;
+			active_overlay_q1 <= 1'b0;
+			active_overlay_q2 <= 1'b0;
+		end else begin
+			p_r_ov_q <= p_r_ov; p_r_prim_q <= p_r_prim;
+			p_g_ov_q <= p_g_ov; p_g_prim_q <= p_g_prim;
+			p_b_ov_q <= p_b_ov; p_b_prim_q <= p_b_prim;
+			active_overlay_q1 <= b_active_overlay;
+			active_overlay_q2 <= active_overlay_q1;
+		end
+	end
+	always @(posedge clk) begin
+		sel_ov_rgb_q1 <= b_sel_ov_rgb; sel_ov_rgb_q2 <= sel_ov_rgb_q1;
+		prim_rgb_q1   <= b_prim_rgb;   prim_rgb_q2   <= prim_rgb_q1;
+		alpha_q1      <= b_alpha;      alpha_q2      <= alpha_q1;
+	end
+	wire [15:0] d_r_ov = p_r_ov_q, d_r_prim = p_r_prim_q;
+	wire [15:0] d_g_ov = p_g_ov_q, d_g_prim = p_g_prim_q;
+	wire [15:0] d_b_ov = p_b_ov_q, d_b_prim = p_b_prim_q;
+	wire [23:0] d_sel_ov_rgb = sel_ov_rgb_q2, d_prim_rgb = prim_rgb_q2;
+	wire [7:0]  d_alpha = alpha_q2;
+	wire d_active_overlay = active_overlay_q2;
 `else
 	wire [15:0] d_r_ov = p_r_ov, d_r_prim = p_r_prim;
 	wire [15:0] d_g_ov = p_g_ov, d_g_prim = p_g_prim;
@@ -246,28 +362,27 @@ module atg_dc_plane2 #(
 	wire d_active_overlay = active_overlay;
 `endif
 
+	/* Red/Green/Blue channel blending via 3:2 CSA (+ 128) + single 17-bit adder */
 	/* verilator lint_off UNUSEDSIGNAL */
-	wire [16:0] sum_r_mul, sum_r_tot;
+	wire [16:0] sum_r_tot, sum_g_tot, sum_b_tot;
+	wire [16:0] csa_r_c = ({1'b0, d_r_ov} & {1'b0, d_r_prim}) | ({1'b0, d_r_ov} & 17'd128) | ({1'b0, d_r_prim} & 17'd128);
+	wire [16:0] csa_g_c = ({1'b0, d_g_ov} & {1'b0, d_g_prim}) | ({1'b0, d_g_ov} & 17'd128) | ({1'b0, d_g_prim} & 17'd128);
+	wire [16:0] csa_b_c = ({1'b0, d_b_ov} & {1'b0, d_b_prim}) | ({1'b0, d_b_ov} & 17'd128) | ({1'b0, d_b_prim} & 17'd128);
 	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_r_unused;
-	am_add #(.W(17)) a_sum_r_mul (.a({1'b0, d_r_ov}),    .b({1'b0, d_r_prim}), .ci(1'b0), .s(sum_r_mul), .co(co_r_unused[0]));
-	am_add #(.W(17)) a_sum_r_tot (.a(sum_r_mul),         .b(17'd128),          .ci(1'b0), .s(sum_r_tot), .co(co_r_unused[1]));
+	wire [16:0] csa_r_s = {1'b0, d_r_ov} ^ {1'b0, d_r_prim} ^ 17'd128;
+	wire [16:0] csa_g_s = {1'b0, d_g_ov} ^ {1'b0, d_g_prim} ^ 17'd128;
+	wire [16:0] csa_b_s = {1'b0, d_b_ov} ^ {1'b0, d_b_prim} ^ 17'd128;
+	wire [1:0] co_r_unused, co_g_unused, co_b_unused;
+	assign co_r_unused[0] = 1'b0;
+	assign co_g_unused[0] = 1'b0;
+	assign co_b_unused[0] = 1'b0;
+	am_add #(.W(17)) a_sum_r_tot (.a(csa_r_s), .b({csa_r_c[15:0], 1'b0}), .ci(1'b0), .s(sum_r_tot), .co(co_r_unused[1]));
 	wire [7:0] r_blend = (d_alpha == 8'hFF) ? d_sel_ov_rgb[23:16] : ((d_alpha == 8'h00) ? d_prim_rgb[23:16] : sum_r_tot[15:8]);
 
-	/* verilator lint_off UNUSEDSIGNAL */
-	wire [16:0] sum_g_mul, sum_g_tot;
-	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_g_unused;
-	am_add #(.W(17)) a_sum_g_mul (.a({1'b0, d_g_ov}),    .b({1'b0, d_g_prim}), .ci(1'b0), .s(sum_g_mul), .co(co_g_unused[0]));
-	am_add #(.W(17)) a_sum_g_tot (.a(sum_g_mul),         .b(17'd128),          .ci(1'b0), .s(sum_g_tot), .co(co_g_unused[1]));
+	am_add #(.W(17)) a_sum_g_tot (.a(csa_g_s), .b({csa_g_c[15:0], 1'b0}), .ci(1'b0), .s(sum_g_tot), .co(co_g_unused[1]));
 	wire [7:0] g_blend = (d_alpha == 8'hFF) ? d_sel_ov_rgb[15:8]  : ((d_alpha == 8'h00) ? d_prim_rgb[15:8]  : sum_g_tot[15:8]);
 
-	/* verilator lint_off UNUSEDSIGNAL */
-	wire [16:0] sum_b_mul, sum_b_tot;
-	/* verilator lint_on UNUSEDSIGNAL */
-	wire [1:0] co_b_unused;
-	am_add #(.W(17)) a_sum_b_mul (.a({1'b0, d_b_ov}),    .b({1'b0, d_b_prim}), .ci(1'b0), .s(sum_b_mul), .co(co_b_unused[0]));
-	am_add #(.W(17)) a_sum_b_tot (.a(sum_b_mul),         .b(17'd128),          .ci(1'b0), .s(sum_b_tot), .co(co_b_unused[1]));
+	am_add #(.W(17)) a_sum_b_tot (.a(csa_b_s), .b({csa_b_c[15:0], 1'b0}), .ci(1'b0), .s(sum_b_tot), .co(co_b_unused[1]));
 	wire [7:0] b_blend = (d_alpha == 8'hFF) ? d_sel_ov_rgb[7:0]   : ((d_alpha == 8'h00) ? d_prim_rgb[7:0]   : sum_b_tot[15:8]);
 
 	always @(posedge clk or negedge rst_n) begin

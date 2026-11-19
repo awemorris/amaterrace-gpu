@@ -59,7 +59,11 @@ module am_mul #(
 			assign m = a * b;
 		end
 		assign p = m;
+`ifdef SYNTH_ASIC
+	end else if (LAT == 1) begin : g_r1
+`else
 	end else if (LAT == 1 || (AW <= 8 && BW <= 8)) begin : g_r1
+`endif
 		(* use_dsp = "yes" *) wire [AW+BW-1:0] m;
 		if (SIGNED != 0) begin : g_s
 			assign m = $signed(a) * $signed(b);
@@ -80,7 +84,7 @@ module am_mul #(
 		localparam PW = AW + BW;
 		localparam integer DO_BW = (SIGNED != 0 && AW >= 2 && BW >= 2) ? 1 : 0;
 		localparam integer NROW = BW + DO_BW;
-		localparam integer SPLIT_ST = (NROW <= 6) ? 1 : ((NROW <= 12) ? 2 : 3);
+		localparam integer SPLIT_ST = (NROW <= 6) ? 1 : ((NROW <= 12) ? 2 : ((NROW <= 20) ? 3 : 4));
 		localparam integer MAX_ST = 10;
 
 		wire [NROW*PW-1:0] pp_init;

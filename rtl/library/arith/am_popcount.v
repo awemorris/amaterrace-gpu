@@ -21,51 +21,96 @@ module am_popcount #(
 	input wire [W-1:0] i_vec,
 	output wire [OW-1:0] o_cnt
 );
-	localparam PAD_W = 32;
+	/* Bit-slice 3:2 CSA popcount tree (O(log W) FA stages + single 6-bit final add) */
+	localparam integer PAD_W = 32;
 	wire [PAD_W-1:0] v = {{(PAD_W - W){1'b0}}, i_vec};
 
-	/* Level 0: 16 pairs of 1-bit inputs -> 16 2-bit sums */
-	wire [1:0] s0 [0:15];
-	genvar g0;
+	/* Compress weight-0 bits via full/half adders into weights 0..5.
+	 * Stage 1: ten 3-bit groups (0..29) + bits 30..31 -> 11 weight-0, 10 weight-1 bits (with 30,31->HA: 12 w0, 11 w1). */
+	wire [11:0] w0_s1;
+	wire [10:0] w1_s1;
+	genvar gi;
 	generate
-	for (g0 = 0; g0 < 16; g0 = g0 + 1) begin : g_lvl0
-		assign s0[g0] = {v[2*g0] & v[2*g0+1], v[2*g0] ^ v[2*g0+1]};
-	end
+		for (gi = 0; gi < 10; gi = gi + 1) begin : g_w0_s1
+			wire a = v[3*gi], b = v[3*gi+1], c = v[3*gi+2];
+			assign w0_s1[gi] = a ^ b ^ c;
+			assign w1_s1[gi] = (a & b) | (a & c) | (b & c);
+		end
+	endgenerate
+	assign w0_s1[10] = v[30] ^ v[31];
+	assign w1_s1[10] = v[30] & v[31];
+	assign w0_s1[11] = 1'b0;
+
+	/* Reduce w0_s1 (11 bits) -> 4 bits w0_s2, 4 bits to w1 */
+	wire [3:0] w0_s2;
+	wire [3:0] w1_from_0;
+	generate
+		for (gi = 0; gi < 4; gi = gi + 1) begin : g_w0_s2
+			wire a = w0_s1[3*gi], b = w0_s1[3*gi+1], c = w0_s1[3*gi+2];
+			assign w0_s2[gi]     = a ^ b ^ c;
+			assign w1_from_0[gi] = (a & b) | (a & c) | (b & c);
+		end
 	endgenerate
 
-	/* Level 1: 8 pairs of 2-bit inputs -> 8 3-bit sums */
-	wire [2:0] s1 [0:7];
-	genvar g1;
+	/* Reduce w0_s2 (4 bits) -> 2 bits w0_fin, 2 bits to w1 */
+	wire [1:0] w0_fin;
+	wire [1:0] w1_from_0b;
+	assign w0_fin[0]     = w0_s2[0] ^ w0_s2[1] ^ w0_s2[2];
+	assign w1_from_0b[0] = (w0_s2[0] & w0_s2[1]) | (w0_s2[0] & w0_s2[2]) | (w0_s2[1] & w0_s2[2]);
+	assign w0_fin[1]     = w0_s2[3];
+	assign w1_from_0b[1] = 1'b0;
+
+	/* Weight-1 pool: 11 (s1) + 4 (s2) + 2 (s3) = 17 bits (15 + 2) */
+	wire [16:0] w1_pool = {w1_from_0b, w1_from_0, w1_s1};
+	wire [6:0] w1_s2;
+	wire [5:0] w2_from_1;
 	generate
-	for (g1 = 0; g1 < 8; g1 = g1 + 1) begin : g_lvl1
-		assign s1[g1] = s0[2*g1] + s0[2*g1+1];
-	end
+		for (gi = 0; gi < 5; gi = gi + 1) begin : g_w1_s2
+			wire a = w1_pool[3*gi], b = w1_pool[3*gi+1], c = w1_pool[3*gi+2];
+			assign w1_s2[gi]     = a ^ b ^ c;
+			assign w2_from_1[gi] = (a & b) | (a & c) | (b & c);
+		end
+	endgenerate
+	assign w1_s2[5]     = w1_pool[15] ^ w1_pool[16];
+	assign w2_from_1[5] = w1_pool[15] & w1_pool[16];
+	assign w1_s2[6]     = 1'b0;
+
+	/* Weight-1: 6 bits (0..5) -> 2 bits w1_fin + 2 bits to w2 */
+	wire [1:0] w1_fin;
+	wire [1:0] w2_from_1b;
+	generate
+		for (gi = 0; gi < 2; gi = gi + 1) begin : g_w1_fin
+			wire a = w1_s2[3*gi], b = w1_s2[3*gi+1], c = w1_s2[3*gi+2];
+			assign w1_fin[gi]     = a ^ b ^ c;
+			assign w2_from_1b[gi] = (a & b) | (a & c) | (b & c);
+		end
 	endgenerate
 
-	/* Level 2: 4 pairs of 3-bit inputs -> 4 4-bit sums */
-	wire [3:0] s2 [0:3];
-	genvar g2;
+	/* Weight-2 pool: 8 bits -> 3 bits + 3 to w3 */
+	wire [8:0] w2_pool = {1'b0, w2_from_1b, w2_from_1};
+	wire [2:0] w2_s2;
+	wire [2:0] w3_from_2;
 	generate
-	for (g2 = 0; g2 < 4; g2 = g2 + 1) begin : g_lvl2
-		assign s2[g2] = s1[2*g2] + s1[2*g2+1];
-	end
+		for (gi = 0; gi < 3; gi = gi + 1) begin : g_w2_s2
+			wire a = w2_pool[3*gi], b = w2_pool[3*gi+1], c = w2_pool[3*gi+2];
+			assign w2_s2[gi]     = a ^ b ^ c;
+			assign w3_from_2[gi] = (a & b) | (a & c) | (b & c);
+		end
 	endgenerate
+	wire w2_fin0 = w2_s2[0] ^ w2_s2[1] ^ w2_s2[2];
+	wire w3_fin_c = (w2_s2[0] & w2_s2[1]) | (w2_s2[0] & w2_s2[2]) | (w2_s2[1] & w2_s2[2]);
 
-	/* Level 3: 2 pairs of 4-bit inputs -> 2 5-bit sums */
-	wire [4:0] s3 [0:1];
-	genvar g3;
-	generate
-	for (g3 = 0; g3 < 2; g3 = g3 + 1) begin : g_lvl3
-		assign s3[g3] = s2[2*g3] + s2[2*g3+1];
-	end
-	endgenerate
+	/* Weight-3 pool: 4 bits -> 2 bits w3_fin + 1 to w4 */
+	wire w3_fin0 = w3_from_2[0] ^ w3_from_2[1] ^ w3_from_2[2];
+	wire w4_from_3 = (w3_from_2[0] & w3_from_2[1]) | (w3_from_2[0] & w3_from_2[2]) | (w3_from_2[1] & w3_from_2[2]);
 
-	/* Level 4: 1 pair of 5-bit inputs -> 1 6-bit sum */
-	wire [5:0] s4 = s3[0] + s3[1];
+	wire [5:0] op_a = {1'b0, w4_from_3, w3_fin0,  w2_fin0, w1_fin[0], w0_fin[0]};
+	wire [5:0] op_b = {1'b0, 1'b0,      w3_fin_c, 1'b0,    w1_fin[1], w0_fin[1]};
+	wire [5:0] s4 = op_a + op_b;
 
 	assign o_cnt = s4[OW-1:0];
 
-	wire unused_s4 = &{1'b0, s4[5:OW]};
+	wire unused_s4 = &{1'b0, s4[5:OW], w0_s1[11], w1_from_0b[1], w1_s2[6]};
 endmodule
 
 `default_nettype wire

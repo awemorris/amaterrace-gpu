@@ -315,8 +315,8 @@ module atg_vf_index #(
 			(* KEEP = "TRUE", DONT_TOUCH = "TRUE" *)
 			LUT1 #(.INIT(2'b10)) u_b1 (.O(we_buf1_b[gb]), .I0(gb < 8 ? we_buf1_m0 : we_buf1_m1));
 `else
-			assign we_buf0_b[gb] = bv_free0_r[gb] && we_buf0_m0;
-			assign we_buf1_b[gb] = bv_free1_r[gb] && we_buf1_m0;
+			assign we_buf0_b[gb] = bv_free0_r[gb] && (gb < 8 ? we_buf0_m0 : we_buf0_m1);
+			assign we_buf1_b[gb] = bv_free1_r[gb] && (gb < 8 ? we_buf1_m0 : we_buf1_m1);
 `endif
 		end
 	endgenerate

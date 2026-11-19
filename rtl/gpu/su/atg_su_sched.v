@@ -313,10 +313,12 @@ module atg_su_sched #(
 
 	/* Selection: GTO (Greedy-Then-Oldest, <= 3 LUTs from FFs) or Round-Robin */
 	reg [WARP_W-1:0] rr;
+	reg [NWARPS-1:0] rr_ge_r;
 	reg [WARP_W-1:0] last_warp;
 	reg active_valid;
 	reg hold_v;
 	reg [WARP_W-1:0] hold_w;
+	reg [NWARPS-1:0] hold_oh;
 
 	wire [NWARPS-1:0] slot_rdy_or_fetch = st_rof_r;
 	wire active_st_ok = slot_rdy_or_fetch[last_warp];
@@ -336,58 +338,48 @@ module atg_su_sched #(
 	(* keep = "true" *) wire w2_win = w2_ok23 && w2_ok01;
 
 	wire [WARP_W-1:0] fsel;
+	wire [NWARPS-1:0] fsel_oh;
 	wire fsel_v;
 	generate
 		if (GTO != 0 && NWARPS == 4) begin : g_sel_gto4
 			assign fsel[1] = use_fixed ? fixed_w[1] : (!w0_win && !w1_win);
 			assign fsel[0] = use_fixed ? fixed_w[0] : (!w0_win && !w2_win);
 			assign fsel_v  = hold_v || (active_live ? cand[last_warp] : (|cand));
-		end else begin : g_sel_rr
-			wire [2*NWARPS-1:0] cand_dbl = {cand, cand};
-			wire [NWARPS-1:0] cand_rot = cand_dbl[rr +: NWARPS];
-			wire [WARP_W-1:0] sel_off;
-			wire sel_v_rr;
-			if (NWARPS == 8) begin : g_pe8
-				wire [3:0] v2;
-				wire [3:0] b2;
-				assign v2[0] = cand_rot[0] | cand_rot[1]; assign b2[0] = !cand_rot[0];
-				assign v2[1] = cand_rot[2] | cand_rot[3]; assign b2[1] = !cand_rot[2];
-				assign v2[2] = cand_rot[4] | cand_rot[5]; assign b2[2] = !cand_rot[4];
-				assign v2[3] = cand_rot[6] | cand_rot[7]; assign b2[3] = !cand_rot[6];
-				wire v4_0 = v2[0] | v2[1];
-				wire v4_1 = v2[2] | v2[3];
-				wire [1:0] b4_0 = {!v2[0], v2[0] ? b2[0] : b2[1]};
-				wire [1:0] b4_1 = {!v2[2], v2[2] ? b2[2] : b2[3]};
-				assign sel_v_rr = v4_0 | v4_1;
-				assign sel_off  = {!v4_0, v4_0 ? b4_0 : b4_1};
-			end else if (NWARPS == 4) begin : g_pe4
-				wire v2_0 = cand_rot[0] | cand_rot[1];
-				wire v2_1 = cand_rot[2] | cand_rot[3];
-				wire b2_0 = !cand_rot[0];
-				wire b2_1 = !cand_rot[2];
-				assign sel_v_rr = v2_0 | v2_1;
-				assign sel_off  = {!v2_0, v2_0 ? b2_0 : b2_1};
-			end else begin : g_pe_gen
-				reg [WARP_W-1:0] pe_off;
-				reg pe_v;
-				integer k;
-				always @(*) begin
-					pe_v = 1'b0;
-					pe_off = {WARP_W{1'b0}};
-					for (k = NWARPS - 1; k >= 0; k = k - 1)
-						if (cand_rot[k]) begin
-							pe_v = 1'b1;
-							pe_off = k[WARP_W-1:0];
-						end
-				end
-				assign sel_v_rr = pe_v;
-				assign sel_off  = pe_off;
+			genvar goh;
+			for (goh = 0; goh < NWARPS; goh = goh + 1) begin : g_goh
+				assign fsel_oh[goh] = (fsel == goh[WARP_W-1:0]);
 			end
-			wire [WARP_W-1:0] sel_rr;
-			wire rr_sel_co_unused;
-			am_add #(.W(WARP_W)) u_rr_sel (.a(rr), .b(sel_off), .ci(1'b0), .s(sel_rr), .co(rr_sel_co_unused));
-			assign fsel   = hold_v ? hold_w : sel_rr;
+		end else begin : g_sel_rr
+			/* Parallel unrotated 2-way RR arbiter (breaks barrel-rotate + pe + add chain). */
+			wire [NWARPS-1:0] cand_hi = cand & rr_ge_r;
+			wire [NWARPS-1:0] win_lo_1h, win_hi_1h;
+			assign win_lo_1h[0] = cand[0];
+			assign win_hi_1h[0] = cand_hi[0];
+			genvar grr, gpb;
+			for (grr = 1; grr < NWARPS; grr = grr + 1) begin : g_pe
+				assign win_lo_1h[grr] = cand[grr] && !(|cand[grr-1:0]);
+				assign win_hi_1h[grr] = cand_hi[grr] && !(|cand_hi[grr-1:0]);
+			end
+			wire any_hi = |cand_hi;
+			wire sel_v_rr = |cand;
+			wire [NWARPS-1:0] win_rr_1h = any_hi ? win_hi_1h : win_lo_1h;
+			assign fsel_oh = hold_v ? hold_oh : win_rr_1h;
+			for (gpb = 0; gpb < WARP_W; gpb = gpb + 1) begin : g_bin
+				wire [NWARPS-1:0] bmask;
+				for (grr = 0; grr < NWARPS; grr = grr + 1) begin : g_bm
+					assign bmask[grr] = fsel_oh[grr] && grr[gpb];
+				end
+				assign fsel[gpb] = |bmask;
+			end
 			assign fsel_v = hold_v || sel_v_rr;
+		end
+	endgenerate
+	wire [NWARPS-1:0] next_rr_ge;
+	assign next_rr_ge[0] = fsel_oh[NWARPS - 1];
+	generate
+		genvar gnge;
+		for (gnge = 1; gnge < NWARPS; gnge = gnge + 1) begin : g_nrr_ge
+			assign next_rr_ge[gnge] = fsel_oh[NWARPS - 1] || (|fsel_oh[gnge-1:0]);
 		end
 	endgenerate
 	wire [159:0] q_info_out;
@@ -481,8 +473,22 @@ module atg_su_sched #(
 
 	assign f_valid = fsel_v_out;
 	assign f_warp = fsel_out;
-	assign f_pc = pc[(fsel_pc)*16 +: 16];
-	assign f_addr = {w_f_addr[{fsel_fa_hi, 5'd16} +: 16], w_f_addr[{fsel_fa_lo, 5'd0} +: 16]};
+	reg [15:0] f_pc_oh;
+	reg [31:0] f_addr_oh;
+	integer gfo;
+	always @(*) begin
+		f_pc_oh = 16'd0;
+		f_addr_oh = 32'd0;
+		for (gfo = 0; gfo < NWARPS; gfo = gfo + 1) begin
+			if (fsel_oh[gfo]) begin
+				f_pc_oh = f_pc_oh | pc[gfo*16 +: 16];
+				f_addr_oh = f_addr_oh | w_f_addr[gfo*32 +: 32];
+			end
+		end
+	end
+	assign f_pc = f_pc_oh;
+	assign f_addr = f_addr_oh;
+	wire unused_fsel_mux = &{1'b0, fsel_pc, fsel_fa_lo, fsel_fa_hi};
 
 	/* Per slot: the gap and pc counted down / up; rr, rot, wk and the tag + 1. */
 	/* verilator lint_off WIDTHTRUNC */
@@ -657,6 +663,8 @@ module atg_su_sched #(
 			gap_z_r <= {NWARPS{1'b1}};
 			tag <= {(NWARPS*4){1'b0}};
 			{rr, hold_v, hold_w} <= {(2*WARP_W+1){1'b0}};
+			rr_ge_r <= {NWARPS{1'b1}};
+			hold_oh <= {{(NWARPS-1){1'b0}}, 1'b1};
 			last_warp <= {WARP_W{1'b0}};
 			active_valid <= 1'b0;
 			{vl_wait, fl_wait, vl_s, fl_s} <= {(2*WARP_W+2){1'b0}};
@@ -692,8 +700,10 @@ module atg_su_sched #(
 			end
 			hold_v <= fsel_v_st && !f_ready;
 			hold_w <= fsel_st;
+			hold_oh <= fsel_oh;
 			if (fsel_v_st && f_ready) begin
 				rr <= rr_next;
+				rr_ge_r <= next_rr_ge;
 				last_warp <= fsel_st;
 				active_valid <= 1'b1;
 			end
@@ -794,7 +804,7 @@ module atg_su_sched #(
 
 	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes_r[23:9], rot1[8], slot_rdy_nogap,
 		w_fa_co_unused, wdata_m1_bo_unused, ix_co_unused, iy_co_unused, iz_co_unused,
-		rot_co_unused, (NSU != 0)};
+		rot_co_unused, unused_fsel_mux, rr, (NSU != 0)};
 endmodule
 
 `default_nettype wire

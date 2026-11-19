@@ -505,9 +505,11 @@ module atg_cp_ctl #(
 	assign ev_wdt = f_wdt_only_r && take_fault;
 	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
+	wire [7:0] win_tag = mc_gpu ? mc_fault_tag :
+	                     (kick_absent || kick_bad || locked_bad) ? 8'd0 :
+	                     wdt_fire ? wdt_tag : n_info[15:8];
 `else
 	always @(*) begin
-		any = 1'b1;
 		n_addr = 32'd0;
 		n_info = 32'd0;
 		if (mc_gpu) begin
@@ -525,32 +527,56 @@ module atg_cp_ctl #(
 			n_info = {12'd0, 4'd0, 8'd0, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_LOCKED_REG};
 		end else if (wdt_fire) begin
 			n_info = {12'd0, 4'd0, wdt_tag, GHCI_FAULT_UNIT_CP, GHCI_FAULT_KIND_WATCHDOG};
-		end else begin
-			any = 1'b0;
-			for (k = NSRC - 1; k >= 0; k = k - 1)
-				if (src_fault[k]) begin
-					any = 1'b1;
-					n_info = {12'd0, src_stage[k * 4 +: 4], src_tag[k * 8 +: 8], SRC_BLOCK[k * 8 +: 4],
-						src_kind[k * 4 +: 4]};
-					n_addr = src_addr[k * 32 +: 32];
-				end
 		end
 	end
 
+	wire [NSRC-1:0] sf_1h;
+	wire [31:0] sf_info, sf_addr;
+	assign sf_1h[0] = src_fault[0];
+	genvar gsf;
+	generate
+		for (gsf = 1; gsf < NSRC; gsf = gsf + 1) begin : g_sf1h
+			assign sf_1h[gsf] = src_fault[gsf] && !(|src_fault[gsf-1:0]);
+		end
+	endgenerate
+	reg [31:0] sf_info_r, sf_addr_r;
+	always @(*) begin
+		sf_info_r = 32'd0;
+		sf_addr_r = 32'd0;
+		for (k = 0; k < NSRC; k = k + 1) begin
+			if (sf_1h[k]) begin
+				sf_info_r = sf_info_r | {12'd0, src_stage[k * 4 +: 4], src_tag[k * 8 +: 8],
+					SRC_BLOCK[k * 8 +: 4], src_kind[k * 4 +: 4]};
+				sf_addr_r = sf_addr_r | src_addr[k * 32 +: 32];
+			end
+		end
+	end
+	assign sf_info = sf_info_r;
+	assign sf_addr = sf_addr_r;
+
+	wire any_src_fault = |src_fault;
+	wire use_src_fault = !mc_gpu && !kick_absent && !kick_bad && !locked_bad && !wdt_fire && any_src_fault;
+	wire [31:0] n_info_mux = use_src_fault ? sf_info : n_info;
+	wire [31:0] n_addr_mux = use_src_fault ? sf_addr : n_addr;
+	wire any_mux = mc_gpu || kick_absent || kick_bad || locked_bad || wdt_fire || any_src_fault;
+
 	wire fault_info_uncleared = |fault_info;
-	wire take_fault = any && can_fault_r[0];
-	wire take_fault_st = any && can_fault_r[1];
-	wire take_fault_info = any && can_fault_r[2] && !fault_info_uncleared;
-	wire take_fault_addr = any && can_fault_r[3] && !fault_info_uncleared;
+	wire take_fault = any_mux && can_fault_r[0];
+	wire take_fault_st = any_mux && can_fault_r[1];
+	wire take_fault_info = any_mux && can_fault_r[2] && !fault_info_uncleared;
+	wire take_fault_addr = any_mux && can_fault_r[3] && !fault_info_uncleared;
 	assign ev_fault = take_fault;
 	assign ev_wdt = wdt_fire && take_fault && !mc_gpu && !kick_bad && !kick_absent && !locked_bad;
 	assign ev_halted = st == S_HALTING && ctrl_halt && halt_ok && !take_fault &&
 		!wr_reset;
+	wire [7:0] win_tag = mc_gpu ? mc_fault_tag :
+	                     (kick_absent || kick_bad || locked_bad) ? 8'd0 :
+	                     wdt_fire ? wdt_tag : sf_info[15:8];
 `endif
 
-	wire is_session_fault = (HAS_PROT != 0) && (n_info[15:8] != 8'd0);
+	wire is_session_fault = (HAS_PROT != 0) && (win_tag != 8'd0);
 	assign fault_session_clear = take_fault && is_session_fault;
-	assign fault_session_tag = n_info[15:8];
+	assign fault_session_tag = win_tag;
 
 `ifdef SYNTH_KINTEX7
 	wire [5:0] tf_buf;
@@ -731,12 +757,12 @@ module atg_cp_ctl #(
 				stuck_count <= 34'd0;
 			end
 
-			if (take_fault) begin
-				fault_info <= n_info;
-				fault_addr <= n_addr;
-			end else if (wr_fault_info) begin
+			if (take_fault_info)
+				fault_info <= n_info_mux;
+			else if (wr_fault_info)
 				fault_info <= fault_info & ~(hcr_wdata & hcr_wmask);
-			end
+			if (take_fault_addr)
+				fault_addr <= n_addr_mux;
 `endif
 
 			/* The state. */

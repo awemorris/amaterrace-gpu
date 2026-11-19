@@ -54,39 +54,23 @@ module am_fp_fma_p #(
 
 	/* k: C's LSB relative to P's (units of P's LSB), the window has two bits
 	 * below P's LSB: k = ec - ea - eb + 150 */
-	wire [11:0] ab, c150, c152, c101, k, kadj, kp2;
-	wire [4:0] rs;
+	wire [11:0] ab, c150, c152, c101, k_c, kadj_c, kp2_c;
+	wire [4:0] rs_c;
 	am_add #(.W(12)) u_ab (.a({4'd0, a[30:23]}), .b({4'd0, b[30:23]}), .ci(1'b0), .s(ab),
 		.co(carry_unused[0]));
 	am_add #(.W(12)) u_c150 (.a({4'd0, c[30:23]}), .b(12'd150), .ci(1'b0), .s(c150),
 		.co(carry_unused[1]));
-	am_sub #(.W(12)) u_k (.a(c150), .b(ab), .bi(1'b0), .d(k), .bo(carry_unused[2]));
+	am_sub #(.W(12)) u_k (.a(c150), .b(ab), .bi(1'b0), .d(k_c), .bo(carry_unused[2]));
 	am_add #(.W(12)) u_c101 (.a({4'd0, c[30:23]}), .b(12'd101), .ci(1'b0), .s(c101),
 		.co(carry_unused[3]));
-	am_sub #(.W(12)) u_kadj (.a(c101), .b(ab), .bi(1'b0), .d(kadj), .bo(carry_unused[4]));
+	am_sub #(.W(12)) u_kadj (.a(c101), .b(ab), .bi(1'b0), .d(kadj_c), .bo(carry_unused[4]));
 	am_add #(.W(12)) u_c152 (.a({4'd0, c[30:23]}), .b(12'd152), .ci(1'b0), .s(c152),
 		.co(carry_unused[5]));
-	am_sub #(.W(12)) u_kp2 (.a(c152), .b(ab), .bi(1'b0), .d(kp2), .bo(carry_unused[6]));
-	am_sub #(.W(5)) u_rs (.a(5'd0), .b(kp2[4:0]), .bi(1'b0), .d(rs),
+	am_sub #(.W(12)) u_kp2 (.a(c152), .b(ab), .bi(1'b0), .d(kp2_c), .bo(carry_unused[6]));
+	am_sub #(.W(5)) u_rs (.a(5'd0), .b(kp2_c[4:0]), .bi(1'b0), .d(rs_c),
 		.bo(carry_unused[7]));	/* 1..23 */
-	wire signed [11:0] ks = k;
-	wire kbig = ks > 12'sd49;
-	wire kleft = !kp2[11];
-	wire kright = ks > -12'sd26;
-	wire [76:0] cs;
-	am_shift #(.W(77), .SW(7)) u_cs (.a({53'd0, mc}), .amt(kleft ? kp2[6:0] : {2'd0, rs}), .left(kleft),
-		.arith(1'b0), .y(cs));
-	/* the sticky bit: the bits of mc below rs */
-	wire [23:0] cmk;
-	am_shift #(.W(24), .SW(5), .DIR(2)) u_cmk (.a(24'hFFFFFF), .amt(rs), .left(1'b1), .arith(1'b0), .y(cmk));
-	wire cst = |(mc & ~cmk);
-	wire [11:0] adj = !zc && kbig ? kadj : 12'd0;
-	wire [76:0] pw = !zc && kbig ? {76'd0, 1'b1} : {27'd0, p, 2'b00};
-	wire [76:0] cw = zc ? 77'd0 : kbig ? {2'b00, mc, 51'd0} : kleft ? cs : kright ? {cs[76:1], cs[0] | cst} : 77'd1;
-	/* the sum: pw + cw, pw - cw or cw - pw (the larger first) */
-	wire same = zc || sp == sc;
 
-	/* Special cases determined in Stage 0 */
+	/* Special cases determined in Stage 0a */
 	wire spec_nan = nan_a || nan_b || nan_c || (inf_a && zb) || (inf_b && za);
 	wire spec_inf_ab = (inf_a || inf_b) && !spec_nan;
 	wire spec_inf_c = inf_c && !spec_nan && !spec_inf_ab;
@@ -97,6 +81,60 @@ module am_fp_fma_p #(
 		spec_inf_ab ? (inf_c && sc != sp ? 32'h7FC00000 : {sp, 8'hFF, 23'd0}) :
 		spec_inf_c ? c :
 		(!zc ? c : noc ? {sp, 31'd0} : {rdn ? (sp | sc) : (sp & sc), 31'd0});
+
+	/* --- Stage 0a -> Stage 0b Pipeline Register (LAT >= 5) --- */
+	reg [47:0] r0a_p;
+	reg [23:0] r0a_mc;
+	reg        r0a_zc, r0a_sp, r0a_sc, r0a_rdn, r0a_spec_hit;
+	reg [2:0]  r0a_rm;
+	reg [11:0] r0a_ab, r0a_k, r0a_kadj, r0a_kp2;
+	reg [4:0]  r0a_rs;
+	reg [31:0] r0a_spec_res;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			r0a_p <= 48'd0; r0a_mc <= 24'd0; r0a_zc <= 1'b0; r0a_sp <= 1'b0;
+			r0a_sc <= 1'b0; r0a_rdn <= 1'b0; r0a_spec_hit <= 1'b0; r0a_rm <= 3'd0;
+			r0a_ab <= 12'd0; r0a_k <= 12'd0; r0a_kadj <= 12'd0; r0a_kp2 <= 12'd0;
+			r0a_rs <= 5'd0; r0a_spec_res <= 32'd0;
+		end else if (en) begin
+			r0a_p <= p; r0a_mc <= mc; r0a_zc <= zc; r0a_sp <= sp;
+			r0a_sc <= sc; r0a_rdn <= rdn; r0a_spec_hit <= spec_hit; r0a_rm <= rm;
+			r0a_ab <= ab; r0a_k <= k_c; r0a_kadj <= kadj_c; r0a_kp2 <= kp2_c;
+			r0a_rs <= rs_c; r0a_spec_res <= spec_res;
+		end
+	end
+
+	wire [47:0] p0b        = (LAT >= 5) ? r0a_p        : p;
+	wire [23:0] mc0b       = (LAT >= 5) ? r0a_mc       : mc;
+	wire        zc0b       = (LAT >= 5) ? r0a_zc       : zc;
+	wire        sp0b       = (LAT >= 5) ? r0a_sp       : sp;
+	wire        sc0b       = (LAT >= 5) ? r0a_sc       : sc;
+	wire        rdn0b      = (LAT >= 5) ? r0a_rdn      : rdn;
+	wire        spec_hit0b = (LAT >= 5) ? r0a_spec_hit : spec_hit;
+	wire [2:0]  rm0b       = (LAT >= 5) ? r0a_rm       : rm;
+	wire [11:0] ab0b       = (LAT >= 5) ? r0a_ab       : ab;
+	wire [11:0] k          = (LAT >= 5) ? r0a_k        : k_c;
+	wire [11:0] kadj       = (LAT >= 5) ? r0a_kadj     : kadj_c;
+	wire [11:0] kp2        = (LAT >= 5) ? r0a_kp2      : kp2_c;
+	wire [4:0]  rs         = (LAT >= 5) ? r0a_rs       : rs_c;
+	wire [31:0] spec_res0b = (LAT >= 5) ? r0a_spec_res : spec_res;
+
+	wire signed [11:0] ks = k;
+	wire kbig = ks > 12'sd49;
+	wire kleft = !kp2[11];
+	wire kright = ks > -12'sd26;
+	wire [76:0] cs;
+	am_shift #(.W(77), .SW(7)) u_cs (.a({53'd0, mc0b}), .amt(kleft ? kp2[6:0] : {2'd0, rs}), .left(kleft),
+		.arith(1'b0), .y(cs));
+	/* the sticky bit: the bits of mc0b below rs */
+	wire [23:0] cmk;
+	am_shift #(.W(24), .SW(5), .DIR(2)) u_cmk (.a(24'hFFFFFF), .amt(rs), .left(1'b1), .arith(1'b0), .y(cmk));
+	wire cst = |(mc0b & ~cmk);
+	wire [11:0] adj = !zc0b && kbig ? kadj : 12'd0;
+	wire [76:0] pw = !zc0b && kbig ? {76'd0, 1'b1} : {27'd0, p0b, 2'b00};
+	wire [76:0] cw = zc0b ? 77'd0 : kbig ? {2'b00, mc0b, 51'd0} : kleft ? cs : kright ? {cs[76:1], cs[0] | cst} : 77'd1;
+	/* the sum: pw + cw, pw - cw or cw - pw (the larger first) */
+	wire same = zc0b || sp0b == sc0b;
 
 	/* --- Stage 0 -> Stage 1 Pipeline Register (LAT >= 2) --- */
 	reg [76:0] r0_pw;
@@ -128,14 +166,14 @@ module am_fp_fma_p #(
 			r0_pw       <= pw;
 			r0_cw       <= cw;
 			r0_same     <= same;
-			r0_sp       <= sp;
-			r0_sc       <= sc;
-			r0_ab       <= ab;
+			r0_sp       <= sp0b;
+			r0_sc       <= sc0b;
+			r0_ab       <= ab0b;
 			r0_adj      <= adj;
-			r0_rm       <= rm;
-			r0_rdn      <= rdn;
-			r0_spec_hit <= spec_hit;
-			r0_spec_res <= spec_res;
+			r0_rm       <= rm0b;
+			r0_rdn      <= rdn0b;
+			r0_spec_hit <= spec_hit0b;
+			r0_spec_res <= spec_res0b;
 		end
 	end
 
@@ -205,13 +243,44 @@ module am_fp_fma_p #(
 	wire [31:0] s1_spec_res = (LAT >= 1) ? r1_spec_res : s0_spec_res;
 
 	/* normalised to bit 76; the exponent msb + ea + eb + adj - 175 */
-	wire [6:0] msb;
-	wire sum_nz;
-	am_msb #(.W(77), .SW(7)) u_msb (.a(s1_sum), .n(msb), .nz(sum_nz));
+	wire [6:0] msb_c;
+	wire sum_nz_c;
+	am_msb #(.W(77), .SW(7)) u_msb (.a(s1_sum), .n(msb_c), .nz(sum_nz_c));
+	wire [11:0] t1_c;
+	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1_c), .co(carry_unused[10]));
+
+	/* --- Stage 2a -> Stage 2m Pipeline Register (LAT >= 6) --- */
+	reg [76:0] r1m_sum;
+	reg [6:0]  r1m_msb;
+	reg        r1m_sum_nz, r1m_sr, r1m_rdn, r1m_spec_hit;
+	reg [11:0] r1m_t1;
+	reg [2:0]  r1m_rm;
+	reg [31:0] r1m_spec_res;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			r1m_sum <= 77'd0; r1m_msb <= 7'd0; r1m_sum_nz <= 1'b0; r1m_sr <= 1'b0;
+			r1m_rdn <= 1'b0; r1m_spec_hit <= 1'b0; r1m_t1 <= 12'd0; r1m_rm <= 3'd0;
+			r1m_spec_res <= 32'd0;
+		end else if (en) begin
+			r1m_sum <= s1_sum; r1m_msb <= msb_c; r1m_sum_nz <= sum_nz_c; r1m_sr <= s1_sr;
+			r1m_rdn <= s1_rdn; r1m_spec_hit <= s1_spec_hit; r1m_t1 <= t1_c; r1m_rm <= s1_rm;
+			r1m_spec_res <= s1_spec_res;
+		end
+	end
+
+	wire [76:0] s1m_sum      = (LAT >= 6) ? r1m_sum      : s1_sum;
+	wire [6:0]  msb          = (LAT >= 6) ? r1m_msb      : msb_c;
+	wire        sum_nz       = (LAT >= 6) ? r1m_sum_nz   : sum_nz_c;
+	wire        s1m_sr       = (LAT >= 6) ? r1m_sr       : s1_sr;
+	wire        s1m_rdn      = (LAT >= 6) ? r1m_rdn      : s1_rdn;
+	wire        s1m_spec_hit = (LAT >= 6) ? r1m_spec_hit : s1_spec_hit;
+	wire [11:0] t1           = (LAT >= 6) ? r1m_t1       : t1_c;
+	wire [2:0]  s1m_rm       = (LAT >= 6) ? r1m_rm       : s1_rm;
+	wire [31:0] s1m_spec_res = (LAT >= 6) ? r1m_spec_res : s1_spec_res;
+
 	wire [6:0] nsh;
-	wire [11:0] t1, t2, er;
+	wire [11:0] t2, er;
 	am_sub #(.W(7)) u_nsh (.a(7'd76), .b(msb), .bi(1'b0), .d(nsh), .bo(carry_unused[9]));
-	am_add #(.W(12)) u_t1 (.a(s1_ab), .b(s1_adj), .ci(1'b0), .s(t1), .co(carry_unused[10]));
 	am_add #(.W(12)) u_t2 (.a(t1), .b({5'd0, msb}), .ci(1'b0), .s(t2), .co(carry_unused[11]));
 	am_sub #(.W(12)) u_er (.a(t2), .b(12'd175), .bi(1'b0), .d(er), .bo(carry_unused[12]));
 
@@ -238,15 +307,15 @@ module am_fp_fma_p #(
 			r1b_spec_hit <= 1'b0;
 			r1b_spec_res <= 32'd0;
 		end else if (en) begin
-			r1b_sum      <= s1_sum;
+			r1b_sum      <= s1m_sum;
 			r1b_nsh      <= nsh;
 			r1b_er       <= er;
 			r1b_sum_nz   <= sum_nz;
-			r1b_sr       <= s1_sr;
-			r1b_rm       <= s1_rm;
-			r1b_rdn      <= s1_rdn;
-			r1b_spec_hit <= s1_spec_hit;
-			r1b_spec_res <= s1_spec_res;
+			r1b_sr       <= s1m_sr;
+			r1b_rm       <= s1m_rm;
+			r1b_rdn      <= s1m_rdn;
+			r1b_spec_hit <= s1m_spec_hit;
+			r1b_spec_res <= s1m_spec_res;
 		end
 	end
 

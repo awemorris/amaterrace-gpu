@@ -135,42 +135,31 @@ module atg_mc_cnt #(
 		.o_cnt(n_unit_rsp)
 	);
 
-	/* Net deltas computed by single-level subtractors */
-	wire [7:0] t_n;
-	wire [7:0] tc_n;
-	wire [9:0] u_delta;
-	wire sub_t_bo_unused, sub_tc_bo_unused, sub_u_bo_unused;
+	/* Fold + popcount - decrement via 1-level 3:2 CSA into a single adder per counter. */
+	wire dec_t = done_s && !done_keep_s;
+	wire [7:0] n_take_w = {3'd0, n_take};
+	wire [7:0] dec_t_w = {8{dec_t}};
+	wire [7:0] t_csa_s = pend ^ n_take_w ^ dec_t_w;
+	wire [7:0] t_csa_c = (pend & n_take_w) | (pend & dec_t_w) | (n_take_w & dec_t_w);
 
-	am_sub #(.W(8)) u_sub_t (
-		.a({{3{1'b0}}, n_take}),
-		.b({7'd0, done_s && !done_keep_s}),
-		.bi(1'b0),
-		.d(t_n),
-		.bo(sub_t_bo_unused)
-	);
-	am_sub #(.W(8)) u_sub_tc (
-		.a({{3{1'b0}}, n_take_chk}),
-		.b({7'd0, done_chk_s}),
-		.bi(1'b0),
-		.d(tc_n),
-		.bo(sub_tc_bo_unused)
-	);
-	am_sub #(.W(10)) u_sub_u (
-		.a({{5{1'b0}}, n_unit_take}),
-		.b({{5{1'b0}}, n_unit_rsp}),
-		.bi(1'b0),
-		.d(u_delta),
-		.bo(sub_u_bo_unused)
-	);
+	wire [7:0] n_take_chk_w = {3'd0, n_take_chk};
+	wire [7:0] dec_tc_w = {8{done_chk_s}};
+	wire [7:0] tc_csa_s = chk_n ^ n_take_chk_w ^ dec_tc_w;
+	wire [7:0] tc_csa_c = (chk_n & n_take_chk_w) | (chk_n & dec_tc_w) | (n_take_chk_w & dec_tc_w);
 
-	/* Each counter: n + this cycle's net delta in a single adder. */
+	wire [9:0] n_unit_take_w = {5'd0, n_unit_take};
+	wire [9:0] n_unit_rsp_inv = {5'h1F, ~n_unit_rsp};
+	wire [9:0] u_csa_s = unit_n ^ n_unit_take_w ^ n_unit_rsp_inv;
+	wire [9:0] u_csa_c = (unit_n & n_unit_take_w) | (unit_n & n_unit_rsp_inv) | (n_unit_take_w & n_unit_rsp_inv);
+
+	/* Each counter: single final carry-propagate adder. */
 	wire [7:0] pend_n, chk_nx;
 	wire [9:0] unit_nx;
 	wire [2:0] cnt_co;
 
-	am_add #(.W(8)) pend_add (.a(pend), .b(t_n), .ci(1'b0), .s(pend_n), .co(cnt_co[0]));
-	am_add #(.W(8)) chk_add (.a(chk_n), .b(tc_n), .ci(1'b0), .s(chk_nx), .co(cnt_co[1]));
-	am_add #(.W(10)) unit_add (.a(unit_n), .b(u_delta), .ci(1'b0), .s(unit_nx), .co(cnt_co[2]));
+	am_add #(.W(8)) pend_add (.a(t_csa_s), .b({t_csa_c[6:0], 1'b0}), .ci(1'b0), .s(pend_n), .co(cnt_co[0]));
+	am_add #(.W(8)) chk_add (.a(tc_csa_s), .b({tc_csa_c[6:0], 1'b0}), .ci(1'b0), .s(chk_nx), .co(cnt_co[1]));
+	am_add #(.W(10)) unit_add (.a(u_csa_s), .b({u_csa_c[8:0], 1'b1}), .ci(1'b0), .s(unit_nx), .co(cnt_co[2]));
 
 `ifdef SYNTH_KINTEX7
 	always @(posedge clk or posedge cnt_rst_sync) begin
@@ -210,14 +199,14 @@ module atg_mc_cnt #(
 	assign chk_idle = chk_n == 8'd0;
 	assign unit_idle = unit_n == 10'd0;
 
-	/* ax: one increment and one decrement a cycle, n + inc - dec in one adder. */
+	/* ax: precompute +1 and -1 in parallel with ax_inc/ax_dec control logic. */
 	reg [7:0] ax_n;
-	wire [7:0] ax_next;
-	wire ax_co_unused;
+	wire [7:0] ax_p1, ax_m1;
+	wire [1:0] ax_co_unused;
 
-	am_add #(.W(8)) ax_add (
-		.a(ax_n), .b({8{ax_dec_s}}), .ci(ax_inc_s), .s(ax_next), .co(ax_co_unused)
-	);
+	am_add #(.W(8)) ax_add_p1 (.a(ax_n), .b(8'd0), .ci(1'b1), .s(ax_p1), .co(ax_co_unused[0]));
+	am_add #(.W(8)) ax_add_m1 (.a(ax_n), .b(8'hFF), .ci(1'b0), .s(ax_m1), .co(ax_co_unused[1]));
+	wire [7:0] ax_next = (ax_inc_s == ax_dec_s) ? ax_n : (ax_inc_s ? ax_p1 : ax_m1);
 
 `ifdef SYNTH_KINTEX7
 	always @(posedge clk or posedge cnt_rst_sync)
@@ -235,7 +224,7 @@ module atg_mc_cnt #(
 
 	assign ax_zero = ax_n == 8'd0;
 
-	wire unused_ok = &{1'b0, ax_co_unused, cnt_co, sub_t_bo_unused, sub_tc_bo_unused, sub_u_bo_unused};
+	wire unused_ok = &{1'b0, ax_co_unused, cnt_co, t_csa_c[7], tc_csa_c[7], u_csa_c[9]};
 endmodule
 
 `default_nettype wire

@@ -144,6 +144,7 @@ module atg_su_lsu #(
 	(* max_fanout = 12 *) reg [31:0] rimm;
 	wire [DW-1:0] radr, rdat, rcmp, res;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] pend, pend_a, pend_b, pend_be;
+	(* keep = "true", dont_touch = "true" *) reg [NPHYS-1:0] pend_ll0, pend_ll1, pend_ll2, pend_ll3;
 	(* dont_touch = "true" *) reg [NPHYS-1:0] lhit, lhit_a, lhit_b, lhit_be;
 	(* max_fanout = 12 *) reg [NPHYS-1:0] lanes, cur;
 	(* max_fanout = 12 *) reg rwr, rst_w, ratom;
@@ -190,7 +191,37 @@ module atg_su_lsu #(
 	(* max_fanout = 12 *) wire [LW:0] lead = pend_nz ? {1'b0, ~pend_rev_n} : NPHYS[LW:0];
 	wire [NPHYS-1:0] inl = pend & lhit;
 	wire [NPHYS-1:0] line_eq;
-	wire [LA_W-1:0] lline = radr[lead[LW-1:0]*32 + LINE_SHIFT +: LA_W];
+	wire [NPHYS-1:0] pend_ll0_rev, pend_ll1_rev, pend_ll2_rev, pend_ll3_rev;
+	genvar gpl;
+	generate
+		for (gpl = 0; gpl < NPHYS; gpl = gpl + 1) begin : g_pend_ll_rev
+			assign pend_ll0_rev[gpl] = pend_ll0[NPHYS - 1 - gpl];
+			assign pend_ll1_rev[gpl] = pend_ll1[NPHYS - 1 - gpl];
+			assign pend_ll2_rev[gpl] = pend_ll2[NPHYS - 1 - gpl];
+			assign pend_ll3_rev[gpl] = pend_ll3[NPHYS - 1 - gpl];
+		end
+	endgenerate
+	wire [LW-1:0] pend_ll0_n, pend_ll1_n, pend_ll2_n, pend_ll3_n;
+	wire pend_ll0_nz, pend_ll1_nz, pend_ll2_nz, pend_ll3_nz;
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_ll0 (.a(pend_ll0_rev), .n(pend_ll0_n), .nz(pend_ll0_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_ll1 (.a(pend_ll1_rev), .n(pend_ll1_n), .nz(pend_ll1_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_ll2 (.a(pend_ll2_rev), .n(pend_ll2_n), .nz(pend_ll2_nz));
+	am_msb #(.W(NPHYS), .SW(LW)) u_lsu_ll3 (.a(pend_ll3_rev), .n(pend_ll3_n), .nz(pend_ll3_nz));
+	wire [LW-1:0] lead_ll0 = ~pend_ll0_n;
+	wire [LW-1:0] lead_ll1 = ~pend_ll1_n;
+	wire [LW-1:0] lead_ll2 = ~pend_ll2_n;
+	wire [LW-1:0] lead_ll3 = ~pend_ll3_n;
+	localparam integer LL_Q0 = LA_W / 4;
+	localparam integer LL_Q1 = LA_W / 4;
+	localparam integer LL_Q2 = LA_W / 4;
+	localparam integer LL_Q3 = LA_W - (LL_Q0 + LL_Q1 + LL_Q2);
+	wire [LA_W-1:0] lline = {
+		radr[lead_ll3*32 + LINE_SHIFT + LL_Q0 + LL_Q1 + LL_Q2 +: LL_Q3],
+		radr[lead_ll2*32 + LINE_SHIFT + LL_Q0 + LL_Q1         +: LL_Q2],
+		radr[lead_ll1*32 + LINE_SHIFT + LL_Q0                 +: LL_Q1],
+		radr[lead_ll0*32 + LINE_SHIFT                         +: LL_Q0]
+	};
+	wire unused_ll_nz = &{1'b0, pend_ll0_nz, pend_ll1_nz, pend_ll2_nz, pend_ll3_nz};
 
 	/* The next atomic lane. */
 	wire [LW:0] anext = lead;
@@ -330,19 +361,61 @@ module atg_su_lsu #(
 				assign sl_hit_1[gl] = hit;
 `endif
 			end
+			localparam integer NG_CWD = (NPHYS >= 4) ? (NPHYS / 4) : 1;
+			wire [NG_CWD-1:0] grp_any_0, grp_any_1;
+			wire [NG_CWD-1:0] grp_win_0, grp_win_1;
+			wire [NG_CWD*8-1:0] grp_dat_0, grp_dat_1;
+			genvar ggc;
+			for (ggc = 0; ggc < NG_CWD; ggc = ggc + 1) begin : g_cwd_grp
+				if (NPHYS >= 4) begin : g_4
+					localparam integer B = ggc * 4;
+					assign grp_any_0[ggc] = |sl_hit_0[B +: 4];
+					assign grp_any_1[ggc] = |sl_hit_1[B +: 4];
+					assign grp_dat_0[ggc*8 +: 8] =
+						sl_hit_0[B+3] ? rdat[(B+3)*32 + H_IDX*16 +: 8] :
+						sl_hit_0[B+2] ? rdat[(B+2)*32 + H_IDX*16 +: 8] :
+						sl_hit_0[B+1] ? rdat[(B+1)*32 + H_IDX*16 +: 8] :
+						                rdat[(B+0)*32 + H_IDX*16 +: 8];
+					assign grp_dat_1[ggc*8 +: 8] =
+						sl_hit_1[B+3] ? rdat[(B+3)*32 + H_IDX*16 + 8 +: 8] :
+						sl_hit_1[B+2] ? rdat[(B+2)*32 + H_IDX*16 + 8 +: 8] :
+						sl_hit_1[B+1] ? rdat[(B+1)*32 + H_IDX*16 + 8 +: 8] :
+						                rdat[(B+0)*32 + H_IDX*16 + 8 +: 8];
+				end else begin : g_lt4
+					reg [7:0] d0, d1;
+					integer il;
+					always @(*) begin
+						d0 = 8'd0;
+						d1 = 8'd0;
+						for (il = 0; il < NPHYS; il = il + 1) begin
+							if (sl_hit_0[il]) d0 = rdat[il*32 + H_IDX*16 +: 8];
+							if (sl_hit_1[il]) d1 = rdat[il*32 + H_IDX*16 + 8 +: 8];
+						end
+					end
+					assign grp_any_0[0] = |sl_hit_0;
+					assign grp_any_1[0] = |sl_hit_1;
+					assign grp_dat_0[7:0] = d0;
+					assign grp_dat_1[7:0] = d1;
+				end
+				if (ggc == NG_CWD - 1) begin : g_top
+					assign grp_win_0[ggc] = grp_any_0[ggc];
+					assign grp_win_1[ggc] = grp_any_1[ggc];
+				end else begin : g_lo
+					assign grp_win_0[ggc] = grp_any_0[ggc] && !(|grp_any_0[NG_CWD-1:ggc+1]);
+					assign grp_win_1[ggc] = grp_any_1[ggc] && !(|grp_any_1[NG_CWD-1:ggc+1]);
+				end
+			end
 			reg [7:0] lwd_sl_0, lwd_sl_1;
 			integer sl_l;
 			always @(*) begin
 				lwd_sl_0 = 8'd0;
-				for (sl_l = 0; sl_l < NPHYS; sl_l = sl_l + 1)
-					if (sl_hit_0[sl_l])
-						lwd_sl_0 = rdat[sl_l*32 + H_IDX*16 +: 8];
-			end
-			always @(*) begin
 				lwd_sl_1 = 8'd0;
-				for (sl_l = 0; sl_l < NPHYS; sl_l = sl_l + 1)
-					if (sl_hit_1[sl_l])
-						lwd_sl_1 = rdat[sl_l*32 + H_IDX*16 + 8 +: 8];
+				for (sl_l = 0; sl_l < NG_CWD; sl_l = sl_l + 1) begin
+					if (grp_win_0[sl_l])
+						lwd_sl_0 = lwd_sl_0 | grp_dat_0[sl_l*8 +: 8];
+					if (grp_win_1[sl_l])
+						lwd_sl_1 = lwd_sl_1 | grp_dat_1[sl_l*8 +: 8];
+				end
 			end
 			wire [15:0] lwd_sl = {lwd_sl_1, lwd_sl_0};
 			(* shreg_extract = "no" *) reg [15:0] cwd_sl;
@@ -412,6 +485,10 @@ module atg_su_lsu #(
 			pend_a  <= {NPHYS{1'b0}};
 			pend_b  <= {NPHYS{1'b0}};
 			pend_be <= {NPHYS{1'b0}};
+			pend_ll0 <= {NPHYS{1'b0}};
+			pend_ll1 <= {NPHYS{1'b0}};
+			pend_ll2 <= {NPHYS{1'b0}};
+			pend_ll3 <= {NPHYS{1'b0}};
 			st <= IDLE;
 			idle_r <= {NPHYS{1'b1}};
 			prep_r <= {NPHYS{1'b0}};
@@ -447,16 +524,28 @@ module atg_su_lsu #(
 				pend_a  <= amask;
 				pend_b  <= amask;
 				pend_be <= amask;
+				pend_ll0 <= amask;
+				pend_ll1 <= amask;
+				pend_ll2 <= amask;
+				pend_ll3 <= amask;
 			end else if (st == WAIT && dc_rsp_valid) begin
 				pend    <= pend & ~cur;
 				pend_a  <= pend_a & ~cur;
 				pend_b  <= pend_b & ~cur;
 				pend_be <= pend_be & ~cur;
+				pend_ll0 <= pend_ll0 & ~cur;
+				pend_ll1 <= pend_ll1 & ~cur;
+				pend_ll2 <= pend_ll2 & ~cur;
+				pend_ll3 <= pend_ll3 & ~cur;
 			end else if (st == AREQ && at_valid_r && at_ready) begin
 				pend[anext[LW-1:0]]    <= 1'b0;
 				pend_a[anext[LW-1:0]]  <= 1'b0;
 				pend_b[anext[LW-1:0]]  <= 1'b0;
 				pend_be[anext[LW-1:0]] <= 1'b0;
+				pend_ll0[anext[LW-1:0]] <= 1'b0;
+				pend_ll1[anext[LW-1:0]] <= 1'b0;
+				pend_ll2[anext[LW-1:0]] <= 1'b0;
+				pend_ll3[anext[LW-1:0]] <= 1'b0;
 			end
 			if (lsu_idle_ce_a) begin
 				rwr <= op == ATG_LSU_SW;
@@ -641,7 +730,7 @@ module atg_su_lsu #(
 	assign l_cls = ATG_CLS_M;
 
 	wire unused_ok = &{1'b0, x_pc, x_info, x_uop, imm, dc_rsp_write, dc_rsp_tag, ratom,
-		(NWARPS != 0)};
+		unused_ll_nz, (NWARPS != 0)};
 endmodule
 
 `default_nettype wire

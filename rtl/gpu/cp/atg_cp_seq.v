@@ -341,7 +341,8 @@ module atg_cp_seq #(
 	                        qc_bytes_ge_768 ? 7'd96 :
 	                        qc_bytes[9:3];
 
-	assign caps_r_idx = {qc_k, (st == Q_QCAPS_R1)};
+	reg qc_word_sel_r, qc_r_rdy;
+	assign caps_r_idx = {qc_k, qc_word_sel_r};
 
 	/* Payload: what this dword does; the waits (atg_cp_seq_wait). */
 	wire is_set = !vendor && op == OP_SET_REG;
@@ -923,6 +924,8 @@ module atg_cp_seq #(
 			qc_k <= 7'd0;
 			qc_w0 <= 32'd0;
 			qc_w1 <= 32'd0;
+			qc_word_sel_r <= 1'b0;
+			qc_r_rdy <= 1'b0;
 			qc_align_err <= 1'b0;
 			vendor <= 1'b0;
 			op <= 8'd0;
@@ -1141,6 +1144,8 @@ module atg_cp_seq #(
 						qc_k <= 7'd0;
 						qc_cur_addr <= qc_addr_lo;
 						qc_cur_addr_hi <= qc_addr_hi;
+						qc_word_sel_r <= 1'b0;
+						qc_r_rdy <= 1'b0;
 						st <= Q_QCAPS_R0;
 					end
 				end else if (exec_go) begin
@@ -1168,14 +1173,25 @@ module atg_cp_seq #(
 				if (vsync)
 					st <= Q_IDLE;
 			Q_QCAPS_R0: begin
-				if (!caps_fw_stall) begin
+				if (caps_fw_stall) begin
+					qc_r_rdy <= 1'b0;
+				end else if (!qc_r_rdy) begin
+					qc_r_rdy <= 1'b1;
+				end else begin
 					qc_w0 <= caps_r_data;
+					qc_word_sel_r <= 1'b1;
+					qc_r_rdy <= 1'b0;
 					st <= Q_QCAPS_R1;
 				end
 			end
 			Q_QCAPS_R1: begin
-				if (!caps_fw_stall) begin
+				if (caps_fw_stall) begin
+					qc_r_rdy <= 1'b0;
+				end else if (!qc_r_rdy) begin
+					qc_r_rdy <= 1'b1;
+				end else begin
 					qc_w1 <= caps_r_data;
+					qc_r_rdy <= 1'b0;
 					st <= Q_QCAPS_REQ;
 				end
 			end
@@ -1190,8 +1206,11 @@ module atg_cp_seq #(
 					qc_cur_addr_hi <= qc_cur_addr_hi_n;
 					if (qc_k_n == qc_total_k)
 						st <= Q_IDLE;
-					else
+					else begin
+						qc_word_sel_r <= 1'b0;
+						qc_r_rdy <= 1'b0;
 						st <= Q_QCAPS_R0;
+					end
 				end
 			end
 			default:

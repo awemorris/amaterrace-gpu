@@ -120,7 +120,7 @@ module atg_rop_blend #(
 	atg_rop_blend_f2u8_pipe u_kcf_pipe (
 		.clk(clk), .rst_sync(rst_sync), .f(st_wdata_bl2), .u(kcf_pipe_u)
 	);
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			kcf_v0a <= 1'b0;
 			kcf_v0b <= 1'b0;
@@ -159,7 +159,7 @@ module atg_rop_blend #(
 	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_fmts_hi1 (.I0(fmts_hi_we_raw), .O(fmts_hi_we1));
 	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_kc8_we0  (.I0(kc8_we_raw),     .O(kc8_we0));
 	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_kc8_we1  (.I0(kc8_we_raw),     .O(kc8_we1));
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			fmts <= 64'd0;
 			kc8 <= 32'd0;
@@ -184,7 +184,7 @@ module atg_rop_blend #(
 		wire bls_we_lo, bls_we_hi;
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bwe_lo (.I0(bls_we_raw), .O(bls_we_lo));
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_bwe_hi (.I0(bls_we_raw), .O(bls_we_hi));
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				bls[g_bls][13:0]  <= 14'd0;
 				bls[g_bls][26:14] <= 13'd0;
@@ -205,7 +205,7 @@ module atg_rop_blend #(
 			(lop_bcast || (g_bls >= 4)) ? st_wdata_bl2[0] : st_wdata_bl2[8 * (g_bls % 4)];
 		wire [3:0] lop_op_nxt = (st_idx == GHCI_S_ROP_CTRL) ? st_wdata_bl2[6:3] :
 			(lop_bcast || (g_bls >= 4)) ? st_wdata_bl2[4:1] : st_wdata_bl2[8 * (g_bls % 4) + 1 +: 4];
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				lop_en[g_bls] <= 1'b0;
 				lop_op[g_bls] <= 4'd0;
@@ -220,7 +220,7 @@ module atg_rop_blend #(
 `endif
 
 	integer i;
-	always @(posedge clk)
+	always @(posedge clk or posedge rst_sync)
 		if (rst_sync) begin
 			fmt0 <= 2'd0;
 `ifndef SYNTH_KINTEX7
@@ -469,8 +469,21 @@ module atg_rop_blend #(
 		reg [3:0] m2_arr [0:3];
 		integer il, ic;
 
+		always @(posedge clk or posedge rst_sync) begin
+			if (rst_sync) begin
+				v1 <= 1'b0;
+				v1_m <= 1'b0;
+				v2 <= 1'b0;
+				b_rvalid <= 1'b0;
+			end else begin
+				v1 <= b_valid;
+				v1_m <= v1;
+				v2 <= v1_m;
+				b_rvalid <= v1_m;
+			end
+		end
+
 		always @(posedge clk) begin
-			v1 <= !rst_sync && b_valid;
 			m1 <= b_mask;
 			fmt1 <= fmt_n;
 			bl1 <= bl_n;
@@ -489,7 +502,6 @@ module atg_rop_blend #(
 `endif
 			d1 <= d1_n;
 
-			v1_m <= !rst_sync && v1;
 			s1_m <= s1;
 			d1_m <= d1;
 			o1_m <= o1;
@@ -502,7 +514,6 @@ module atg_rop_blend #(
 			lop_en1_m <= lop_en1;
 			lop_op1_m <= lop_op1;
 `endif
-			v2 <= !rst_sync && v1_m;
 			s2 <= s1_m;
 			d2 <= d1_m;
 			o2 <= o1_m;
@@ -524,7 +535,6 @@ module atg_rop_blend #(
 			lop_en2 <= lop_en1_m;
 			lop_op2 <= lop_op1_m;
 `endif
-			b_rvalid <= !rst_sync && v1_m;
 		end
 
 		for (gl = 0; gl < 4; gl = gl + 1) begin : g_l2
@@ -647,7 +657,7 @@ module atg_rop_blend #(
 		wire b_clk = clk;
 `else
 		reg b_icg_en;
-		always @(negedge clk) begin
+		always @(negedge clk or posedge rst_sync) begin
 			if (rst_sync)
 				b_icg_en <= 1'b1;
 			else
@@ -663,8 +673,34 @@ module atg_rop_blend #(
 		reg [3:0] mask0a;
 		(* keep = "true", dont_touch = "true" *) reg [2:0] rt0a_rep [0:5];
 		integer i0a;
+		always @(posedge b_clk or posedge rst_sync) begin
+			if (rst_sync) begin
+				v0a <= 1'b0;
+				v0b <= 1'b0;
+				v0c <= 1'b0;
+				v1 <= 1'b0;
+				v1_m <= 1'b0;
+				v2 <= 1'b0;
+				v_s4 <= 1'b0;
+				v_s5 <= 1'b0;
+				v_s6 <= 1'b0;
+				v_s7 <= 1'b0;
+				b_rvalid <= 1'b0;
+			end else begin
+				v0a <= b_valid;
+				v0b <= v0a;
+				v0c <= v0b;
+				v1 <= v0c;
+				v1_m <= v1;
+				v2 <= v1_m;
+				v_s4 <= v2;
+				v_s5 <= v_s4;
+				v_s6 <= v_s5;
+				v_s7 <= v_s6;
+				b_rvalid <= v_s7;
+			end
+		end
 		always @(posedge b_clk) begin
-			v0a <= !rst_sync && b_valid;
 			src0a <= b_src;
 `ifdef CFG_ROP_DUAL_SOURCE
 			src1_0a <= b_src1;
@@ -767,7 +803,6 @@ module atg_rop_blend #(
 
 		always @(posedge b_clk) begin
 			/* S0B (cycle 1 -> 2) */
-			v0b <= !rst_sync && v0a;
 			m0b <= mask0a;
 			wm0b <= wm_0a;
 			fmt0b <= fmt_0a;
@@ -783,7 +818,6 @@ module atg_rop_blend #(
 			dst0b <= dst0a;
 
 			/* S0C (cycle 2 -> 3) */
-			v0c <= !rst_sync && v0b;
 			m0c <= m0b;
 			wm0c <= wm0b;
 			fmt0c <= fmt0b;
@@ -797,7 +831,6 @@ module atg_rop_blend #(
 			d0c <= d0c_n;
 
 			/* S1 (cycle 3 -> 4) */
-			v1 <= !rst_sync && v0c;
 			m1 <= m0c;
 			wm1 <= wm0c;
 			fmt1 <= fmt0c;
@@ -965,7 +998,6 @@ module atg_rop_blend #(
 		reg [2:0] op_cur;
 		always @(posedge b_clk) begin
 			/* S2 (cycle 4 -> 5) */
-			v1_m <= !rst_sync && v1;
 			s1_m <= s1;
 			d1_m <= d1;
 			o1_m <= o1;
@@ -986,7 +1018,6 @@ module atg_rop_blend #(
 			end
 
 			/* S3 (cycle 5 -> 6) */
-			v2 <= !rst_sync && v1_m;
 			o2 <= o1_m;
 			for (il = 0; il < 4; il = il + 1) begin
 				fmt2_arr[il] <= fmt1_m;
@@ -1017,12 +1048,6 @@ module atg_rop_blend #(
 		(* keep = "true", dont_touch = "true" *) reg m_s7_hi [0:3];
 
 		always @(posedge b_clk) begin
-			v_s4 <= !rst_sync && v2;
-			v_s5 <= !rst_sync && v_s4;
-			v_s6 <= !rst_sync && v_s5;
-			v_s7 <= !rst_sync && v_s6;
-			b_rvalid <= !rst_sync && v_s7;
-
 			o_s4 <= o2;
 			o_s5 <= o_s4;
 			o_s6 <= o_s5;

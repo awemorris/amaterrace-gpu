@@ -382,21 +382,28 @@ module atg_cp_caps #(
 	/* Format query port */
 	assign fmt_val = calc_fmt_word(fmt_idx);
 
-	/* Index subtraction: v_sub = r_idx - 32 */
-	wire [8:0] v_sub;
-	wire v_bo;
-	am_sub #(.W(9)) u_v_sub (
-		.a(r_idx),
-		.b(9'd32),
-		.bi(1'b0),
-		.d(v_sub),
-		.bo(v_bo)
-	);
-	wire [7:0] r_fmt_idx = v_sub[7:0];
+	/* Parameter-constant ROM for format dwords (indexed by r_idx[7:0], valid 32..188) */
+	(* rom_style = "distributed" *) reg [31:0] caps_fmt_rom [0:255];
+	integer ci;
+	initial begin
+		for (ci = 0; ci < 256; ci = ci + 1)
+			caps_fmt_rom[ci] = 32'd0;
+		for (ci = 0; ci < 32; ci = ci + 1) begin
+			caps_fmt_rom[{3'd1, ci[4:0]}] = calc_fmt_word({3'd0, ci[4:0]});
+			caps_fmt_rom[{3'd2, ci[4:0]}] = calc_fmt_word({3'd1, ci[4:0]});
+			caps_fmt_rom[{3'd3, ci[4:0]}] = calc_fmt_word({3'd2, ci[4:0]});
+			caps_fmt_rom[{3'd4, ci[4:0]}] = calc_fmt_word({3'd3, ci[4:0]});
+			caps_fmt_rom[{3'd5, ci[4:0]}] = calc_fmt_word({3'd4, ci[4:0]});
+		end
+	end
+
+	wire [31:0] fmt_rom_word = caps_fmt_rom[r_idx[7:0]];
 
 	/* Block dwords multiplexer */
 	always @(*) begin
-		if (r_idx < 9'd32) begin
+		if (r_idx[8]) begin
+			r_data = 32'd0;
+		end else if (r_idx[7:5] == 3'd0) begin
 			case (r_idx[4:0])
 			5'd0:  r_data = 32'h50414347;	/* BLOCK_ID ("GCAP") */
 			5'd1:  r_data = {16'd192, 16'd1};	/* BLOCK_INFO: 192 dwords, version 1 */
@@ -419,14 +426,12 @@ module atg_cp_caps #(
 			5'd18: r_data = calc_extcap_present;
 			default: r_data = 32'd0;	/* dw 19..31 reserved */
 			endcase
-		end else if (r_idx <= 9'd188) begin
-			r_data = calc_fmt_word(r_fmt_idx);
 		end else begin
-			r_data = 32'd0;	/* dw 189..191 padding, and >= 192 */
+			r_data = fmt_rom_word;	/* dw 32..188 populated, 189..255 zero */
 		end
 	end
 
-	wire unused_ok = &{1'b0, clk, rst_n, v_bo, v_sub[8]};
+	wire unused_ok = &{1'b0, clk, rst_n};
 endmodule
 
 `default_nettype wire

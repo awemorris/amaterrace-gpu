@@ -435,19 +435,13 @@ module atg_mc_tree #(
 	wire skid_in_ready;
 	wire skid_fire = grant_v && skid_in_ready;
 
-	wire [FW-1:0] gd_term [0:NX-1];
-	wire [FW-1:0] gd_accum [0:NX-1];
-	generate
-		for (j = 0; j < NX; j = j + 1) begin : g_gd
-			assign gd_term[j] = {FW{grant_oh[j]}} & leaf_req_data[j*FW +: FW];
-			if (j == 0) begin : g_gd0
-				assign gd_accum[0] = gd_term[0];
-			end else begin : g_gdn
-				assign gd_accum[j] = gd_accum[j-1] | gd_term[j];
-			end
-		end
-	endgenerate
-	wire [FW-1:0] grant_data = gd_accum[NX-1];
+	reg [FW-1:0] grant_data;
+	integer gj;
+	always @(*) begin
+		grant_data = {FW{1'b0}};
+		for (gj = 0; gj < NX; gj = gj + 1)
+			grant_data = grant_data | ({FW{grant_oh[gj]}} & leaf_req_data[gj*FW +: FW]);
+	end
 
 	wire grant_last = |(grant_oh & leaf_req_last);
 

@@ -104,22 +104,45 @@ module atg_blt_rsv_px #(
 		.count(rq_count)
 	);
 
-	/* The source lines. */
+	/* The source lines (1-cycle registered input stage isolates MC tree from lq.mem Check 4). */
+	reg ln_push_r;
+	reg [LBITS-1:0] ln_data_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n)
+			ln_push_r <= 1'b0;
+		else if (stop)
+			ln_push_r <= 1'b0;
+		else
+			ln_push_r <= ln_push;
+	end
+	always @(posedge clk) begin
+		ln_data_r <= ln_data;
+	end
+
 	wire lq_valid;
 	wire lq_pop;
 	wire [LBITS-1:0] lq_data;
 	wire lq_ready;
+	wire [DEPTH_LOG2:0] lq_fifo_count;
+	wire lncnt_co_unused;
 
 	am_fifo #(.W(LBITS), .DEPTH_LOG2(DEPTH_LOG2)) lq (
 		.clk(clk),
 		.rst_n(frst_n),
-		.in_valid(ln_push && !stop),
+		.in_valid(ln_push_r && !stop),
 		.in_ready(lq_ready),
-		.in_data(ln_data),
+		.in_data(ln_data_r),
 		.out_valid(lq_valid),
 		.out_ready(lq_pop),
 		.out_data(lq_data),
-		.count(ln_count)
+		.count(lq_fifo_count)
+	);
+	am_add #(.W(DEPTH_LOG2 + 1)) a_lncnt (
+		.a(lq_fifo_count),
+		.b({{DEPTH_LOG2{1'b0}}, ln_push_r && !stop}),
+		.ci(1'b0),
+		.s(ln_count),
+		.co(lncnt_co_unused)
 	);
 
 	wire [ADDR_W-1:0] d_drow = rq_data[ADDR_W-1:0];
@@ -166,8 +189,6 @@ module atg_blt_rsv_px #(
 
 	reg [LS-1:0] daddr_ls_lin_r;
 	wire [LS-1:0] daddr_ls_step;
-	wire dals_step_co;
-	am_add #(.W(LS)) a_dals_step (.a(daddr_ls_lin_r), .b({{(LS-5){1'b0}}, grp_nb}), .ci(1'b0), .s(daddr_ls_step), .co(dals_step_co));
 
 	wire [ADDR_W-1:0] d_x_b_lin;
 	am_shift #(.W(ADDR_W), .SW(3)) h_dx_lin (.a({{(ADDR_W - 17){1'b0}}, d_x}), .amt(psl), .left(1'b1), .arith(1'b0), .y(d_x_b_lin));
@@ -223,15 +244,47 @@ module atg_blt_rsv_px #(
 			n = rem[2:0];
 	end
 
-	/* The group's source bytes: 4 n ps, at ptr of the window. */
-	wire [6:0] gb;
-	wire [7:0] gend;
-	wire [1:0] gb_co_unused;
-	assign gb_co_unused[1] = 1'b0;
+	wire [6:0] gb_k [1:4];
+	wire [7:0] gend_k [1:4];
+	wire [3:0] need2_k, two_used_k;
+	wire [4:0] grp_nb_k [1:4];
+	wire [LS-1:0] dals_step_k [1:4];
+	wire [2:0] room_l_k [1:4];
+	wire [2:0] room_t_k [1:4];
+	wire [2:0] n_geom_k [1:4];
+	wire [3:0] gend_k_co_unused, dals_k_co_unused;
+	wire [1:0] x_p_k [1:4];
+	assign x_p_k[1] = (x[1:0] == 2'd0) ? 2'd1 : (x[1:0] == 2'd1) ? 2'd2 : (x[1:0] == 2'd2) ? 2'd3 : 2'd0;
+	assign x_p_k[2] = {~x[1], x[0]};
+	assign x_p_k[3] = (x[1:0] == 2'd0) ? 2'd3 : (x[1:0] == 2'd1) ? 2'd0 : (x[1:0] == 2'd2) ? 2'd1 : 2'd2;
+	assign x_p_k[4] = x[1:0];
 
-	am_shift #(.W(7), .SW(3)) h_gb (.a({4'd0, n}), .amt(sh4_r), .left(1'b1), .arith(1'b0), .y(gb));
-	am_add #(.W(8)) a_gend (.a({{(8 - LS){1'b0}}, ptr}), .b({1'b0, gb}), .ci(1'b0), .s(gend), .co(gb_co_unused[0]));
-	wire need2 = gend > {{(7 - LS){1'b0}}, LB_V};
+	genvar gk;
+	generate
+		for (gk = 1; gk <= 4; gk = gk + 1) begin : g_spec_k
+			am_shift #(.W(7), .SW(3)) h_gb_k (.a(gk[6:0]), .amt(sh4_r), .left(1'b1), .arith(1'b0), .y(gb_k[gk]));
+			am_add #(.W(8)) a_gend_k (.a({{(8 - LS){1'b0}}, ptr}), .b({1'b0, gb_k[gk]}), .ci(1'b0), .s(gend_k[gk]), .co(gend_k_co_unused[gk-1]));
+			assign need2_k[gk-1]    = gend_k[gk] > {{(7 - LS){1'b0}}, LB_V};
+			assign two_used_k[gk-1] = gend_k[gk] >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
+
+			am_shift #(.W(5), .SW(3)) h_nb_k (.a(gk[4:0]), .amt(psl_r), .left(1'b1), .arith(1'b0), .y(grp_nb_k[gk]));
+			am_add #(.W(LS)) a_dals_k (.a(daddr_ls_lin_r), .b({{(LS-5){1'b0}}, grp_nb_k[gk]}), .ci(1'b0), .s(dals_step_k[gk]), .co(dals_k_co_unused[gk-1]));
+			assign room_l_k[gk] = get_room_l_limit({{(8 - LS){1'b0}}, dals_step_k[gk]}, psl_r);
+			assign room_t_k[gk] = sub4_2b(x_p_k[gk]);
+			assign n_geom_k[gk] = tiled ? (room_t_k[gk] < nmax_r ? room_t_k[gk] : nmax_r) :
+`ifndef MUT_RSV_SPLIT
+				(room_l_k[gk] < nmax_r ? room_l_k[gk] : nmax_r);
+`else
+				nmax_r;
+`endif
+		end
+	endgenerate
+
+	/* The group's source bytes: 4 n ps, at ptr of the window (selected from parallel k=1..4 paths). */
+	wire [6:0] gb = (n == 3'd1) ? gb_k[1] : (n == 3'd2) ? gb_k[2] : (n == 3'd3) ? gb_k[3] : gb_k[4];
+	wire [7:0] gend = (n == 3'd1) ? gend_k[1] : (n == 3'd2) ? gend_k[2] : (n == 3'd3) ? gend_k[3] : gend_k[4];
+	wire need2 = (n == 3'd1) ? need2_k[0] : (n == 3'd2) ? need2_k[1] : (n == 3'd3) ? need2_k[2] : need2_k[3];
+	wire [1:0] gb_co_unused = 2'd0;
 
 	wire [1023:0] win;
 	generate
@@ -324,7 +377,7 @@ module atg_blt_rsv_px #(
 	wire row_end = fire_ctrl && is_last_group;
 
 	/* gend less one or two lines (the window's lines the group used up; only one is taken in a cycle). */
-	wire two_used = gend >= {{(6 - LS){1'b0}}, LB_V, 1'b0};
+	wire two_used = (n == 3'd1) ? two_used_k[0] : (n == 3'd2) ? two_used_k[1] : (n == 3'd3) ? two_used_k[2] : two_used_k[3];
 	wire shift_win = fire_ctrl && (gend >= {{(7 - LS){1'b0}}, LB_V}) && !two_used;
 	wire drop_both = fire_ctrl && (two_used || row_end);
 
@@ -362,22 +415,16 @@ module atg_blt_rsv_px #(
 
 	/* The row's counts: the lines left, the next pixel and the pixels left; a group's bytes. */
 	wire [16:0] ll_dec, x_next, rem_next;
-	wire [4:0] grp_nb;
+	wire [4:0] grp_nb = (n == 3'd1) ? grp_nb_k[1] : (n == 3'd2) ? grp_nb_k[2] : (n == 3'd3) ? grp_nb_k[3] : grp_nb_k[4];
 	wire [2:0] row_co_unused;
 
 	am_sub #(.W(17)) s_ll (.a(lines_left), .b(17'd0), .bi(1'b1), .d(ll_dec), .bo(row_co_unused[0]));
 	am_add #(.W(17)) a_x (.a(x), .b({14'd0, n}), .ci(1'b0), .s(x_next), .co(row_co_unused[1]));
 	am_sub #(.W(17)) s_rem (.a(rem), .b({14'd0, n}), .bi(1'b0), .d(rem_next), .bo(row_co_unused[2]));
-	am_shift #(.W(5), .SW(3)) h_nb (.a({2'd0, n}), .amt(psl_r), .left(1'b1), .arith(1'b0), .y(grp_nb));
 
-	wire [2:0] room_l_next = get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_step}, psl_r);
-	wire [2:0] room_t_next = sub4_2b(x_next[1:0]);
-	wire [2:0] n_geom_next = tiled ? (room_t_next < nmax_r ? room_t_next : nmax_r) :
-`ifndef MUT_RSV_SPLIT
-		(room_l_next < nmax_r ? room_l_next : nmax_r);
-`else
-		nmax_r;
-`endif
+	assign daddr_ls_step = (n == 3'd1) ? dals_step_k[1] : (n == 3'd2) ? dals_step_k[2] : (n == 3'd3) ? dals_step_k[3] : dals_step_k[4];
+	wire [2:0] room_l_next = (n == 3'd1) ? room_l_k[1] : (n == 3'd2) ? room_l_k[2] : (n == 3'd3) ? room_l_k[3] : room_l_k[4];
+	wire [2:0] n_geom_next = (n == 3'd1) ? n_geom_k[1] : (n == 3'd2) ? n_geom_k[2] : (n == 3'd3) ? n_geom_k[3] : n_geom_k[4];
 
 	wire [2:0] room_l_init = get_room_l_limit({{(8 - LS){1'b0}}, daddr_ls_init}, psl);
 	wire [2:0] room_t_init = sub4_2b(d_x[1:0]);
@@ -615,7 +662,8 @@ module atg_blt_rsv_px #(
 `endif
 
 	wire unused_ok = &{1'b0, f_ready, lq_ready, rq_count, win[1023:512], a_ones[2*LB-1:LB],
-		grp_co_unused, gb_co_unused, row_co_unused, dals_step_co, dals_init_co};
+		grp_co_unused, gb_co_unused, row_co_unused, dals_init_co,
+		lncnt_co_unused, gend_k_co_unused, dals_k_co_unused, rem_limit, room_t, room_l_limit_r};
 endmodule
 
 `default_nettype wire

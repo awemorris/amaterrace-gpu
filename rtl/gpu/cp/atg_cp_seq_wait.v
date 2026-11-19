@@ -142,43 +142,56 @@ module atg_cp_seq_wait (
 
 	wire [8:0] s9 = sidx[8:0];
 
+	wire p_lt_3 = (p[7:2] == 6'd0) && (p[1:0] != 2'd3);
+	wire p_lt_4 = (p[7:2] == 6'd0);
+	wire p_lt_9 = (p[7:3] == 5'd0) || (p == 8'd8);
+	wire p_eq_0 = (p == 8'd0);
+
+	wire pay_disp_set = set_val && (sidx[9:8] == 2'b11);
+	wire pay_set_std  = set_val && (sidx[9:8] != 2'b11);
+	wire pay_raw      = !set_val && is_draw_raw && p_lt_9;
+	wire pay_dbg      = !set_val && !is_draw_raw && vendor && (op == VOP_DBG_MARK) && p_eq_0;
+	wire pay_disp     = !set_val && !is_draw_raw && !pay_dbg && is_dispatch && p_lt_3;
+	wire pay_lc       = !set_val && !is_draw_raw && !pay_dbg && !is_dispatch && is_load_const && p_lt_3;
+	wire pay_flip     = !set_val && !is_draw_raw && !vendor && !is_ghci && !is_dispatch && !is_load_const && (op == OP_FLIP) && p_lt_4;
+
+	wire [9:0] idx_raw  = {1'b0, GHCI_S_RAW | {5'd0, p[3:0]}};
+	wire [9:0] idx_dbg  = {1'b0, GHCI_S_DBG_MARK};
+	wire [9:0] idx_disp = {1'b0, p[1:0] == 2'd0 ? GHCI_S_GRID_X : p[1:0] == 2'd1 ? S_GRID_Y : S_GRID_Z};
+	wire [9:0] idx_lc   = {1'b0, GHCI_S_LC_REGION | {7'd0, p[1:0]}};
+	wire [9:0] idx_flip = {8'b11101110, p[1:0]};
+
+	/* Parallel range checks for s9 (avoids 6-deep comparator chain) */
+	wire r_blt  = (s9 < GHCI_S_VF);
+	wire r_vf   = (s9 >= GHCI_S_VF)   && (s9 < GHCI_S_RX);
+	wire r_rx   = (s9 >= GHCI_S_RX)   && (s9 < GHCI_S_ROP);
+	wire r_rop  = (s9 >= GHCI_S_ROP)  && (s9 < GHCI_S_TU);
+	wire r_tu   = (s9 >= GHCI_S_TU)   && (s9 < GHCI_S_PROG);
+	wire r_prog = (s9 >= GHCI_S_PROG) && (s9 < GHCI_S_SA);
+	wire r_attr = (s9 >= GHCI_S_SA)   && (s9[8:5] == GHCI_S_ATTR_DST[8:5]) && (VF_1D != 0 || !s9[4]);
+	wire [7:0] wait_set_std = sidx[9] ? B_TUW :
+		(({8{r_blt}}  & B_BLT)   |
+		 ({8{r_vf}}   & B_VF)    |
+		 ({8{r_rx}}   & B_RXROP) |
+		 ({8{r_rop}}  & B_ROPW)  |
+		 ({8{r_tu}}   & B_TUW)   |
+		 ({8{r_prog}} & B_PROGW) |
+		 ({8{r_attr}} & B_VF));
+
 	always @(*) begin
-		pay_we = 1'b0;
-		pay_idx = 10'd0;
-		pay_wait = 9'd0;
-		if (set_val && sidx[9:8] == 2'b11) begin
-			/* DISP_SET's register write (SET_REG's index is below 0x300). */
-			pay_we = 1'b1;
-			pay_idx = sidx;
-			pay_wait = B_DISP;
-		end else if (set_val) begin
-			pay_we = 1'b1;
-			pay_idx = sidx;
-			/* 0x200-0x2FF: the vertex stage's texture slots, as the TU range. */
-			pay_wait = {1'b0, sidx[9] ? B_TUW : s9 < GHCI_S_VF ? B_BLT : s9 < GHCI_S_RX ? B_VF :
-				s9 < GHCI_S_ROP ? B_RXROP : s9 < GHCI_S_TU ? B_ROPW :
-				s9 < GHCI_S_PROG ? B_TUW : s9 < GHCI_S_SA ? B_PROGW :
-				(s9[8:5] == GHCI_S_ATTR_DST[8:5] && (VF_1D != 0 || !s9[4])) ? B_VF : 8'd0};
-		end else if (is_draw_raw && p < 8'd9) begin
-			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_RAW | {5'd0, p[3:0]}};	/* 0x1E0 + p, p < 9 */
-			pay_wait = {1'b0, B_RX};
-		end else if (vendor && op == VOP_DBG_MARK && p == 8'd0) begin
-			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_DBG_MARK};
-		end else if (is_dispatch && p < 8'd3) begin
-			pay_we = 1'b1;
-			pay_idx = {1'b0, p[1:0] == 2'd0 ? GHCI_S_GRID_X : p[1:0] == 2'd1 ? S_GRID_Y : S_GRID_Z};
-			pay_wait = {1'b0, B_SU};
-		end else if (is_load_const && p < 8'd3) begin
-			pay_we = 1'b1;
-			pay_idx = {1'b0, GHCI_S_LC_REGION | {7'd0, p[1:0]}};	/* 0x1EC + p, p < 3 */
-			pay_wait = {1'b0, B_SU};
-		end else if (!vendor && !is_ghci && op == OP_FLIP && p < 8'd4) begin
-			/* FLIP's staging: plane, base, record, value (0x3B8-0x3BB). */
-			pay_we = 1'b1;
-			pay_idx = {8'b11101110, p[1:0]};
-		end
+		pay_we = pay_disp_set || pay_set_std || pay_raw || pay_dbg || pay_disp || pay_lc || pay_flip;
+		pay_idx =
+			({10{pay_disp_set || pay_set_std}} & sidx)     |
+			({10{pay_raw}}                     & idx_raw)  |
+			({10{pay_dbg}}                     & idx_dbg)  |
+			({10{pay_disp}}                    & idx_disp) |
+			({10{pay_lc}}                      & idx_lc)   |
+			({10{pay_flip}}                    & idx_flip);
+		pay_wait =
+			({9{pay_disp_set}}                 & B_DISP)              |
+			({9{pay_set_std}}                  & {1'b0, wait_set_std})|
+			({9{pay_raw}}                      & {1'b0, B_RX})        |
+			({9{pay_disp || pay_lc}}           & {1'b0, B_SU});
 	end
 
 	always @(*) begin

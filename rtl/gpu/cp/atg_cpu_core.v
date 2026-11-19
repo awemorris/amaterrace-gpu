@@ -238,25 +238,34 @@ module atg_cpu_core (
 	/* The data address and JALR target have their own dedicated adder
 	 * (not through the ALU's result mux: timing). */
 	wire [31:0] ea_full;
-	wire ea_co;
+	wire [1:0] ea;
+	wire ea_co, ea_lo_co;
 
 	am_add #(.W(32)) ea_add (
 		.a(rs1), .b(is_st ? imm_s : imm_i), .ci(1'b0), .s(ea_full), .co(ea_co)
 	);
-	wire [1:0] ea = ea_full[1:0];
+	am_add #(.W(2)) ea_lo_add (
+		.a(rs1[1:0]), .b(is_st ? imm_s[1:0] : imm_i[1:0]), .ci(1'b0), .s(ea), .co(ea_lo_co)
+	);
 
 	/* PC arithmetic. */
 	wire [31:0] pc_imm, link;
-	wire pc_imm_co, link_co;
+	wire [1:0] pc_imm_lo;
+	wire pc_imm_co, pc_imm_lo_co, link_co;
 
 	am_add #(.W(32)) pc_imm_add (
 		.a(pc_e), .b(is_jal ? imm_j : is_br ? imm_b : imm_u), .ci(1'b0), .s(pc_imm),
 		.co(pc_imm_co)
 	);
+	am_add #(.W(2)) pc_imm_lo_add (
+		.a(pc_e[1:0]), .b(is_jal ? imm_j[1:0] : is_br ? imm_b[1:0] : imm_u[1:0]), .ci(1'b0),
+		.s(pc_imm_lo), .co(pc_imm_lo_co)
+	);
 	am_add #(.W(32)) link_add (.a(pc_e), .b(32'd4), .ci(1'b0), .s(link), .co(link_co));
 	wire [31:0] jalr_t = {ea_full[31:1], 1'b0};
 	wire taken = is_jal || is_jalr || (is_br && br_cond) || is_mret;
 	wire [31:0] target = is_mret ? mepc : is_jalr ? jalr_t : pc_imm;
+	wire [1:0] target_lo = is_mret ? mepc[1:0] : is_jalr ? {ea[1], 1'b0} : pc_imm_lo;
 
 	/* Multiply/divide. */
 	wire md_busy, md_done;
@@ -265,7 +274,7 @@ module atg_cpu_core (
 	/* Faults of the instruction in E. */
 	wire mis_mem = is_mem && (f3[1:0] == 2'd2 ? ea != 2'd0 :
 		f3[1:0] == 2'd1 ? ea[0] : 1'b0);
-	wire mis_jump = taken && target[1:0] != 2'd0;
+	wire mis_jump = taken && target_lo != 2'd0;
 	wire pc_out = pc_e[31:17] != 15'd0;
 	wire bad = !legal || mis_mem || mis_jump || pc_out;
 
@@ -467,7 +476,7 @@ module atg_cpu_core (
 	assign curr_in_irq = in_irq;
 	assign curr_faulted = faulted;
 
-	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y, pc_imm_co, link_co, ea_co,
+	wire unused_ok = &{1'b0, md_busy, alu_eq, alu_lt, alu_ltu, br_y, pc_imm_co, pc_imm_lo_co, link_co, ea_co, ea_lo_co,
 		pc_f_co};
 endmodule
 

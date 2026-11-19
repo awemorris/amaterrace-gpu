@@ -58,6 +58,17 @@ module am_skid #(
 			assign load_skid_v[gs] = in_valid && in_ready_sl[gs];
 			assign next_out_v[gs*SL_W +: SL_W] = skid_valid_sl[gs] ?
 				skid_data[gs*SL_W +: SL_W] : in_data[gs*SL_W +: SL_W];
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					out_data[gs*SL_W +: SL_W]  <= {SL_W{1'b0}};
+					skid_data[gs*SL_W +: SL_W] <= {SL_W{1'b0}};
+				end else begin
+					if (load_out_v[gs])
+						out_data[gs*SL_W +: SL_W] <= next_out_v[gs*SL_W +: SL_W];
+					if (load_skid_v[gs])
+						skid_data[gs*SL_W +: SL_W] <= in_data[gs*SL_W +: SL_W];
+				end
+			end
 		end
 		if (REM_W > 0) begin : g_rem
 			localparam integer R0 = FULL_SL * SL_W;
@@ -67,17 +78,25 @@ module am_skid #(
 			assign load_skid_v[RS] = in_valid && in_ready_sl[RS];
 			assign next_out_v[R0 +: REM_W] = skid_valid_sl[RS] ?
 				skid_data[R0 +: REM_W] : in_data[R0 +: REM_W];
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					out_data[R0 +: REM_W]  <= {REM_W{1'b0}};
+					skid_data[R0 +: REM_W] <= {REM_W{1'b0}};
+				end else begin
+					if (load_out_v[RS])
+						out_data[R0 +: REM_W] <= next_out_v[R0 +: REM_W];
+					if (load_skid_v[RS])
+						skid_data[R0 +: REM_W] <= in_data[R0 +: REM_W];
+				end
+			end
 		end
 	endgenerate
 
-	integer gi;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			in_ready      <= 1'b1;
 			out_valid     <= 1'b0;
-			out_data      <= {WIDTH{1'b0}};
 			skid_valid    <= 1'b0;
-			skid_data     <= {WIDTH{1'b0}};
 			skid_valid_sl <= {SKID_SL{1'b0}};
 			out_valid_sl  <= {SKID_SL{1'b0}};
 			in_ready_sl   <= {SKID_SL{1'b1}};
@@ -101,18 +120,6 @@ module am_skid #(
 					skid_valid_sl <= {SKID_SL{1'b1}};
 					in_ready_sl   <= {SKID_SL{1'b0}};
 				end
-			end
-			for (gi = 0; gi < FULL_SL; gi = gi + 1) begin
-				if (load_out_v[gi])
-					out_data[gi*SL_W +: SL_W] <= next_out_v[gi*SL_W +: SL_W];
-				if (load_skid_v[gi])
-					skid_data[gi*SL_W +: SL_W] <= in_data[gi*SL_W +: SL_W];
-			end
-			if (REM_W > 0) begin
-				if (load_out_v[FULL_SL])
-					out_data[FULL_SL*SL_W +: REM_W] <= next_out_v[FULL_SL*SL_W +: REM_W];
-				if (load_skid_v[FULL_SL])
-					skid_data[FULL_SL*SL_W +: REM_W] <= in_data[FULL_SL*SL_W +: REM_W];
 			end
 		end
 	end

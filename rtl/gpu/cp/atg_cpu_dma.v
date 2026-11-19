@@ -158,8 +158,9 @@ module atg_cpu_dma #(
 		end
 	end
 
-	wire [WS:0] words_now = (j_rem >= WPL) ? WPL[WS:0] : j_rem[WS:0];
-	wire rd_issue = state == S_READ && !req_valid && j_rem != 32'd0 && have_free && !err;
+	reg j_rem_nz_r, j_rem_ge_wpl_r;
+	wire [WS:0] words_now = j_rem_ge_wpl_r ? WPL[WS:0] : j_rem[WS:0];
+	wire rd_issue = state == S_READ && !req_valid && j_rem_nz_r && have_free && !err;
 	wire rd_rsp = rsp_valid && !rsp_write;
 	wire wr_rsp = rsp_valid && rsp_write;
 
@@ -202,10 +203,12 @@ module atg_cpu_dma #(
 	am_add #(.W(32)) j_mem_add (
 		.a(j_mem), .b(LINE_BYTES), .ci(1'b0), .s(j_mem_n), .co(ar_co[4])
 	);
+	wire [31:0] j_rem_m_wpl;
 	am_sub #(.W(32)) j_rem_sub (
-		.a(j_rem), .b(rd_issue ? {{(31 - WS){1'b0}}, words_now} : WPL), .bi(1'b0),
-		.d(j_rem_n), .bo(ar_co[5])
+		.a(j_rem), .b(WPL), .bi(1'b0),
+		.d(j_rem_m_wpl), .bo(ar_co[5])
 	);
+	assign j_rem_n = (rd_issue && !j_rem_ge_wpl_r) ? 32'd0 : j_rem_m_wpl;
 	am_add #(.W(8)) wr_out_add (
 		.a(wr_out), .b({{7{wr_dec && !wr_inc}}, wr_inc ^ wr_dec}), .ci(1'b0), .s(wr_out_n),
 		.co(ar_co[6])
@@ -261,6 +264,8 @@ module atg_cpu_dma #(
 			j_line <= {LW{1'b0}};
 			j_mem <= 32'd0;
 			j_rem <= 32'd0;
+			j_rem_nz_r <= 1'b0;
+			j_rem_ge_wpl_r <= 1'b0;
 			j_chk <= 1'b0;
 			j_tbl <= 1'b0;
 			j_slot <= 6'd0;
@@ -329,6 +334,8 @@ module atg_cpu_dma #(
 				j_line <= j_line_n;
 				j_mem <= j_mem_n;
 				j_rem <= j_rem_n;
+				j_rem_nz_r <= (j_rem_n != 32'd0);
+				j_rem_ge_wpl_r <= (|j_rem_n[31:WS]);
 			end
 			/* Write side: gather WPL words, then the request. */
 			g_cap <= g_en;
@@ -353,6 +360,8 @@ module atg_cpu_dma #(
 					if (sb_wdata[16])
 						x_addr_r <= {dma_mem[31:LINE_SHIFT], {LINE_SHIFT{1'b0}}};
 					j_rem <= {{(16 - WS){1'b0}}, sb_wdata[15:0], {WS{1'b0}}};
+					j_rem_nz_r <= 1'b1;
+					j_rem_ge_wpl_r <= 1'b1;
 					g_w <= {(WS + 1){1'b0}};
 					state <= sb_wdata[16] ? S_GATHER : S_READ;
 				end else if (ld_pend) begin
@@ -366,11 +375,13 @@ module atg_cpu_dma #(
 					j_line <= ld_paddr[ADDR_W-1:LINE_SHIFT];
 					j_mem <= 32'd0;
 					j_rem <= ld_pwords;
+					j_rem_nz_r <= (ld_pwords != 32'd0);
+					j_rem_ge_wpl_r <= (|ld_pwords[31:WS]);
 					state <= S_READ;
 				end
 			S_READ:
 				/* Done when nothing is left to request, in flight or to store. */
-				if ((j_rem == 32'd0 || err) && !req_valid && s_busy == 4'd0 && !rd_issue) begin
+				if ((!j_rem_nz_r || err) && !req_valid && s_busy == 4'd0 && !rd_issue) begin
 					state <= S_IDLE;
 					if (ld_job) begin
 						ld_job <= 1'b0;
@@ -393,6 +404,8 @@ module atg_cpu_dma #(
 					j_line <= j_line_n;
 					j_mem <= j_mem_n;
 					j_rem <= j_rem_n;
+				j_rem_nz_r <= (j_rem_n != 32'd0);
+				j_rem_ge_wpl_r <= (|j_rem_n[31:WS]);
 					g_w <= {(WS + 1){1'b0}};
 					if (j_rem != WPL)
 						x_addr_r <= j_mem_n;

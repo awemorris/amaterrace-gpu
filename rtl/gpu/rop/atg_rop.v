@@ -335,11 +335,17 @@ module atg_rop #(
 	(* keep = "true" *) wire [2:0] d_pop4_1 = pop4_lut(d_smask[7:4]);
 	(* keep = "true" *) wire [2:0] d_pop4_2 = pop4_lut(d_smask[11:8]);
 	(* keep = "true" *) wire [2:0] d_pop4_3 = pop4_lut(d_smask[15:12]);
-	wire [3:0] d_pop8_0, d_pop8_1;
-	am_add #(.W(3)) u_add_pop8_0 (.a(d_pop4_0), .b(d_pop4_1), .ci(1'b0), .s(d_pop8_0[2:0]), .co(d_pop8_0[3]));
-	am_add #(.W(3)) u_add_pop8_1 (.a(d_pop4_2), .b(d_pop4_3), .ci(1'b0), .s(d_pop8_1[2:0]), .co(d_pop8_1[3]));
+	wire [4:0] pw0 = {2'd0, d_pop4_0};
+	wire [4:0] pw1 = {2'd0, d_pop4_1};
+	wire [4:0] pw2 = {2'd0, d_pop4_2};
+	wire [4:0] pw3 = {2'd0, d_pop4_3};
+	wire [4:0] pcs1_s = pw0 ^ pw1 ^ pw2;
+	wire [4:0] pcs1_c = {((pw0[3:0] & pw1[3:0]) | (pw1[3:0] & pw2[3:0]) | (pw0[3:0] & pw2[3:0])), 1'b0};
+	wire [4:0] pcs2_s = pcs1_s ^ pcs1_c ^ pw3;
+	wire [4:0] pcs2_c = {((pcs1_s[3:0] & pcs1_c[3:0]) | (pcs1_c[3:0] & pw3[3:0]) | (pcs1_s[3:0] & pw3[3:0])), 1'b0};
 	wire [4:0] d_pop;
-	am_add #(.W(4)) u_add_pop16  (.a(d_pop8_0), .b(d_pop8_1), .ci(1'b0), .s(d_pop[3:0]),   .co(d_pop[4]));
+	wire d_pop_co_unused;
+	am_add #(.W(5)) u_add_pop16 (.a(pcs2_s), .b(pcs2_c), .ci(1'b0), .s(d_pop), .co(d_pop_co_unused));
 
 	reg occ_inc_v;
 	reg [4:0] occ_inc_n;

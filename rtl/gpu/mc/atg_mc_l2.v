@@ -151,13 +151,6 @@ module atg_mc_l2 #(
 		end
 	endgenerate
 
-	(* ram_style = "registers" *) reg valid_mem [0:WAYS-1][0:NSETS-1];
-	(* ram_style = "registers" *) reg dirty_mem [0:WAYS-1][0:NSETS-1];
-
-	/* Tree-PLRU replacement metadata: 15 bits per set */
-	(* ram_style = "registers" *) reg [14:0] plru_mem [0:NSETS-1];
-
-
 	/* Registered incoming request */
 	reg req_write;
 	reg [LA_W-1:0] req_line;
@@ -166,6 +159,7 @@ module atg_mc_l2 #(
 	reg [UW-1:0] req_user;
 	reg req_id;
 	localparam NSL = LINE_BYTES / 4;
+	localparam HALF_BITS = LINE_BITS / 2;
 
 	reg req_nc;
 	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] req_nc_s;
@@ -173,6 +167,10 @@ module atg_mc_l2 #(
 	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] st_lookup_s;
 	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] hit_s;
 	(* keep = "true", dont_touch = "true" *) reg [NSL-1:0] victim_dirty_s;
+	(* keep = "true", dont_touch = "true" *) reg [WAYS-1:0] meta_lk_dirty;
+	(* keep = "true", dont_touch = "true" *) reg [WAYS-1:0] meta_vic_match;
+	(* keep = "true", dont_touch = "true" *) reg [WAYS-1:0] meta_req_write;
+	(* keep = "true", dont_touch = "true" *) reg [14:0] plru_lk_hit_s;
 	reg req_high;
 
 	wire [SET_W-1:0] req_set = req_line[SET_W-1:0];
@@ -183,7 +181,8 @@ module atg_mc_l2 #(
 	(* dont_touch = "true" *) reg [LINE_BITS-1:0] way_rdata_r [0:WAYS-1];
 	(* max_fanout = 16 *) reg [SET_W-1:0] bram_raddr [0:WAYS-1];
 	(* max_fanout = 16 *) reg [SET_W-1:0] bram_waddr [0:WAYS-1];
-	reg [WAYS-1:0] bram_we_r;
+	(* keep = "true", dont_touch = "true" *) reg [WAYS-1:0] bram_we_lo_r;
+	(* keep = "true", dont_touch = "true" *) reg [WAYS-1:0] bram_we_hi_r;
 	reg [LINE_BITS-1:0] bram_wdata_r;
 	reg pending_rsp_write;
 	reg [UW-1:0] pending_rsp_user;
@@ -207,24 +206,90 @@ module atg_mc_l2 #(
 		.s(next_flush_set), .co(flush_set_co)
 	);
 
-	/* Hit detection */
+	/* Forward declarations for per-way metadata / PLRU outputs */
 	wire [WAYS-1:0] way_hit;
+	wire [WAYS-1:0] set_dirty;
 	reg [WAYS-1:0] way_valid_r;
+	reg [WAYS-1:0] way_dirty_r;
 	reg [14:0] cur_plru_r;
+	reg [WAYS-1:0] set_dirty_r;
+	wire set_has_dirty;
+	reg [WAY_W-1:0] active_victim_way;
+	reg [14:0] plru_out_tree;
 
-	genvar w;
+	wire meta_flush_clr_all = (state == S_FLUSH_STEP) && !(s_req_valid && s_req_high) && wait_phase && !set_has_dirty;
+	wire meta_evict_clr     = (state == S_EVICT_WAIT) && m_rsp_valid && m_rsp_write;
+	wire meta_refill_set    = (state == S_REFILL_WAIT) && m_rsp_valid && !m_rsp_write;
+	wire meta_fwait_clr     = (state == S_FLUSH_WAIT) && m_rsp_valid && m_rsp_write;
+	wire meta_fread_clr     = (state == S_FLUSH_READ) && !(in_range && inv_clean_r) && in_range;
+	wire meta_lk_set        = (state == S_LOOKUP);
+
+	/* Per-way isolated valid/dirty arrays to bound control fanout <= NSETS */
+	integer mi;
 	generate
-		for (w = 0; w < WAYS; w = w + 1) begin : g_hit
-			always @(posedge clk) begin
-				way_valid_r[w] <= valid_mem[w][req_set];
+		for (gw = 0; gw < WAYS; gw = gw + 1) begin : g_meta
+			(* ram_style = "registers" *) reg valid_ram [0:NSETS-1];
+			(* ram_style = "registers" *) reg dirty_ram [0:NSETS-1];
+
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					for (mi = 0; mi < NSETS; mi = mi + 1) begin
+						valid_ram[mi] <= 1'b0;
+						dirty_ram[mi] <= 1'b0;
+					end
+				end else begin
+					if (meta_lk_set && meta_lk_dirty[gw])
+						dirty_ram[req_set] <= 1'b1;
+					if (meta_evict_clr && meta_vic_match[gw])
+						dirty_ram[req_set] <= 1'b0;
+					if (meta_refill_set && meta_vic_match[gw]) begin
+						valid_ram[req_set] <= 1'b1;
+						dirty_ram[req_set] <= meta_req_write[gw];
+					end
+					if (meta_flush_clr_all) begin
+						valid_ram[flush_set] <= 1'b0;
+						dirty_ram[flush_set] <= 1'b0;
+					end
+					if (meta_fwait_clr && meta_vic_match[gw]) begin
+						dirty_ram[flush_set] <= 1'b0;
+						valid_ram[flush_set] <= 1'b0;
+					end
+					if (meta_fread_clr && meta_vic_match[gw]) begin
+						valid_ram[flush_set] <= 1'b0;
+						dirty_ram[flush_set] <= 1'b0;
+					end
+				end
 			end
-			assign way_hit[w] = way_valid_r[w] && (way_tag_r[w] == req_tag);
+
+			always @(posedge clk) begin
+				way_valid_r[gw] <= valid_ram[req_set];
+				way_dirty_r[gw] <= dirty_ram[req_set];
+			end
+
+			assign way_hit[gw] = way_valid_r[gw] && (way_tag_r[gw] == req_tag);
+			assign set_dirty[gw] = dirty_ram[flush_set] && valid_ram[flush_set];
 		end
 	endgenerate
 
-	always @(posedge clk) begin
-		cur_plru_r <= plru_mem[req_set];
-	end
+	/* Per-bit sliced Tree-PLRU replacement metadata: 15 bits x NSETS */
+	genvar gb;
+	integer pi;
+	generate
+		for (gb = 0; gb < 15; gb = gb + 1) begin : g_plru
+			(* ram_style = "registers" *) reg plru_bit_ram [0:NSETS-1];
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					for (pi = 0; pi < NSETS; pi = pi + 1)
+						plru_bit_ram[pi] <= 1'b0;
+				end else if ((meta_lk_set && plru_lk_hit_s[gb]) || meta_refill_set) begin
+					plru_bit_ram[req_set] <= plru_out_tree[gb];
+				end
+			end
+			always @(posedge clk) begin
+				cur_plru_r[gb] <= plru_bit_ram[req_set];
+			end
+		end
+	endgenerate
 
 	wire hit = |way_hit;
 
@@ -293,14 +358,13 @@ module atg_mc_l2 #(
 	/* verilator lint_on WIDTHTRUNC */
 	/* verilator lint_on WIDTHEXPAND */
 
-	/* Active victim information */
-	reg [WAY_W-1:0] active_victim_way;
+	/* Active victim information declared above for g_meta */
+	genvar w;
 
 	/* Combinational Tree-PLRU update */
 	wire [WAY_W-1:0] cur_access_way = (state == S_LOOKUP) ? hit_way_r : active_victim_way;
 	wire [3:0] plru_access_way = {{ (4-WAY_W){1'b0} }, cur_access_way};
 	wire [14:0] plru_in_tree = cur_plru_r;
-	reg [14:0] plru_out_tree;
 
 	always @(*) begin
 		plru_out_tree = plru_in_tree;
@@ -390,34 +454,39 @@ module atg_mc_l2 #(
 			                                  ((!req_write_s[gs]) ? m_rsp_rdata[gs*32 +: 32] : merged_line_out[gs*32 +: 32]);
 			assign lookup_mwdata[gs*32 +: 32] = req_nc_s[gs] ? req_wdata[gs*32 +: 32] :
 			                                     ((!hit_s[gs] && victim_dirty_s[gs]) ? evict_rdata[gs*32 +: 32] : 32'd0);
+
+			always @(posedge clk or negedge rst_n) begin
+				if (!rst_n) begin
+					pending_rsp_rdata[gs*32 +: 32] <= 32'd0;
+				end else if (meta_lk_set && !req_nc_s[gs] && hit_s[gs] && req_write_s[gs]) begin
+					pending_rsp_rdata[gs*32 +: 32] <= 32'd0;
+				end else if (meta_refill_set) begin
+					pending_rsp_rdata[gs*32 +: 32] <= req_write_s[gs] ? 32'd0 : m_rsp_rdata[gs*32 +: 32];
+				end
+			end
 		end
 	endgenerate
 
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_bram
-			(* ram_style = "block" *) reg [LINE_BITS-1:0] data_mem [0:NSETS-1];
+			(* ram_style = "block" *) reg [HALF_BITS-1:0] data_mem_lo [0:NSETS-1];
+			(* ram_style = "block" *) reg [HALF_BITS-1:0] data_mem_hi [0:NSETS-1];
 
 			always @(posedge clk) begin
-				if (bram_we_r[w])
-					data_mem[bram_waddr[w]] <= bram_wdata_r;
+				if (bram_we_lo_r[w])
+					data_mem_lo[bram_waddr[w]] <= bram_wdata_r[HALF_BITS-1:0];
+				if (bram_we_hi_r[w])
+					data_mem_hi[bram_waddr[w]] <= bram_wdata_r[LINE_BITS-1:HALF_BITS];
 			end
 
 			always @(posedge clk) begin
-				way_rdata[w] <= data_mem[bram_raddr[w]];
+				way_rdata[w] <= {data_mem_hi[bram_raddr[w]], data_mem_lo[bram_raddr[w]]};
 				way_rdata_r[w] <= way_rdata[w];
 			end
 		end
 	endgenerate
 
-	/* Set status for fast set-parallel flush */
-	wire [WAYS-1:0] set_dirty;
-	generate
-		for (w = 0; w < WAYS; w = w + 1) begin : g_set_dirty
-			assign set_dirty[w] = dirty_mem[w][flush_set] && valid_mem[w][flush_set];
-		end
-	endgenerate
-
-	reg [WAYS-1:0] set_dirty_r;
+	/* Set status computed inside g_meta */
 	wire [WAYS-1:0] set_dirty_rev;
 	generate
 		for (w = 0; w < WAYS; w = w + 1) begin : g_dirty_rev
@@ -425,7 +494,6 @@ module atg_mc_l2 #(
 		end
 	endgenerate
 	wire [WAY_W-1:0] first_dirty_rev_idx;
-	wire set_has_dirty;
 	am_msb #(.W(WAYS), .SW(WAY_W)) u_dirty_msb (
 		.a(set_dirty_rev), .n(first_dirty_rev_idx), .nz(set_has_dirty)
 	);
@@ -442,7 +510,7 @@ module atg_mc_l2 #(
 	assign idle = (state == S_IDLE);
 
 	/* Main state machine */
-	integer init_s, init_w;
+	integer init_w;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			state <= S_IDLE;
@@ -489,12 +557,16 @@ module atg_mc_l2 #(
 			victim_dirty_r <= 1'b0;
 			victim_dirty_s <= {NSL{1'b0}};
 			victim_tag_r <= {TAG_W{1'b0}};
+			meta_lk_dirty <= {WAYS{1'b0}};
+			meta_vic_match <= {WAYS{1'b0}};
+			meta_req_write <= {WAYS{1'b0}};
+			plru_lk_hit_s <= 15'd0;
 			req_high <= 1'b0;
-			bram_we_r <= {WAYS{1'b0}};
+			bram_we_lo_r <= {WAYS{1'b0}};
+			bram_we_hi_r <= {WAYS{1'b0}};
 			bram_wdata_r <= {LINE_BITS{1'b0}};
 			pending_rsp_write <= 1'b0;
 			pending_rsp_user <= {UW{1'b0}};
-			pending_rsp_rdata <= {LINE_BITS{1'b0}};
 			pending_rsp_error <= 1'b0;
 			tag_we <= 1'b0;
 			tag_way <= {WAY_W{1'b0}};
@@ -503,18 +575,12 @@ module atg_mc_l2 #(
 			for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
 				bram_raddr[init_w] <= {SET_W{1'b0}};
 				bram_waddr[init_w] <= {SET_W{1'b0}};
-				for (init_s = 0; init_s < NSETS; init_s = init_s + 1) begin
-					valid_mem[init_w][init_s] <= 1'b0;
-					dirty_mem[init_w][init_s] <= 1'b0;
-				end
-			end
-			for (init_s = 0; init_s < NSETS; init_s = init_s + 1) begin
-				plru_mem[init_s] <= 15'd0;
 			end
 		end else begin
 			s_rsp_valid <= 1'b0;
 			ctrl_inv_done <= 1'b0;
-			bram_we_r <= {WAYS{1'b0}};
+			bram_we_lo_r <= {WAYS{1'b0}};
+			bram_we_hi_r <= {WAYS{1'b0}};
 			tag_we <= 1'b0;
 			if (!ctrl_inv_valid)
 				inv_active_r <= 1'b0;
@@ -524,6 +590,7 @@ module atg_mc_l2 #(
 					if (s_req_valid && s_req_high) begin
 						req_write <= s_req_write;
 						req_write_s <= {NSL{s_req_write}};
+						meta_req_write <= {WAYS{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
@@ -547,6 +614,7 @@ module atg_mc_l2 #(
 					end else if (s_req_valid && s_req_ready) begin
 						req_write <= s_req_write;
 						req_write_s <= {NSL{s_req_write}};
+						meta_req_write <= {WAYS{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
@@ -573,9 +641,14 @@ module atg_mc_l2 #(
 						hit_way_s      <= {NSL{hit_way_idx}};
 						victim_way_r   <= victim_way_idx;
 						evict_way_s    <= {NSL{victim_way_idx}};
-						victim_dirty_r <= valid_mem[victim_way_idx][req_set] && dirty_mem[victim_way_idx][req_set];
-						victim_dirty_s <= {NSL{valid_mem[victim_way_idx][req_set] && dirty_mem[victim_way_idx][req_set]}};
+						victim_dirty_r <= way_valid_r[victim_way_idx] && way_dirty_r[victim_way_idx];
+						victim_dirty_s <= {NSL{way_valid_r[victim_way_idx] && way_dirty_r[victim_way_idx]}};
 						victim_tag_r   <= way_tag_r[victim_way_idx];
+						plru_lk_hit_s  <= {15{!req_nc && hit}};
+						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
+							meta_lk_dirty[init_w]  <= !req_nc && hit && req_write && (hit_way_idx == init_w[WAY_W-1:0]);
+							meta_vic_match[init_w] <= (victim_way_idx == init_w[WAY_W-1:0]);
+						end
 						st_lookup_s    <= {NSL{1'b1}};
 						state          <= S_LOOKUP;
 					end
@@ -597,8 +670,7 @@ module atg_mc_l2 #(
 						m_req_key   <= req_user[15:8];
 						state       <= S_BYPASS_REQ;
 					end else if (hit_r) begin
-						/* Cache hit */
-						plru_mem[req_set] <= plru_out_tree;
+						/* Cache hit (plru_bit_ram updated via g_plru) */
 						if (!req_write) begin
 							/* Read hit */
 							s_rsp_valid <= 1'b1;
@@ -608,15 +680,14 @@ module atg_mc_l2 #(
 							state       <= (saved_state != S_IDLE) ? saved_state : S_IDLE;
 							saved_state <= S_IDLE;
 						end else begin
-							/* Write hit: pipeline BRAM write */
-							dirty_mem[hit_way_r][req_set] <= 1'b1;
+							/* Write hit: pipeline BRAM write (dirty_ram updated via g_meta) */
 							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-								bram_we_r[init_w] <= (hit_way_r == init_w[WAY_W-1:0]);
+								bram_we_lo_r[init_w] <= (hit_way_r == init_w[WAY_W-1:0]);
+								bram_we_hi_r[init_w] <= (hit_way_r == init_w[WAY_W-1:0]);
 								bram_waddr[init_w] <= req_set;
 							end
 							pending_rsp_write <= 1'b1;
 							pending_rsp_user  <= req_user;
-							pending_rsp_rdata <= {LINE_BITS{1'b0}};
 							pending_rsp_error <= 1'b0;
 							state <= S_WRITE_COMMIT;
 						end
@@ -666,7 +737,7 @@ module atg_mc_l2 #(
 
 				S_EVICT_WAIT: begin
 					if (m_rsp_valid && m_rsp_write) begin
-						dirty_mem[active_victim_way][req_set] <= 1'b0;
+						/* dirty_ram cleared via g_meta */
 						m_req_valid <= 1'b1;
 						m_req_write <= 1'b0;
 						m_req_line  <= req_line;
@@ -688,35 +759,23 @@ module atg_mc_l2 #(
 
 				S_REFILL_WAIT: begin
 					if (m_rsp_valid && !m_rsp_write) begin
-						plru_mem[req_set] <= plru_out_tree;
+						/* plru_bit_ram and valid_ram/dirty_ram updated via g_plru/g_meta */
 						tag_we <= 1'b1;
 						tag_way <= active_victim_way;
 						tag_waddr <= req_set;
 						tag_wdata <= req_tag;
-						valid_mem[active_victim_way][req_set] <= 1'b1;
 						for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-							bram_we_r[init_w] <= (active_victim_way == init_w[WAY_W-1:0]);
+							bram_we_lo_r[init_w] <= (active_victim_way == init_w[WAY_W-1:0]);
+							bram_we_hi_r[init_w] <= (active_victim_way == init_w[WAY_W-1:0]);
 							bram_waddr[init_w] <= req_set;
 						end
 						bram_wdata_r <= bram_wdata;
 
-						if (!req_write) begin
-							/* Read miss complete */
-							dirty_mem[active_victim_way][req_set] <= 1'b0;
-							pending_rsp_write <= 1'b0;
-							pending_rsp_user  <= req_user;
-							pending_rsp_rdata <= m_rsp_rdata;
-							pending_rsp_error <= m_rsp_error;
-							state             <= S_WRITE_COMMIT;
-						end else begin
-							/* Write-allocate complete */
-							dirty_mem[active_victim_way][req_set] <= 1'b1;
-							pending_rsp_write <= 1'b1;
-							pending_rsp_user  <= req_user;
-							pending_rsp_rdata <= {LINE_BITS{1'b0}};
-							pending_rsp_error <= m_rsp_error;
-							state             <= S_WRITE_COMMIT;
-						end
+						/* pending_rsp_rdata updated via g_bwdata_slice */
+						pending_rsp_write <= req_write;
+						pending_rsp_user  <= req_user;
+						pending_rsp_error <= m_rsp_error;
+						state             <= S_WRITE_COMMIT;
 					end
 				end
 
@@ -744,6 +803,7 @@ module atg_mc_l2 #(
 						/* Priority service for DC request */
 						req_write <= s_req_write;
 						req_write_s <= {NSL{s_req_write}};
+						meta_req_write <= {WAYS{s_req_write}};
 						req_line  <= s_req_line;
 						req_be    <= s_req_be;
 						req_wdata <= s_req_wdata;
@@ -765,14 +825,13 @@ module atg_mc_l2 #(
 						if (set_has_dirty) begin
 							active_victim_way <= first_dirty_way;
 							evict_way_s <= {NSL{first_dirty_way}};
-							for (init_w = 0; init_w < WAYS; init_w = init_w + 1)
+							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
+								meta_vic_match[init_w] <= (first_dirty_way == init_w[WAY_W-1:0]);
 								bram_raddr[init_w] <= flush_set;
+							end
 							state <= S_FLUSH_RWAIT;
 						end else begin
-							for (init_w = 0; init_w < WAYS; init_w = init_w + 1) begin
-								valid_mem[init_w][flush_set] <= 1'b0;
-								dirty_mem[init_w][flush_set] <= 1'b0;
-							end
+							/* valid_ram/dirty_ram cleared via g_meta */
 							if (flush_set == MAX_SET) begin
 								ctrl_inv_done <= 1'b1;
 								state <= S_IDLE;
@@ -801,8 +860,7 @@ module atg_mc_l2 #(
 
 				S_FLUSH_WAIT: begin
 					if (m_rsp_valid && m_rsp_write) begin
-						dirty_mem[active_victim_way][flush_set] <= 1'b0;
-						valid_mem[active_victim_way][flush_set] <= 1'b0;
+						/* valid_ram/dirty_ram cleared via g_meta */
 						wait_phase <= 1'b0;
 						state <= S_FLUSH_STEP;
 					end
@@ -820,10 +878,7 @@ module atg_mc_l2 #(
 						m_req_key   <= 8'hFE;
 						state       <= S_FLUSH_EVICT;
 					end else begin
-						if (in_range) begin
-							valid_mem[active_victim_way][flush_set] <= 1'b0;
-							dirty_mem[active_victim_way][flush_set] <= 1'b0;
-						end
+						/* valid_ram/dirty_ram cleared via g_meta */
 						wait_phase <= 1'b0;
 						state <= S_FLUSH_STEP;
 					end

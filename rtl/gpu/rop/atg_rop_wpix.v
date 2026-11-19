@@ -138,14 +138,16 @@ module atg_rop_wpix #(
 	wire wpix_p2_clk = clk;
 `else
 	reg [5:0] wpix_st_sr;
-	always @(posedge clk) begin
-		if (rst_sync || st_we)
+	always @(posedge clk or posedge rst_sync) begin
+		if (rst_sync)
+			wpix_st_sr <= 6'h3F;
+		else if (st_we)
 			wpix_st_sr <= 6'h3F;
 		else if (wpix_st_sr != 6'd0)
 			wpix_st_sr <= {1'b0, wpix_st_sr[5:1]};
 	end
 	reg wpix_st_en, wpix_act_en, wpix_p2_en;
-	always @(negedge clk) begin
+	always @(negedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			wpix_st_en <= 1'b1;
 			wpix_act_en <= 1'b1;
@@ -186,6 +188,8 @@ module atg_rop_wpix #(
 		st_wd_b1 <= st_wdata;
 		st_wd_c0 <= st_wdata;
 		st_wd_c1 <= st_wdata;
+	end
+	always @(posedge wpix_st_clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			we_base_r <= 8'd0;
 			we_stride_r <= 8'd0;
@@ -247,7 +251,7 @@ module atg_rop_wpix #(
 `ifndef SYNTH_KINTEX7
 	/* In simulation, also update base/stride/fmts/wms on the same cycle as st_we
 	 * because atg_rop_mrt8_tb checks dut_wb.wpix.base/stride/fmts/wms 1 cycle after st_put. */
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			for (i = 0; i < MRT_COUNT; i = i + 1) begin
 				base[i] <= 32'd0;
@@ -316,7 +320,7 @@ module atg_rop_wpix #(
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_shi (.I0(we_stride_r[g_we]), .O(we_s_hi));
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_llo (.I0(we_bls_r[g_we]), .O(we_bl_lo));
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_lhi (.I0(we_bls_r[g_we]), .O(we_bl_hi));
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				base[g_we] <= 32'd0;
 				stride[g_we] <= 32'd0;
@@ -335,7 +339,7 @@ module atg_rop_wpix #(
 		wire we_k_lo, we_k_hi;
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_klo (.I0(we_kcf_r[g_we]), .O(we_k_lo));
 		(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_khi (.I0(we_kcf_r[g_we]), .O(we_k_hi));
-		always @(posedge clk) begin
+		always @(posedge clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				kcf[g_we] <= 32'd0;
 			end else begin
@@ -354,7 +358,7 @@ module atg_rop_wpix #(
 	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_k8lo (.I0(we_kc8_r),   .O(we_kc8_lo));
 	(* keep = "true", dont_touch = "true" *) LUT1 #(.INIT(2'h2)) u_k8hi (.I0(we_kc8_r),   .O(we_kc8_hi));
 
-	always @(posedge clk) begin
+	always @(posedge clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			fmt0 <= 2'd0;
 			fmts <= 64'd0;
@@ -392,7 +396,7 @@ module atg_rop_wpix #(
 		(* keep = "true", dont_touch = "true" *) reg [3:0] r_wm_s0;
 		(* keep = "true", dont_touch = "true" *) reg [22:0] r_bl_s0;
 		(* keep = "true", dont_touch = "true" *) reg r_ms4_s0;
-		always @(posedge wpix_st_clk) begin
+		always @(posedge wpix_st_clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				r_vk_s0_a <= 8'd44;
 				r_vk_s0_b <= 8'd44;
@@ -448,7 +452,7 @@ module atg_rop_wpix #(
 		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [3:0] r_wm;
 		(* rom_style = "distributed", ram_style = "distributed", keep = "true", dont_touch = "true" *) reg [22:0] r_bl;
 
-		always @(posedge wpix_st_clk) begin
+		always @(posedge wpix_st_clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				r_vk <= 8'd44;
 				r_ps <= 5'd4;
@@ -664,7 +668,7 @@ module atg_rop_wpix #(
 	(* keep = "true", dont_touch = "true" *) reg [1:0] f32_ps_sel_r [0:3][0:7];
 
 	integer is, is2;
-	always @(posedge wpix_act_clk) begin
+	always @(posedge wpix_act_clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			vk <= 8'd44;
 			vk_pack_a <= 8'd44;
@@ -777,7 +781,7 @@ module atg_rop_wpix #(
 
 	reg [31:0] yrs_r;
 	reg smask_lw_r;
-	always @(posedge wpix_act_clk) begin
+	always @(posedge wpix_act_clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			xoff_r <= 32'd0;
 			xoff_j_r <= 32'd0;
@@ -820,7 +824,7 @@ module atg_rop_wpix #(
 `endif
 	wire [127:0] kcf_vec = {kcf[3], kcf[2], kcf[1], kcf[0]};
 	integer ikc;
-	always @(posedge wpix_st_clk) begin
+	always @(posedge wpix_st_clk or posedge rst_sync) begin
 		if (rst_sync) begin
 			kc8_unorm_r <= 128'd0;
 			kcv_r <= 128'd0;
@@ -929,7 +933,7 @@ module atg_rop_wpix #(
 		end
 
 		integer ir;
-		always @(posedge wpix_act_clk) begin
+		always @(posedge wpix_act_clk or posedge rst_sync) begin
 			if (rst_sync) begin
 				slot_o_r[k] <= {LINE_SHIFT{1'b0}};
 				for (ir = 0; ir < 8; ir = ir + 1)
@@ -1013,18 +1017,12 @@ module atg_rop_wpix #(
 			(psl_d2 == 3'd3) ? blk[{slot_o_dst[k][8][3], 6'b10_0000} +: 16] : 16'd0;
 		assign dst_k_comb[63:48] = psl_d3[2] ? blk[63:48] :
 			(psl_d3 == 3'd3) ? blk[{slot_o_dst[k][9][3], 6'b11_0000} +: 16] : 16'd0;
-		wire dst_rst_64, dst_rst_80, dst_rst_96, dst_rst_112;
 `ifdef SYNTH_KINTEX7
+		wire dst_rst_64, dst_rst_80, dst_rst_96, dst_rst_112;
 		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr64  (.I0(rst_sync), .I1(psl_d4[2]), .O(dst_rst_64));
 		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr80  (.I0(rst_sync), .I1(psl_d4[2]), .O(dst_rst_80));
 		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr96  (.I0(rst_sync), .I1(psl_d5[2]), .O(dst_rst_96));
 		(* keep = "true", dont_touch = "true" *) LUT2 #(.INIT(4'hB)) u_dr112 (.I0(rst_sync), .I1(psl_d5[2]), .O(dst_rst_112));
-`else
-		assign dst_rst_64  = rst_sync || !psl_d4[2];
-		assign dst_rst_80  = rst_sync || !psl_d4[2];
-		assign dst_rst_96  = rst_sync || !psl_d5[2];
-		assign dst_rst_112 = rst_sync || !psl_d5[2];
-`endif
 		assign dst_k_comb[127:64] = blk[127:64];
 
 		always @(posedge wpix_act_clk) begin
@@ -1053,6 +1051,21 @@ module atg_rop_wpix #(
 			else
 				slot_dst128_r[k][127:112] <= dst_k_comb[127:112];
 		end
+`else
+		assign dst_k_comb[127:64] = blk[127:64];
+
+		always @(posedge wpix_act_clk or posedge rst_sync) begin
+			if (rst_sync) begin
+				slot_dst128_r[k] <= 128'd0;
+			end else begin
+				slot_dst128_r[k][63:0] <= dst_k_comb[63:0];
+				slot_dst128_r[k][79:64] <= !psl_d4[2] ? 16'd0 : dst_k_comb[79:64];
+				slot_dst128_r[k][95:80] <= !psl_d4[2] ? 16'd0 : dst_k_comb[95:80];
+				slot_dst128_r[k][111:96] <= !psl_d5[2] ? 16'd0 : dst_k_comb[111:96];
+				slot_dst128_r[k][127:112] <= !psl_d5[2] ? 16'd0 : dst_k_comb[127:112];
+			end
+		end
+`endif
 
 		wire unused_n = &{1'b0, n[3], psl_d4[1:0], psl_d5[1:0],
 			slot_o_dst[k][4][0], slot_o_dst[k][5][0], slot_o_dst[k][6][1:0], slot_o_dst[k][7][1:0],
@@ -1094,7 +1107,7 @@ module atg_rop_wpix #(
 			f_sim_cnt[1] ^ ~f_sim_cnt[0],
 			~f_sim_cnt[0]
 		};
-		always @(posedge clk) begin
+		always @(posedge clk or negedge rst_n) begin
 			if (!rst_n) begin
 				f_sim_cnt <= 5'd3;
 			end else if (f_go) begin
@@ -1104,7 +1117,7 @@ module atg_rop_wpix #(
 			end
 		end
 		reg f_icg_en;
-		always @(negedge clk) begin
+		always @(negedge clk or negedge rst_n) begin
 			if (!rst_n)
 				f_icg_en <= 1'b1;
 			else

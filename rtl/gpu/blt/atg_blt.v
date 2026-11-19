@@ -92,9 +92,11 @@ module atg_blt #(
 	/* BLT_OP[2] as written, and the owner taken at the kick. */
 	reg op2;
 `ifdef SYNTH_KINTEX7
-	(* max_fanout = 16 *) reg own;
-`else
 	reg own;
+`else
+	(* keep = "true", dont_touch = "true" *) reg own;
+	(* keep = "true", dont_touch = "true" *) reg [3:0] own_wd_r;
+	(* keep = "true", dont_touch = "true" *) reg own_be_r, own_ctl_r;
 `endif
 	(* keep = "true", dont_touch = "true" *) wire rst_blt_high = !rst_n;
 
@@ -102,15 +104,31 @@ module atg_blt #(
 		if (rst_blt_high) begin
 			op2 <= 1'b0;
 			own <= 1'b0;
+`ifndef SYNTH_KINTEX7
+			own_wd_r <= 4'd0;
+			own_be_r <= 1'b0;
+			own_ctl_r <= 1'b0;
+`endif
 		end else begin
 			if (st_we && st_idx == GHCI_S_BLT_OP)
 				op2 <= st_wdata[2];
-			if (kick && !busy)
+			if (kick && !busy) begin
 				own <= op2 && MS4 != 0;
+`ifndef SYNTH_KINTEX7
+				own_wd_r <= {4{op2 && MS4 != 0}};
+				own_be_r <= op2 && MS4 != 0;
+				own_ctl_r <= op2 && MS4 != 0;
+`endif
+			end
 		end
 	end
 
-	/* The 2D engine. */
+`ifdef SYNTH_KINTEX7
+	wire blt_int_req_ready = req_ready;
+`else
+	reg req_valid_r;
+	wire blt_int_req_ready = !req_valid_r || req_ready;
+`endif
 	wire d_busy;
 	wire [3:0] d_fsm;
 	wire d_done;
@@ -155,7 +173,7 @@ module atg_blt #(
 		.error(d_error),
 		.error_kind(d_kind),
 		.req_valid(d_req_valid),
-		.req_ready(req_ready),
+		.req_ready(blt_int_req_ready),
 		.req_write(d_req_write),
 		.req_line(d_req_line),
 		.req_be(d_req_be),
@@ -198,7 +216,7 @@ module atg_blt #(
 				.error(r_error),
 				.error_kind(r_kind),
 				.req_valid(r_req_valid),
-				.req_ready(req_ready),
+				.req_ready(blt_int_req_ready),
 				.req_write(r_req_write),
 				.req_line(r_req_line),
 				.req_be(r_req_be),
@@ -302,12 +320,50 @@ module atg_blt #(
 	assign req_wdata = req_wdata_r;
 	assign req_tag   = req_tag_r;
 `else
-	assign req_valid = d_req_valid || r_req_valid;
-	assign req_write = own ? r_req_write : d_req_write;
-	assign req_line = own ? r_req_line : d_req_line;
-	assign req_be = own ? r_req_be : d_req_be;
-	assign req_wdata = own ? r_req_wdata : d_req_wdata;
-	assign req_tag = own ? r_req_tag : d_req_tag;
+	(* extract_reset = "no" *) reg req_write_r;
+	(* extract_reset = "no" *) reg [LA_W-1:0] req_line_r;
+	(* extract_reset = "no" *) reg [LINE_BYTES-1:0] req_be_r;
+	(* extract_reset = "no" *) reg [LBITS-1:0] req_wdata_r;
+	(* extract_reset = "no" *) reg [7:0] req_tag_r;
+
+	wire [LBITS-1:0] blt_req_wdata_a;
+	genvar owia;
+	generate
+		for (owia = 0; owia < 4; owia = owia + 1) begin : g_own_wd_a
+			assign blt_req_wdata_a[owia*(LBITS/4) +: (LBITS/4)] = own_wd_r[owia] ?
+				r_req_wdata[owia*(LBITS/4) +: (LBITS/4)] :
+				d_req_wdata[owia*(LBITS/4) +: (LBITS/4)];
+		end
+	endgenerate
+	wire [LINE_BYTES-1:0] blt_req_be_a = own_be_r ? r_req_be : d_req_be;
+	wire blt_req_write_a = own_ctl_r ? r_req_write : d_req_write;
+	wire [LA_W-1:0] blt_req_line_a = own_ctl_r ? r_req_line : d_req_line;
+	wire [7:0] blt_req_tag_a = own_ctl_r ? r_req_tag : d_req_tag;
+
+	always @(posedge clk or posedge rst_blt_high) begin
+		if (rst_blt_high) begin
+			req_valid_r <= 1'b0;
+		end else if (blt_int_req_ready) begin
+			req_valid_r <= d_req_valid || r_req_valid;
+		end
+	end
+
+	always @(posedge clk) begin
+		if (blt_int_req_ready) begin
+			req_write_r <= blt_req_write_a;
+			req_line_r  <= blt_req_line_a;
+			req_be_r    <= blt_req_be_a;
+			req_wdata_r <= blt_req_wdata_a;
+			req_tag_r   <= blt_req_tag_a;
+		end
+	end
+
+	assign req_valid = req_valid_r;
+	assign req_write = req_write_r;
+	assign req_line  = req_line_r;
+	assign req_be    = req_be_r;
+	assign req_wdata = req_wdata_r;
+	assign req_tag   = req_tag_r;
 `endif
 `ifdef SYNTH_KINTEX7
 	(* keep = "true" *) wire [3:0] fsm_buf;

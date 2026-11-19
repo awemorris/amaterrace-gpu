@@ -599,16 +599,21 @@ module atg_cp #(
 		end
 	end
 `else
+	reg [8:0] s_caps_r_idx_r;
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
 			caps_index <= 9'd0;
 			caps_data <= 32'd0;
 			caps_fw_stall <= 1'b0;
+			s_caps_r_idx_r <= 9'd0;
 		end else begin
 			caps_fw_stall <= 1'b0;
 			if (sb_we && (sb_idx == 6'h34)) begin
 				caps_index <= sb_wdata[8:0];
 				caps_fw_stall <= 1'b1;
+				s_caps_r_idx_r <= sb_wdata[8:0];
+			end else begin
+				s_caps_r_idx_r <= s_seq_caps_r_idx;
 			end
 			if (caps_fw_stall) begin
 				caps_data <= s_caps_r_data;
@@ -617,7 +622,11 @@ module atg_cp #(
 	end
 `endif
 
+`ifdef SYNTH_KINTEX7
 	wire [8:0] s_caps_r_idx = caps_fw_stall ? caps_index : s_seq_caps_r_idx;
+`else
+	wire [8:0] s_caps_r_idx = s_caps_r_idx_r;
+`endif
 
 	always @(*) begin
 		sb_rdata = 32'd0;

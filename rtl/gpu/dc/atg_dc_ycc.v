@@ -54,38 +54,43 @@ module atg_dc_ycc (
 	 *   112 = 128 - 16, 38 = 32 + 4 + 2, 74 = 64 + 8 + 2;
 	 *   94 = 128 - 32 - 2, 18 = 16 + 2.
 	 */
-	wire [15:0] y_r, y_g, y_b, y_k, y_rg, y_bk, y_sum;
-	wire [15:0] cb_p, cb_br, cb_rr, cb_gg, cb_pg, cb_n0, cb_n, cb_sum;
-	wire [15:0] cr_p0, cr_p1, cr_n0, cr_n1, cr_pos, cr_neg, cr_sum;
-	wire [21:0] sum_co_unused;
+	wire [15:0] y_sum, cb_sum, cr_sum;
+	wire [2:0] sum_co_unused;
 
-	/* Y = (64 R + 2 R) + (128 G + G) + (16 B + 8 B) + (B + 4224), 3-level tree. */
-	am_add #(.W(16)) y_1 (.a(r << 6), .b(r << 1), .ci(1'b0), .s(y_r), .co(sum_co_unused[0]));
-	am_add #(.W(16)) y_2 (.a(g << 7), .b(g), .ci(1'b0), .s(y_g), .co(sum_co_unused[1]));
-	am_add #(.W(16)) y_3 (.a(b << 4), .b(b << 3), .ci(1'b0), .s(y_b), .co(sum_co_unused[2]));
-	am_add #(.W(16)) y_4 (.a(b), .b(16'd4224), .ci(1'b0), .s(y_k), .co(sum_co_unused[3]));
-	am_add #(.W(16)) y_5 (.a(y_r), .b(y_g), .ci(1'b0), .s(y_rg), .co(sum_co_unused[4]));
-	am_add #(.W(16)) y_6 (.a(y_b), .b(y_k), .ci(1'b0), .s(y_bk), .co(sum_co_unused[5]));
-	am_add #(.W(16)) y_7 (.a(y_rg), .b(y_bk), .ci(1'b0), .s(y_sum), .co(sum_co_unused[6]));
+	/* 3:2 CSA reduction + single 16-bit am_add per channel (zero chained adders) */
+	wire [15:0] yt0 = r << 6, yt1 = r << 1, yt2 = g << 7, yt3 = g;
+	wire [15:0] yt4 = b << 4, yt5 = b << 3, yt6 = b,      yt7 = 16'd4224;
+	wire [15:0] ys1a = yt0 ^ yt1 ^ yt2, yc1a = ((yt0 & yt1) | (yt0 & yt2) | (yt1 & yt2)) << 1;
+	wire [15:0] ys1b = yt3 ^ yt4 ^ yt5, yc1b = ((yt3 & yt4) | (yt3 & yt5) | (yt4 & yt5)) << 1;
+	wire [15:0] ys2a = ys1a ^ yc1a ^ ys1b, yc2a = ((ys1a & yc1a) | (ys1a & ys1b) | (yc1a & ys1b)) << 1;
+	wire [15:0] ys2b = yc1b ^ yt6  ^ yt7,  yc2b = ((yc1b & yt6)  | (yc1b & yt7)  | (yt6  & yt7))  << 1;
+	wire [15:0] ys3  = ys2a ^ yc2a ^ ys2b, yc3  = ((ys2a & yc2a) | (ys2a & ys2b) | (yc2a & ys2b)) << 1;
+	wire [15:0] ys4  = ys3  ^ yc3  ^ yc2b, yc4  = ((ys3  & yc3)  | (ys3  & yc2b) | (yc3  & yc2b)) << 1;
+	am_add #(.W(16)) y_7 (.a(ys4), .b(yc4), .ci(1'b0), .s(y_sum), .co(sum_co_unused[0]));
 
-	/* Cb = (128 B + 32896 - 2 G) - ((16 B + 32 R) + (4 R + 2 R) + (64 G + 8 G)), 4-level tree. */
-	am_add #(.W(16)) cb_1 (.a(b << 7), .b(16'd32896), .ci(1'b0), .s(cb_p), .co(sum_co_unused[7]));
-	am_add #(.W(16)) cb_2 (.a(b << 4), .b(r << 5), .ci(1'b0), .s(cb_br), .co(sum_co_unused[8]));
-	am_add #(.W(16)) cb_3 (.a(r << 2), .b(r << 1), .ci(1'b0), .s(cb_rr), .co(sum_co_unused[9]));
-	am_add #(.W(16)) cb_4 (.a(g << 6), .b(g << 3), .ci(1'b0), .s(cb_gg), .co(sum_co_unused[10]));
-	am_sub #(.W(16)) cb_5 (.a(cb_p), .b(g << 1), .bi(1'b0), .d(cb_pg), .bo(sum_co_unused[11]));
-	am_add #(.W(16)) cb_6 (.a(cb_br), .b(cb_rr), .ci(1'b0), .s(cb_n0), .co(sum_co_unused[12]));
-	am_add #(.W(16)) cb_7 (.a(cb_n0), .b(cb_gg), .ci(1'b0), .s(cb_n), .co(sum_co_unused[13]));
-	am_sub #(.W(16)) cb_8 (.a(cb_pg), .b(cb_n), .bi(1'b0), .d(cb_sum), .bo(sum_co_unused[14]));
+	/* Cb: 128 B + 32896 - (16 B + 32 R + 4 R + 2 R + 64 G + 8 G + 2 G) = sum + 7 + 32896 */
+	wire [15:0] ct0 = b << 7,    ct1 = ~(g << 1), ct2 = ~(b << 4);
+	wire [15:0] ct3 = ~(r << 5), ct4 = ~(r << 2), ct5 = ~(r << 1);
+	wire [15:0] ct6 = ~(g << 6), ct7 = ~(g << 3), ct8 = 16'd32903;
+	wire [15:0] cs1a = ct0 ^ ct1 ^ ct2, cc1a = ((ct0 & ct1) | (ct0 & ct2) | (ct1 & ct2)) << 1;
+	wire [15:0] cs1b = ct3 ^ ct4 ^ ct5, cc1b = ((ct3 & ct4) | (ct3 & ct5) | (ct4 & ct5)) << 1;
+	wire [15:0] cs1c = ct6 ^ ct7 ^ ct8, cc1c = ((ct6 & ct7) | (ct6 & ct8) | (ct7 & ct8)) << 1;
+	wire [15:0] cs2a = cs1a ^ cc1a ^ cs1b, cc2a = ((cs1a & cc1a) | (cs1a & cs1b) | (cc1a & cs1b)) << 1;
+	wire [15:0] cs2b = cc1b ^ cs1c ^ cc1c, cc2b = ((cc1b & cs1c) | (cc1b & cc1c) | (cs1c & cc1c)) << 1;
+	wire [15:0] cs3  = cs2a ^ cc2a ^ cs2b, cc3  = ((cs2a & cc2a) | (cs2a & cs2b) | (cc2a & cs2b)) << 1;
+	wire [15:0] cs4  = cs3  ^ cc3  ^ cc2b, cc4  = ((cs3  & cc3)  | (cs3  & cc2b) | (cc3  & cc2b)) << 1;
+	am_add #(.W(16)) cb_8 (.a(cs4), .b(cc4), .ci(1'b0), .s(cb_sum), .co(sum_co_unused[1]));
 
-	/* Cr = ((128 R + 32896) + (32 G + 2 G)) - ((16 R + 128 G) + (16 B + 2 B)), 3-level tree. */
-	am_add #(.W(16)) cr_1 (.a(r << 7), .b(16'd32896), .ci(1'b0), .s(cr_p0), .co(sum_co_unused[15]));
-	am_add #(.W(16)) cr_2 (.a(g << 5), .b(g << 1), .ci(1'b0), .s(cr_p1), .co(sum_co_unused[16]));
-	am_add #(.W(16)) cr_3 (.a(r << 4), .b(g << 7), .ci(1'b0), .s(cr_n0), .co(sum_co_unused[17]));
-	am_add #(.W(16)) cr_4 (.a(b << 4), .b(b << 1), .ci(1'b0), .s(cr_n1), .co(sum_co_unused[18]));
-	am_add #(.W(16)) cr_5 (.a(cr_p0), .b(cr_p1), .ci(1'b0), .s(cr_pos), .co(sum_co_unused[19]));
-	am_add #(.W(16)) cr_6 (.a(cr_n0), .b(cr_n1), .ci(1'b0), .s(cr_neg), .co(sum_co_unused[20]));
-	am_sub #(.W(16)) cr_7 (.a(cr_pos), .b(cr_neg), .bi(1'b0), .d(cr_sum), .bo(sum_co_unused[21]));
+	/* Cr: 128 R + 32896 + 32 G + 2 G - (16 R + 128 G + 16 B + 2 B) = sum + 4 + 32896 */
+	wire [15:0] rt0 = r << 7,    rt1 = g << 5,    rt2 = g << 1,    rt3 = ~(r << 4);
+	wire [15:0] rt4 = ~(g << 7), rt5 = ~(b << 4), rt6 = ~(b << 1), rt7 = 16'd32900;
+	wire [15:0] rs1a = rt0 ^ rt1 ^ rt2, rc1a = ((rt0 & rt1) | (rt0 & rt2) | (rt1 & rt2)) << 1;
+	wire [15:0] rs1b = rt3 ^ rt4 ^ rt5, rc1b = ((rt3 & rt4) | (rt3 & rt5) | (rt4 & rt5)) << 1;
+	wire [15:0] rs2a = rs1a ^ rc1a ^ rs1b, rc2a = ((rs1a & rc1a) | (rs1a & rs1b) | (rc1a & rs1b)) << 1;
+	wire [15:0] rs2b = rc1b ^ rt6  ^ rt7,  rc2b = ((rc1b & rt6)  | (rc1b & rt7)  | (rt6  & rt7))  << 1;
+	wire [15:0] rs3  = rs2a ^ rc2a ^ rs2b, rc3  = ((rs2a & rc2a) | (rs2a & rs2b) | (rc2a & rs2b)) << 1;
+	wire [15:0] rs4  = rs3  ^ rc3  ^ rc2b, rc4  = ((rs3  & rc3)  | (rs3  & rc2b) | (rc3  & rc2b)) << 1;
+	am_add #(.W(16)) cr_7 (.a(rs4), .b(rc4), .ci(1'b0), .s(cr_sum), .co(sum_co_unused[2]));
 
 	/* Stage 1: the three components. */
 	reg [7:0] y1, cb1, cr1;

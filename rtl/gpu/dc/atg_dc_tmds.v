@@ -35,17 +35,18 @@ module atg_dc_tmds (
 );
 	(* keep = "true" *) wire rst_high = !rst_n;
 
-	/* The number of ones of a nibble, by table (no arithmetic). */
+	/* The number of ones of a nibble (pure logic, no ROM or arithmetic). */
 	function [2:0] ones4;
 		input [3:0] n;
+		reg p0, g0, p1, g1;
 		begin
-			case (n)
-			4'h0: ones4 = 3'd0;
-			4'h1, 4'h2, 4'h4, 4'h8: ones4 = 3'd1;
-			4'h7, 4'hB, 4'hD, 4'hE: ones4 = 3'd3;
-			4'hF: ones4 = 3'd4;
-			default: ones4 = 3'd2;
-			endcase
+			p0 = n[0] ^ n[1];
+			g0 = n[0] & n[1];
+			p1 = n[2] ^ n[3];
+			g1 = n[2] & n[3];
+			ones4[0] = p0 ^ p1;
+			ones4[1] = (g0 ^ g1) ^ (p0 & p1);
+			ones4[2] = g0 & g1;
 		end
 	endfunction
 
@@ -147,37 +148,32 @@ module atg_dc_tmds (
 		wire n1_co_unused = n1_xor_co_unused ^ n1_xnor_co_unused;
 		reg [4:0] cnt;	/* running disparity, signed, even */
 		reg [9:0] out;
-		/* n1 - n0 = 2 * n1 - 8, signed in 5 bits. */
-		wire [4:0] diff;
-		wire diff_bo_unused;
+		/* n1 in 0..8 -> diff = 2*n1 - 8 (even); delta_half = delta/2 in [-5..5] (4b) */
+		wire n1_eq4 = (n1 == 4'd4);
+		wire n1_gt4 = n1[3] || (n1[2] && (|n1[1:0]));
+		wire n1_lt4 = !n1[3] && !n1[2];
+		wire balanced  = (cnt == 5'd0) || n1_eq4;
+		wire same_sign = (cnt != 5'd0) && ((!cnt[4] && n1_gt4) || (cnt[4] && n1_lt4));
 
-		am_sub #(.W(5)) s_diff (.a({n1, 1'b0}), .b(5'd8), .bi(1'b0), .d(diff), .bo(diff_bo_unused));
-		wire balanced = cnt == 5'd0 || n1 == 4'd4;
-		wire same_sign = (!cnt[4] && !diff[4] && diff != 5'd0) ||
-			(cnt[4] && diff[4]);
+		/* Precompute 4-bit half-delta candidates directly from n1[3:0] and select in 1 mux:
+		 *   pos_h   = n1 - 4
+		 *   pos_m1h = n1 - 5
+		 *   neg_h   = 4 - n1
+		 *   neg_p1h = 5 - n1 */
+		wire [3:0] dh_pos, dh_pos_m1, dh_neg, dh_neg_p1;
+		wire [3:0] dh_unused;
+		am_sub #(.W(4)) s_dh_p  (.a(n1),   .b(4'd4), .bi(1'b0), .d(dh_pos),    .bo(dh_unused[0]));
+		am_sub #(.W(4)) s_dh_pm (.a(n1),   .b(4'd5), .bi(1'b0), .d(dh_pos_m1), .bo(dh_unused[1]));
+		am_sub #(.W(4)) s_dh_n  (.a(4'd4), .b(n1),   .bi(1'b0), .d(dh_neg),    .bo(dh_unused[2]));
+		am_sub #(.W(4)) s_dh_np (.a(4'd5), .b(n1),   .bi(1'b0), .d(dh_neg_p1), .bo(dh_unused[3]));
 
-		/*
-		 * The next disparity: compute delta in parallel with cnt, then single 5-bit adder:
-		 * balanced: delta = q[8] ? diff : -diff;
-		 * same_sign: delta = 2 q[8] - diff;
-		 * otherwise: delta = diff - 2 !q[8].
-		 */
-		wire [4:0] inv_diff;
-		wire inv_diff_bo;
-		am_sub #(.W(5)) s_inv_diff (.a(5'd0), .b(diff), .bi(1'b0), .d(inv_diff), .bo(inv_diff_bo));
-		wire [4:0] delta_balanced = q[8] ? diff : inv_diff;
-
-		wire [4:0] q8_two = {3'd0, q[8], 1'b0};
-		wire [4:0] nq8_two = {3'd0, !q[8], 1'b0};
-		wire [4:0] delta_same, delta_diff;
-		wire [1:0] delta_bo_unused;
-		am_sub #(.W(5)) s_d_same (.a(q8_two), .b(diff), .bi(1'b0), .d(delta_same), .bo(delta_bo_unused[0]));
-		am_sub #(.W(5)) s_d_diff (.a(diff), .b(nq8_two), .bi(1'b0), .d(delta_diff), .bo(delta_bo_unused[1]));
-
-		wire [4:0] delta = balanced ? delta_balanced : (same_sign ? delta_same : delta_diff);
+		wire [3:0] delta_h = balanced  ? (q[8] ? dh_pos    : dh_neg) :
+		                     same_sign ? (q[8] ? dh_neg_p1 : dh_neg) :
+		                                 (q[8] ? dh_pos    : dh_pos_m1);
 		wire [4:0] cnt_next;
 		wire cnt_next_co_unused;
-		am_add #(.W(5)) a_cnt (.a(cnt), .b(delta), .ci(1'b0), .s(cnt_next), .co(cnt_next_co_unused));
+		am_add #(.W(4)) a_cnt (.a(cnt[4:1]), .b(delta_h), .ci(1'b0), .s(cnt_next[4:1]), .co(cnt_next_co_unused));
+		assign cnt_next[0] = 1'b0;
 		assign tmds[10*c +: 10] = out;
 
 		always @(posedge clk or posedge rst_high) begin
@@ -204,8 +200,7 @@ module atg_dc_tmds (
 			end
 		end
 
-		wire unused_ok = &{1'b0, d1_co_unused, n1_co_unused, diff_bo_unused, inv_diff_bo, delta_bo_unused,
-			cnt_next_co_unused};
+		wire unused_ok = &{1'b0, d1_co_unused, n1_co_unused, dh_unused, cnt_next_co_unused};
 	end
 	endgenerate
 endmodule

@@ -110,6 +110,14 @@ module am_fp_add #(
 	endgenerate
 	assign lza_f[0] = lza_p[1] ? lza_g[0] : lza_z[0];
 
+	/* Parallel-prefix OR from MSB down to compute priority 1-hot mask of first 1 in lza_f. */
+	wire [26:0] lza_p1 = lza_f | {1'b0, lza_f[26:1]};
+	wire [26:0] lza_p2 = lza_p1 | {2'b0, lza_p1[26:2]};
+	wire [26:0] lza_p4 = lza_p2 | {4'b0, lza_p2[26:4]};
+	wire [26:0] lza_p8 = lza_p4 | {8'b0, lza_p4[26:8]};
+	wire [26:0] lza_p16 = lza_p8 | {16'b0, lza_p8[26:16]};
+	wire [26:0] lza_1h = lza_f & ~{1'b0, lza_p16[26:1]};
+
 	reg [4:0] lz_est, lz_est_p1;
 	reg lz_v3, lz_v2, lz_v1;
 	reg [4:0] lz_g3, lz_g2, lz_g1, lz_g0;
@@ -157,12 +165,30 @@ module am_fp_add #(
 		else            begin lz_est = lz_g0; lz_est_p1 = lz_g0_p1; end
 	end
 
+	wire [3:0] nl_hit_g_w = {
+		|(lza_1h[26:21] & sum[26:21]),
+		|(lza_1h[20:14] & sum[20:14]),
+		|(lza_1h[13:7]  & sum[13:7]),
+		|(lza_1h[6:0]   & sum[6:0])
+	};
 	wire [4:0] lz_in = sub2 ? lz_est : 5'd0;
 	wire [26:0] nl_est;
-	am_shift #(.W(27), .SW(5), .DIR(2)) u_nl (.a(sum[26:0]), .amt(lz_in), .left(1'b1), .arith(1'b0), .y(nl_est));
-	wire [26:0] nl = (sub2 && !nl_est[26]) ? {nl_est[25:0], 1'b0} : nl_est;
-	wire [4:0]  lz = (!sub2 || sum[27]) ? 5'd0 : (nl_est[26] ? lz_est : lz_est_p1);
-	wire [26:0] n_comb = sum[27] ? {sum[27:2], sum[1] | sum[0]} : nl;
+	wire [26:0] nl;
+	wire [4:0] lz;
+	wire [26:0] n_comb;
+	generate
+		if (LAT < 5) begin : g_nl_early
+			am_shift #(.W(27), .SW(5), .DIR(2)) u_nl (.a(sum[26:0]), .amt(lz_in), .left(1'b1), .arith(1'b0), .y(nl_est));
+			assign nl = (sub2 && !nl_est[26]) ? {nl_est[25:0], 1'b0} : nl_est;
+			assign lz = (!sub2 || sum[27]) ? 5'd0 : (nl_est[26] ? lz_est : lz_est_p1);
+			assign n_comb = sum[27] ? {sum[27:2], sum[1] | sum[0]} : nl;
+		end else begin : g_nl_unused
+			assign nl_est = 27'd0;
+			assign nl = 27'd0;
+			assign lz = 5'd0;
+			assign n_comb = 27'd0;
+		end
+	endgenerate
 	wire sz_comb = sub2 && (px2 == py2);
 
 	wire v3_w = rst_n && v2;
@@ -427,13 +453,14 @@ module am_fp_add #(
 			assign px2 = r_px2;
 			assign py2 = r_py2;
 
-			/* Stage 3: Add/Sub & Leading Zero Count */
+			/* Stage 3: Add/Sub & LZA hit mask (split OR tree across Stage 3/4) */
 			reg r_v3;
-			reg r_sp3, r_sx3, r_sz3;
+			reg r_sp3, r_sx3, r_sz3, r_sub3;
 			reg [31:0] r_spv3;
 			reg [7:0] r_ex3;
 			reg [27:0] r_sum3;
-			reg [4:0] r_lz3;
+			reg [3:0] r_nl_hit_g3;
+			reg [4:0] r_lz_est3, r_lz_est_p1_3;
 
 			always @(posedge clk or negedge rst_n) begin
 				if (!rst_n)
@@ -443,22 +470,27 @@ module am_fp_add #(
 			end
 
 			always @(posedge clk) begin
-				r_sp3  <= r_sp2;
-				r_spv3 <= r_spv2;
-				r_sx3  <= r_sx2;
-				r_sz3  <= sz_comb;
-				r_ex3  <= r_ex2;
-				r_sum3 <= sum;
-				r_lz3  <= lz;
+				r_sp3         <= r_sp2;
+				r_spv3        <= r_spv2;
+				r_sx3         <= r_sx2;
+				r_sz3         <= sz_comb;
+				r_sub3        <= r_sub2;
+				r_ex3         <= r_ex2;
+				r_sum3        <= sum;
+				r_nl_hit_g3   <= nl_hit_g_w;
+				r_lz_est3     <= lz_est;
+				r_lz_est_p1_3 <= lz_est_p1;
 			end
 
 			/* Stage 4: Normalise shift & exponent adjustment */
+			wire nl_hit5 = |r_nl_hit_g3;
+			wire [4:0] lz5 = (!r_sub3 || r_sum3[27]) ? 5'd0 : (nl_hit5 ? r_lz_est3 : r_lz_est_p1_3);
 			wire [26:0] nl5;
-			am_shift #(.W(27), .SW(5), .DIR(2)) u_nl5 (.a(r_sum3[26:0]), .amt(r_lz3), .left(1'b1), .arith(1'b0), .y(nl5));
+			am_shift #(.W(27), .SW(5), .DIR(2)) u_nl5 (.a(r_sum3[26:0]), .amt(lz5), .left(1'b1), .arith(1'b0), .y(nl5));
 			wire [26:0] n_comb5 = r_sum3[27] ? {r_sum3[27:2], r_sum3[1] | r_sum3[0]} : nl5;
 			wire [9:0] e0_comb5;
 			wire e0_co_unused5;
-			am_addsub #(.W(10)) u_e0_5 (.a({2'b00, r_ex3}), .b(r_sum3[27] ? 10'd1 : {5'd0, r_lz3}), .sub(!r_sum3[27]),
+			am_addsub #(.W(10)) u_e0_5 (.a({2'b00, r_ex3}), .b(r_sum3[27] ? 10'd1 : {5'd0, lz5}), .sub(!r_sum3[27]),
 				.s(e0_comb5), .co(e0_co_unused5));
 
 			reg r_v4;

@@ -182,6 +182,7 @@ module atg_su_dcache #(
 	reg [LB_HALF-1:0] d_q_lo, d_q_hi;
 	(* dont_touch = "true" *) reg [LB-1:0] d_q_pipe;
 	(* max_fanout = 12 *) reg r_hit;	/* the response is d_q_pipe (a read hit) */
+	(* keep = "true", dont_touch = "true" *) reg [N_SL-1:0] r_hit_s;
 	always @(posedge clk) begin
 		if (take_d_lo)
 			d_q_lo <= data_lo[u_req_line[IW-1:0]];
@@ -200,7 +201,7 @@ module atg_su_dcache #(
 			(* shreg_extract = "no" *) reg [1:0] q_be_sl;
 			(* keep = "true", max_fanout = 12 *) wire take_sl = (st == IDLE) && ((gsl < 8) ? u_req_valid_sl0 : u_req_valid_sl1);
 			(* keep = "true", max_fanout = 12 *) wire rsp_sl = (st == MWAIT) && m_rsp_valid;
-			(* keep = "true", max_fanout = 12 *) wire r_hit_sl = r_hit;
+			(* keep = "true", max_fanout = 12 *) wire r_hit_sl = r_hit_s[gsl];
 			(* keep = "true", max_fanout = 12 *) wire q_wr_sl = q_write;
 			always @(posedge clk) begin
 				if (take_sl) begin
@@ -272,6 +273,7 @@ module atg_su_dcache #(
 			r_write <= 1'b0;
 			r_error <= 1'b0;
 			r_hit <= 1'b0;
+			r_hit_s <= {N_SL{1'b0}};
 			q_line_lo <= {LA_LO{1'b0}};
 			q_line_hi <= {LA_HI{1'b0}};
 			q_write <= 1'b0;
@@ -317,6 +319,7 @@ module atg_su_dcache #(
 				r_write <= u_req_write;
 				r_error <= 1'b0;
 				r_hit <= !u_req_write && u_hit;
+				r_hit_s <= {N_SL{!u_req_write && u_hit}};
 				if (!u_req_write && u_hit)
 					st <= HIT_WAIT;
 				else

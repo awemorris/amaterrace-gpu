@@ -264,6 +264,27 @@ module atg_fmt_cvt (
 	wire [15:0] msk_u1_lo = {msk_u1_1, msk_u1_0};
 	wire [15:0] msk_u1_hi = {msk_u1_3, msk_u1_2};
 
+	wire [5:0] wm1_u1;
+	am_sub #(.W(6)) u_wm1_stage1 (.a(w0_1), .b(6'd1), .bi(1'b0), .d(wm1_u1), .bo(u_wm1_nc));
+	wire [5:0] uw_u1 = (ty0_uw == ATG_FMT_SNORM) ? wm1_u1 : (ty0_uw == ATG_FMT_SRGB) ? 6'd8 : w0_1;
+	reg [3:0] uw_code_u1;
+	always @(*)
+		case (uw_u1)
+		6'd1: uw_code_u1 = 4'd1;
+		6'd2: uw_code_u1 = 4'd2;
+		6'd4: uw_code_u1 = 4'd3;
+		6'd5: uw_code_u1 = 4'd4;
+		6'd6: uw_code_u1 = 4'd5;
+		6'd7: uw_code_u1 = 4'd6;
+		6'd8: uw_code_u1 = 4'd7;
+		6'd10: uw_code_u1 = 4'd8;
+		6'd11: uw_code_u1 = 4'd9;
+		6'd15: uw_code_u1 = 4'd10;
+		6'd16: uw_code_u1 = 4'd11;
+		default: uw_code_u1 = 4'd0;
+		endcase
+	reg [3:0] uw_code1;
+
 	(* keep = "true", equivalent_register_removal = "no" *) reg cst1_0, cst1_1, cst1_2, cst1_3, cst1_k;
 	reg [31:0] cval1;
 	(* ram_style = "registers" *) reg [15:0] fld1_lo;
@@ -299,6 +320,7 @@ module atg_fmt_cvt (
 			w1_ctrl_a <= 6'd0;
 			w1_ctrl_b_lo <= 6'd0;
 			w1_ctrl_b_hi <= 6'd0;
+			uw_code1 <= 4'd0;
 			ty1_0 <= 3'd0;
 			ty1_1 <= 3'd0;
 			ty1_2 <= 3'd0;
@@ -336,6 +358,7 @@ module atg_fmt_cvt (
 			w1_ctrl_a <= w0_1;
 			w1_ctrl_b_lo <= w0_3;
 			w1_ctrl_b_hi <= w0_3;
+			uw_code1 <= uw_code_u1;
 			ty1_0 <= ty0_0;
 			ty1_1 <= ty0_1;
 			ty1_2 <= ty0_2;
@@ -376,17 +399,12 @@ module atg_fmt_cvt (
 
 	wire sn_1 = ty1_sn1 == ATG_FMT_SNORM;
 	wire sn_2 = ty1_sn2 == ATG_FMT_SNORM;
-	wire sn_uw = ty1_uw == ATG_FMT_SNORM;
 	wire sn_min = ty1_snmin == ATG_FMT_SNORM;
-	wire [5:0] wm1;
-
-	am_sub #(.W(6)) u_wm1 (.a(w1_ctrl_a), .b(6'd1), .bi(1'b0), .d(wm1), .bo(u_wm1_nc));
 
 	wire [7:0] uc_1 = sn_1 ? mag_1 : fld1_lo[15:8];
 	wire [7:0] uc_2 = sn_2 ? 8'd0 : fld1_hi[7:0];
 	wire [23:0] uc = {uc_2, uc_1, uc_0};
 
-	wire [5:0] uw = sn_uw ? wm1 : ty1_uw == ATG_FMT_SRGB ? 6'd8 : w1_ctrl_a;
 	wire snmin = sn_min && (w8_a ? (fld1_lo[7:0] == 8'h80) : (fld1_lo == 16'h8000));
 	/* the inputs of the one normalisation of the floats */
 	wire [4:0] he = ty1_k == ATG_FMT_SFLOAT ? fld1[14:10] : w1_ctrl_a == 6'd11 ? fld1[10:6] : fld1[9:5];
@@ -498,22 +516,7 @@ module atg_fmt_cvt (
 
 	am_add #(.W(8)) u_e5b (.a(8'd112), .b({3'd0, e5e1}), .ci(1'b0), .s(e5b), .co(u_e5b_nc));
 
-	reg [3:0] uw_code_u2;
-	always @(*)
-		case (uw)
-		6'd1: uw_code_u2 = 4'd1;
-		6'd2: uw_code_u2 = 4'd2;
-		6'd4: uw_code_u2 = 4'd3;
-		6'd5: uw_code_u2 = 4'd4;
-		6'd6: uw_code_u2 = 4'd5;
-		6'd7: uw_code_u2 = 4'd6;
-		6'd8: uw_code_u2 = 4'd7;
-		6'd10: uw_code_u2 = 4'd8;
-		6'd11: uw_code_u2 = 4'd9;
-		6'd15: uw_code_u2 = 4'd10;
-		6'd16: uw_code_u2 = 4'd11;
-		default: uw_code_u2 = 4'd0;
-		endcase
+	wire [3:0] uw_code_u2 = uw_code1;
 
 	(* max_fanout = 16 *) reg [2:0] kind2;
 	(* keep = "true" *) reg [7:0] dir2_0, dir2_1, dir2_2, dir2_3;
@@ -630,16 +633,18 @@ module atg_fmt_cvt (
 		r_full_3[19:15], r_full_2[14:10], r_full_1[9:5], r_full_0[4:0]
 	};
 
+	/* Parallel-prefix 1-hot leading-zero encoder for x2[9:0] */
+	wire [9:0] hx_p1 = x2 | {1'b0, x2[9:1]};
+	wire [9:0] hx_p2 = hx_p1 | {2'b0, hx_p1[9:2]};
+	wire [9:0] hx_p4 = hx_p2 | {4'b0, hx_p2[9:4]};
+	wire [9:0] hx_p8 = hx_p4 | {8'b0, hx_p4[9:8]};
+	wire [9:0] hx_1h = x2 & ~{1'b0, hx_p8[9:1]};
 	reg [3:0] hlz_u3;
-	reg hfound;
 	always @(*) begin
 		hlz_u3 = 4'd0;
-		hfound = 1'b0;
 		for (i = 0; i < 10; i = i + 1)
-			if (!hfound && x2[9 - i]) begin
-				hlz_u3 = i[3:0];
-				hfound = 1'b1;
-			end
+			if (hx_1h[9 - i])
+				hlz_u3 = hlz_u3 | i[3:0];
 	end
 
 	(* max_fanout = 16 *) reg [2:0] kind3;
@@ -682,17 +687,21 @@ module atg_fmt_cvt (
 		end
 	end
 
-	/* ---- U3b: UNORM's leading zeros (of the top 24 bits) ---- */
+	/* ---- U3b: UNORM's leading zeros (of the top 24 bits, parallel-prefix 1-hot) ---- */
+	wire [23:0] rtop24 = rr3[79:56];
+	wire [23:0] lz_p1  = rtop24 | {1'b0,  rtop24[23:1]};
+	wire [23:0] lz_p2  = lz_p1  | {2'b0,  lz_p1[23:2]};
+	wire [23:0] lz_p4  = lz_p2  | {4'b0,  lz_p2[23:4]};
+	wire [23:0] lz_p8  = lz_p4  | {8'b0,  lz_p4[23:8]};
+	wire [23:0] lz_p16 = lz_p8  | {16'b0, lz_p8[23:16]};
+	wire [23:0] lz_1h  = rtop24 & ~{1'b0, lz_p16[23:1]};
+	wire found_u3 = lz_p16[0];
 	reg [4:0] lz_u3;
-	reg found_u3;
 	always @(*) begin
 		lz_u3 = 5'd0;
-		found_u3 = 1'b0;
 		for (i = 0; i < 24; i = i + 1)
-			if (!found_u3 && rr3[79 - i]) begin
-				lz_u3 = i[4:0];
-				found_u3 = 1'b1;
-			end
+			if (lz_1h[23 - i])
+				lz_u3 = lz_u3 | i[4:0];
 	end
 
 	(* max_fanout = 16 *) reg [2:0] kind3b;
