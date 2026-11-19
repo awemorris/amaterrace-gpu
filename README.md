@@ -1,7 +1,7 @@
-Amaterrace GPU (ATG1)
-=====================
+Lumiere GPU
+===========
 
-[![CI](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/amaterrace-gpu/actions/workflows/ci.yml)
+[![CI](https://github.com/awemorris/lumiere/actions/workflows/ci.yml/badge.svg)](https://github.com/awemorris/lumiere-gpu/actions/workflows/ci.yml)
 [![License: Zlib](https://img.shields.io/badge/License-Zlib-blue.svg)](https://opensource.org/licenses/Zlib)
 [![GHCI Standard: 1.0](https://img.shields.io/badge/GHCI-1.0-indigo.svg)](docs/ghci.md)
 [![Target: Xilinx KC705/ZCU106](https://img.shields.io/badge/Target-Xilinx-emerald.svg)](boards/)
@@ -10,19 +10,45 @@ Gonna illuminate the world!
 
 ---
 
-`ATG1` is an open-source, synthesis-ready RTL for a modern GPU,
-delivering Vulkan-class graphics and parallel compute.  It is
-architected to fulfill the core paradigms and feature sets of Vulkan,
-DirectX 12, and Metal.  It proposes [GHCI 1.0](docs/ghci.md), a
-standardized set of `GPU Host Controller Interface` and `Shader ISA`.
-The target performance is 108.8 GFLOPS FP32 per shader core at 1.7GHz
-on 5nm ASIC.
+`Lumiere` is an open-source, synthesis-ready RTL-IP and driver
+software for a modern GPU, delivering Vulkan-class graphics and
+parallel compute.  It is architected to fulfill the core paradigms and
+feature sets of Vulkan, DirectX 12, and Metal.
 
-Please note that most GPU features are "opt-in" settings.  Developers
+Lumiere proposes [GHCI 1.0](docs/ghci.md), a standardized set of `GPU
+Host Controller Interface` and `Shader ISA`.
+
+Note that most features of Lumiere are "opt-in" settings.  Developers
 must enable only those options for which they want to use and/or hold
 a patent license.
 
 ![menuconfig](docs/imgs/menuconfig.png)
+
+The target performance varies from low-end SoC (54.4 GFLOPS) to
+high-end PCIe board (13.9 TFLOPS).
+
+| Preset Name                 | SIMT Lanes   | Shader Units | GFLOPS FP32 @1.7GHz | GFLOPS FP32 @600MHz | GFLOPS FP32 @200MHz | Features                      | Description                      |
+|-----------------------------|--------------|--------------|---------------------|---------------------|---------------------|-------------------------------|----------------------------------|
+| gfx-vulkan10-su1-half       | 16           | 1            | 54.4                | 19.2                | -                   | Vulkan 1.0 Baseline           | ≈ PowerVR IMG BXE-4-32 MC1      |
+| gfx-vulkan10-su1            | 32           | 1            | 108.8               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vulkan10-su2            | 32           | 2            | 217.6               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vulkan10-su4            | 32           | 4            | 435.2               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vulkan10-su8            | 32           | 8            | 870.4               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| gfx-vulkan10-su16           | 32           | 16           | 1740.8              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ Adreno X1-45, GTX 1050        |
+| gfx-vulkan10-su32           | 32           | 32           | 3481.6              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ GTX 1650, RX 6400             |
+| gfx-vulkan10-su64           | 32           | 64           | 6963.2              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
+| gfx-vulkan10-su128          | 32           | 128          | 13926.4             | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 5050                      |
+| compute-vulkan10-su1-half   | 16           | 1            | 54.4                | 19.2                | -                   | Vulkan 1.0 Baseline           | ≈ PowerVR IMG BXE-4-32 MC1      |
+| compute-vulkan10-su1        | 32           | 1            | 108.8               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su2        | 32           | 2            | 217.6               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su4        | 32           | 4            | 435.2               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su8        | 32           | 8            | 870.4               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su16       | 32           | 16           | 1740.8              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su32       | 32           | 32           | 3481.6              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
+| compute-vulkan10-su64       | 32           | 64           | 6963.2              | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
+| compute-vulkan10-su128      | 32           | 128          | 13926.4             | 38.4                | -                   | Vulkan 1.0 Baseline           | ≈ RTX 5050                      |
+| gfx-fpga-test               | 4            | 1            | -                   | -                   | 1.6                 | Basic Rendering               | Xilinx KC705                     |
+| compute-fpga-test           | 32           | 1            | -                   | -                   | 12.8                | Basic Compute                 | Xilinx KC705                     |
 
 ---
 
@@ -389,31 +415,3 @@ amaterrace-gpu/
 │   └── vectors/                  # Golden Test Vectors & Geometry Datasets
 └── spec/                         # Formal Module Specifications (One per RTL module)
 ```
-
----
-
-7. Preset Configs
-
-| Name                         | SIMT Lanes   | Shader Units | GFLOPS FP32 @1.7GHz | GFLOPS FP32 @600MHz | GFLOPS FP32 @200MHz | Features                      | Description                      |
-|------------------------------|--------------|--------------|---------------------|---------------------|---------------------|-------------------------------|----------------------------------|
-| gfx-asic-vulkan10-su1-half   | 16           | 1            | 54.4                | 19.2                | -                   | Vulkan 1.0 Baseline           | ~= PowerVR IMG BXE-4-32 MC1      |
-| gfx-asic-vulkan10-su1        | 32           | 1            | 108.8               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su2        | 32           | 2            | 217.6               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su4        | 32           | 4            | 435.2               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su8        | 32           | 8            | 870.4               | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su16       | 32           | 16           | 1740.8              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su32       | 32           | 32           | 3481.6              | 38.4                | -                   | Vulkan 1.0 Baseline           |                                  |
-| gfx-asic-vulkan10-su64       | 32           | 64           | 6963.2              | 38.4                | -                   | Vulkan 1.0 Baseline           | ~= RTX 3050 6GB                  |
-| gfx-asic-vulkan10-su128      | 32           | 128          | 13926.4             | 38.4                | -                   | Vulkan 1.0 Baseline           | ~= RTX 5050                      |
-| gfx-fpga-test                | 4            | 1            | -                   | -                   | 1.6                 | Basic Rendering               | Xilinx KC705                     |
-| compute-fpga-test            | 32           | 1            | -                   | -                   | 12.8                | Basic Compute                 | Xilinx KC705                     |
-
----
-
-8. Misc & Trivia
-----------------
-
-- The name `Amaterrace` comes from the Japanese Mythology.
-- The entire SoC that uses `Amaterrace GPU` and [Sukuna RISC](https://github.com/awemorris/sukuna-risc/) is named `Moonphaser`.
-- The OS for the Moonphaser SoC is [zedBSD](https://github.com/awemorris/zedBSD)
-
