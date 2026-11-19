@@ -360,9 +360,14 @@ module atg_cp_ring #(
 	 * Active Queue Signals & Status
 	 */
 	wire [2:0] q_empty;
+`ifdef SYNTH_KINTEX7
 	assign q_empty[0] = (wptr[0] == rptr[0]);
 	assign q_empty[1] = (wptr[1] == rptr[1]);
 	assign q_empty[2] = (wptr[2] == rptr[2]);
+`else
+	reg [2:0] q_empty_r;
+	assign q_empty = q_empty_r;
+`endif
 
 	wire [2:0] has_work;
 	assign has_work[0] = !q_empty[0] && !(queue_sema_wait[0] && (sema[queue_sema_id[0]] == 8'd0));
@@ -1295,7 +1300,7 @@ module atg_cp_ring #(
 `ifdef SYNTH_KINTEX7
 	assign empty = empty_r;
 `else
-	assign empty = q_empty[0] && q_empty[1] && q_empty[2];
+	assign empty = &q_empty_r;
 `endif
 	assign busy = (st != R_IDLE && st != R_FAULT) || (pf_st != PF_IDLE) ||
 		preempt_pending || preempt_active;
@@ -2097,6 +2102,27 @@ module atg_cp_ring #(
 `endif
 		end
 	end
+
+`ifndef SYNTH_KINTEX7
+	wire qe_adv  = (st == R_ADV);
+	wire qe_rest = (st == R_CTX_REST_RSP) && rsp_valid && (rsp_tag == 8'd3);
+	genvar g_qe;
+	generate
+		for (g_qe = 0; g_qe < 3; g_qe = g_qe + 1) begin : g_qempty_track
+			wire [21:0] w_new_q = (g_qe == 0) ? wptr_new0 : (g_qe == 1) ? wptr_new1 : wptr_new2;
+			wire [21:0] w_nxt_q = doorbell[g_qe] ? w_new_q : wptr[g_qe];
+			wire        r_is_adv = qe_adv && (active_qid == g_qe[1:0]);
+			wire        r_is_rst = qe_rest && (interrupted_qid == g_qe[1:0]);
+			wire [21:0] r_nxt_q  = r_is_adv ? p_end : r_is_rst ? saved_rptr : rptr[g_qe];
+			always @(posedge clk or negedge core_rst_n) begin
+				if (!core_rst_n)
+					q_empty_r[g_qe] <= 1'b1;
+				else if (doorbell[g_qe] || r_is_adv || r_is_rst)
+					q_empty_r[g_qe] <= (w_nxt_q == r_nxt_q);
+			end
+		end
+	endgenerate
+`endif
 
 	assign hcr_rdata =
 		(hcr_ridx == I_BASE0_LO || hcr_ridx == I_BASE0) ? base[0][31:0] :

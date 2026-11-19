@@ -397,7 +397,7 @@ module am_fpu_core #(
 		wire [31:0] s1_xf = f_flush(s1_a);
 		wire [24:0] s1_n;
 		am_fp_rint #(.LAT(0)) u_rint1 (
-			.x(s1_xf),
+			.x(s1_a),
 			.rm(s1_op == OP_FRACT ? 3'd2 : s1_rm),
 			.n(s1_n)
 		);

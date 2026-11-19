@@ -59,7 +59,7 @@ module am_sub #(
 `else
 `ifdef SYNTH_ASIC
 	generate
-	if (W > 4 && W <= 128) begin : g_ks_sub
+	if (W > 2 && W <= 128) begin : g_ks_sub
 		wire co_n;
 		am_add #(.W(W)) u_sub_add (
 			.a(a), .b(~b), .ci(~bi), .s(d), .co(co_n)

@@ -429,11 +429,9 @@ module atg_su_opd #(
 		a_kill_g = {NPHYS{1'b0}};
 		a_cov_g  = {NPHYS{1'b0}};
 		for (agi = 0; agi < 32/NPHYS; agi = agi + 1) begin
-			if (a_grp == agi[GRP_W-1:0]) begin
-				a_exec_g = q_exec[agi*NPHYS +: NPHYS];
-				a_kill_g = q_killed[agi*NPHYS +: NPHYS];
-				a_cov_g  = q_info[ATG_WI_MASK + agi*NPHYS +: NPHYS];
-			end
+			a_exec_g = a_exec_g | ({NPHYS{a_grp == agi[GRP_W-1:0]}} & q_exec[agi*NPHYS +: NPHYS]);
+			a_kill_g = a_kill_g | ({NPHYS{a_grp == agi[GRP_W-1:0]}} & q_killed[agi*NPHYS +: NPHYS]);
+			a_cov_g  = a_cov_g  | ({NPHYS{a_grp == agi[GRP_W-1:0]}} & q_info[ATG_WI_MASK + agi*NPHYS +: NPHYS]);
 		end
 	end
 

@@ -1938,9 +1938,11 @@ module atg_rx_setup #(
 			endcase
 	end
 	(* keep = "true" *) wire [4:0] seq_next = {seq_next_hi, seq_next_lo};
-	wire next_xyz_use_fa = (seq_next == 5'd3 || seq_next == 5'd6 || seq_next == 5'd9 ||
-		seq_next == 5'd14 || seq_next == 5'd17 || seq_next == 5'd20 ||
-		seq_next == 5'd25 || seq_next == 5'd28 || seq_next == 5'd31);
+	wire xyz_adv = (seq_step_rep_b == 5'd0) || (xyz_use_fa_r ? fa_o_c_seq : fm_o_c_seq);
+	wire xyz_step_m1 = (seq_step_rep_b == 5'd2 || seq_step_rep_b == 5'd5 || seq_step_rep_b == 5'd8 ||
+		seq_step_rep_b == 5'd13 || seq_step_rep_b == 5'd16 || seq_step_rep_b == 5'd19 ||
+		seq_step_rep_b == 5'd24 || seq_step_rep_b == 5'd27 || seq_step_rep_b == 5'd30);
+	wire next_xyz_use_fa = (st_rep_d == S_PERSP_XYZ) && (xyz_adv ? xyz_step_m1 : xyz_use_fa_r);
 
 	wire [3:0] p_step_ctrl_inc;
 	wire p_step_ctrl_inc_co_unused;

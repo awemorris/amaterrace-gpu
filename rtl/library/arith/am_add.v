@@ -60,8 +60,8 @@ module am_add #(
 `else
 `ifdef SYNTH_ASIC
 	generate
-	if (W > 4 && W <= 128) begin : g_ks
-		localparam LG = (W <= 8) ? 3 : ((W <= 16) ? 4 : ((W <= 32) ? 5 : ((W <= 64) ? 6 : 7)));
+	if (W > 2 && W <= 128) begin : g_ks
+		localparam LG = (W <= 4) ? 2 : ((W <= 8) ? 3 : ((W <= 16) ? 4 : ((W <= 32) ? 5 : ((W <= 64) ? 6 : 7))));
 		wire [W-1:0] p_raw = a ^ b;
 		wire [W-1:0] g_lvl [0:LG];
 		wire [W-1:0] p_lvl [0:LG];

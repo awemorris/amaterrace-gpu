@@ -26,6 +26,7 @@ module am_fp_rint #(
 );
 	wire [7:0] e = x[30:23];
 	wire e_nz = (e != 8'd0);
+	wire x_s = e_nz && x[31];
 	wire [23:0] m = {e_nz, x[22:0]};
 
 	/* Parallel suffix/prefix OR: sp[k] = |m[k-1:0] for k=1..24, sp[0]=0.
@@ -44,11 +45,12 @@ module am_fp_rint #(
 	wire e_hi011 = (e[7:5] == 3'b011) && (&e[4:1]);
 	wire e_hi100 = (e[7:5] == 3'b100);
 
-	/* 1-hot exponent decoder: e_oh[k] = (e == 150 - k) for k = 1..24, e_oh[0] = e_ge150. */
+	/* 1-hot exponent decoder for sticky only: e_oh[k] = (e == 150 - k) for k = 2..24. */
 	wire [24:0] e_oh;
 	assign e_oh[0] = e_ge150;
+	assign e_oh[1] = e_hi100 && (e[4:0] == 5'd21);
 	generate
-		for (gi = 1; gi <= 22; gi = gi + 1) begin : g_eoh
+		for (gi = 2; gi <= 22; gi = gi + 1) begin : g_eoh
 			localparam [4:0] TGT5 = 22 - gi;
 			assign e_oh[gi] = e_hi100 && (e[4:0] == TGT5);
 		end
@@ -56,31 +58,28 @@ module am_fp_rint #(
 	assign e_oh[23] = e_hi011 &&  e[0];
 	assign e_oh[24] = e_hi011 && !e[0];
 
-	wire st_lo = e_lt126 && sp[24];
+	wire st_lo = e_lt126 && e_nz && sp[24];
 	wire st_hi = |(e_oh[24:2] & sp[23:1]);
 	wire st = st_lo || st_hi;
 
-	wire [23:0] m_eff = e_lt126 ? 24'd0 : m;
-
-	/* Factored 2-stage 1-hot right shift on {m_eff, 1'b0}: captures sh_m and guard bit sh_g together. */
-	wire [24:0] sh_oh = {e_oh[24] || e_lt126, e_oh[23:0]};
+	/* Direct 2-stage right shift on {m, 1'b0}: lo_oh from e[1:0], hi_oh from e[4:0], mask e_lt126 after shift. */
 	wire [3:0] lo_oh = {
-		sh_oh[3]  | sh_oh[7]  | sh_oh[11] | sh_oh[15] | sh_oh[19] | sh_oh[23],
-		sh_oh[2]  | sh_oh[6]  | sh_oh[10] | sh_oh[14] | sh_oh[18] | sh_oh[22],
-		sh_oh[1]  | sh_oh[5]  | sh_oh[9]  | sh_oh[13] | sh_oh[17] | sh_oh[21],
-		sh_oh[0]  | sh_oh[4]  | sh_oh[8]  | sh_oh[12] | sh_oh[16] | sh_oh[20] | sh_oh[24]
+		!e_ge150 && (e[1:0] == 2'd3),
+		!e_ge150 && (e[1:0] == 2'd0),
+		!e_ge150 && (e[1:0] == 2'd1),
+		 e_ge150 || (e[1:0] == 2'd2)
 	};
 	wire [6:0] hi_oh = {
-		sh_oh[24],
-		|sh_oh[23:20],
-		|sh_oh[19:16],
-		|sh_oh[15:12],
-		|sh_oh[11:8],
-		|sh_oh[7:4],
-		|sh_oh[3:0]
+		e_hi011 && !e[0],
+		(e_hi100 && (e[4:0] <= 5'd2)) || (e_hi011 && e[0]),
+		e_hi100 && (e[4:0] >= 5'd3  && e[4:0] <= 5'd6),
+		e_hi100 && (e[4:0] >= 5'd7  && e[4:0] <= 5'd10),
+		e_hi100 && (e[4:0] >= 5'd11 && e[4:0] <= 5'd14),
+		e_hi100 && (e[4:0] >= 5'd15 && e[4:0] <= 5'd18),
+		e_ge150 || (e_hi100 && (e[4:0] >= 5'd19 && e[4:0] <= 5'd21))
 	};
 
-	wire [28:0] pre_sh_g = {4'd0, m_eff, 1'b0};
+	wire [28:0] pre_sh_g = {4'd0, m, 1'b0};
 	wire [25:0] s1_sh;
 	wire [49:0] s1_sh_p = {24'd0, s1_sh};
 	wire [25:0] sh_out;
@@ -99,16 +98,16 @@ module am_fp_rint #(
 		end
 	endgenerate
 
-	wire [24:0] sh_m = sh_out[25:1];
-	wire g = sh_out[0];
+	wire [24:0] sh_m = e_lt126 ? 25'd0 : sh_out[25:1];
+	wire g = !e_lt126 && sh_out[0];
 	wire q_lsb = sh_m[0];
 
 	reg up;
 	always @(*)
 		case (rm)
 		3'd1: up = 1'b0;
-		3'd2: up = x[31] && (g || st);
-		3'd3: up = !x[31] && (g || st);
+		3'd2: up = x_s && (g || st);
+		3'd3: up = !x_s && (g || st);
 		3'd4: up = g;
 		default: up = g && (st || q_lsb);
 		endcase
@@ -131,7 +130,7 @@ module am_fp_rint #(
 	assign inc_raw[24] = inc_p4[6];
 	assign n = sh_m ^ ({25{up}} & inc_raw);
 
-	wire unused_ok = &{1'b0, pre_sh_g[28:26], s1_sh_p[49:26], sp[0], e_oh[0]};
+	wire unused_ok = &{1'b0, pre_sh_g[28:26], s1_sh_p[49:26], sp[0], e_oh[1:0]};
 endmodule
 
 `default_nettype wire

@@ -175,15 +175,22 @@ module atg_su_lds #(
 `else
 	wire [31:0] atom_cmp_rhs = atom_c;
 `endif
-	wire [31:0] cmp_diff;
-	wire cmp_ult;
-	am_sub #(.W(32)) u_cmp_sub (.a(q_pipe), .b(atom_b), .bi(1'b0), .d(cmp_diff), .bo(cmp_ult));
-	wire cmp_ab_eq = (q_pipe == atom_b);
+	/* Parallel 4-byte unsigned/signed compare (~7 cmos3 vs 32b subtractor borrow chain). */
+	wire [3:0] cmp_eq_b, cmp_lt_b;
+	genvar gcb;
+	generate
+		for (gcb = 0; gcb < 4; gcb = gcb + 1) begin : g_atom_cmp_b
+			assign cmp_eq_b[gcb] = (q_pipe[gcb*8 +: 8] == atom_b[gcb*8 +: 8]);
+			assign cmp_lt_b[gcb] = (q_pipe[gcb*8 +: 8] <  atom_b[gcb*8 +: 8]);
+		end
+	endgenerate
+	wire cmp_ab_eq = &cmp_eq_b;
+	wire cmp_ult = cmp_lt_b[3] || (cmp_eq_b[3] && (cmp_lt_b[2] || (cmp_eq_b[2] && (cmp_lt_b[1] || (cmp_eq_b[1] && cmp_lt_b[0])))));
 	wire cmp_ugt = !cmp_ult && !cmp_ab_eq;
 	wire cmp_slt = (q_pipe[31] != atom_b[31]) ? q_pipe[31] : cmp_ult;
 	wire cmp_sgt = !cmp_slt && !cmp_ab_eq;
 	wire cmp_eq  = (q_pipe == atom_cmp_rhs);
-	wire unused_cmp_diff = &{1'b0, cmp_diff};
+	wire unused_cmp_diff = 1'b0;
 
 `ifdef MUT_LDS_ATOM_RAW
 	wire atom_active = 1'b0;
