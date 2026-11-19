@@ -91,6 +91,7 @@ module atg_tu_cache #(
 	localparam NS     = LB / 64;
 	localparam NGRPS  = NSETS / 4;
 	localparam GRP_W  = IW - 2;
+	localparam REPS   = (NGRPS + 3) / 4;
 
 	(* dont_touch = "true" *) wire rst_inv = !rst_n;
 
@@ -133,22 +134,22 @@ module atg_tu_cache #(
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  rd_plru_old0, rd_plru_old1, rd_plru_old2, rd_plru_old3;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg        rd_plru_en0_w, rd_plru_en1_w, rd_plru_en2_w, rd_plru_en3_w;
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [NGRPS-1:0] lex_plru_grp_en0, lex_plru_grp_en1, lex_plru_grp_en2, lex_plru_grp_en3;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh0   [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh1   [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh2   [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh3   [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new0 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new1 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new2 [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new3 [0:3];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh0   [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh1   [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh2   [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  lex_set_oh3   [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new0 [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new1 [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new2 [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  lex_plru_new3 [0:REPS-1];
 
 	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  mw_plru_pre;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [NGRPS-1:0] mw_vld_grp_en, mw_plru_grp_en;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_vld_set_oh  [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_plru_set_oh [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_way_oh      [0:3];
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [15:0] drop_q_rep;
-	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  mw_plru_new    [0:3];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_vld_set_oh  [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_plru_set_oh [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [3:0]  mw_way_oh      [0:REPS-1];
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [REPS*4-1:0] drop_q_rep;
+	(* keep = "true", equivalent_register_removal = "no", extract_reset = "no" *) reg [2:0]  mw_plru_new    [0:REPS-1];
 
 	(* extract_reset = "no", ram_style = "registers" *) reg [WAYS-1:0] vld [0:NSETS-1];
 	(* extract_reset = "no", ram_style = "registers" *) reg [2:0] plru [0:NSETS-1];
@@ -488,26 +489,26 @@ module atg_tu_cache #(
 	(* dont_touch = "true" *) wire [1:0]  lfetch_en = {2{st == LANE_WAIT}};
 	(* keep = "true", equivalent_register_removal = "no" *) reg [28:0] lchk_ce;
 	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0]  lwait_ce;
-	(* keep = "true", equivalent_register_removal = "no" *) reg [15:0] lfetch_ce;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [2*REPS-1:0] lfetch_ce_rd;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [REPS-1:0]   lfetch_ce_grp;
+	(* keep = "true", equivalent_register_removal = "no" *) reg [3:0]        lfetch_ce_f;
 	(* dont_touch = "true" *) wire [5:0]  mreq_ce     = {6{st == MREQ}};
 	(* dont_touch = "true" *) wire        mwait_ok_st = (st == MWAIT) && rsp_valid && !rsp_error;
 	(* dont_touch = "true" *) wire        mwait_ok_we0 = (st == MWAIT) && rsp_valid && !rsp_error;
 	(* dont_touch = "true" *) wire        mwait_ok_we1 = (st == MWAIT) && rsp_valid && !rsp_error;
 	(* dont_touch = "true" *) wire        mwait_ok_we2 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g0 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g1 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g2 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g3 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g4 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g5 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g6 = (st == MWAIT) && rsp_valid && !rsp_error;
-	(* dont_touch = "true" *) wire        mwait_ok_g7 = (st == MWAIT) && rsp_valid && !rsp_error;
+	(* dont_touch = "true" *) wire [REPS-1:0] mwait_ok_w;
+	(* dont_touch = "true" *) wire [REPS-1:0] mwait_ok_g;
 	(* dont_touch = "true" *) wire        mwait_err_a = (st == MWAIT) && rsp_valid && rsp_error;
 	(* dont_touch = "true" *) wire        mwait_err_b = (st == MWAIT) && rsp_valid && rsp_error;
 
-	wire [17:0] inv_b;
+	wire [NGRPS+1:0] inv_b;
 	genvar gi;
 	generate
+	for (gi = 0; gi < REPS; gi = gi + 1) begin : g_mwait_ok
+		assign mwait_ok_w[gi] = (st == MWAIT) && rsp_valid && !rsp_error;
+		assign mwait_ok_g[gi] = (st == MWAIT) && rsp_valid && !rsp_error;
+	end
 	for (gi = 0; gi < 8; gi = gi + 1) begin : g_slice_8
 		assign idle_ce_wts[gi] = (st == IDLE) && ta_vld_g[4];
 		assign idle_ce_val[gi] = (st == IDLE) && ta_vld_g[5];
@@ -523,7 +524,7 @@ module atg_tu_cache #(
 		assign cur_step_s[gi] = cur_step_g[gi / 8];
 		assign nxt_lane_s[gi] = nxt_lane;
 	end
-	for (gi = 0; gi < 18; gi = gi + 1) begin : g_inv_buf
+	for (gi = 0; gi < NGRPS + 2; gi = gi + 1) begin : g_inv_buf
 `ifdef SYNTH_KINTEX7
 		(* keep = "true", dont_touch = "true" *)
 		LUT1 #(.INIT(2'b10)) u_ibuf (.I0(inv), .O(inv_b[gi]));
@@ -738,21 +739,21 @@ module atg_tu_cache #(
 			                 (rd_set3_cmp != rd_set2_cmp || !rd_hit2);
 		end
 
-		for (j = 0; j < 4; j = j + 1) begin
-			if (lfetch_ce[2*j]) begin
+		for (j = 0; j < REPS; j = j + 1) begin
+			if (lfetch_ce_rd[2*j]) begin
 				lex_set_oh0[j]   <= dec2to4(rd_set0_oh);
 				lex_set_oh1[j]   <= dec2to4(rd_set1_oh);
 				lex_set_oh2[j]   <= dec2to4(rd_set2_oh);
 				lex_set_oh3[j]   <= dec2to4(rd_set3_oh);
 			end
-			if (lfetch_ce[2*j + 1]) begin
+			if (lfetch_ce_rd[2*j + 1]) begin
 				lex_plru_new0[j] <= update_plru(rd_plru_old0, rd_way0);
 				lex_plru_new1[j] <= update_plru(rd_plru_old1, rd_way1);
 				lex_plru_new2[j] <= update_plru(rd_plru_old2, rd_way2);
 				lex_plru_new3[j] <= update_plru(rd_plru_old3, rd_way3);
 			end
 		end
-		if (lfetch_ce[12]) begin
+		if (lfetch_ce_f[0]) begin
 			f_pw_b0_q[0] <= rd_pw0_lo; f_pw_b1_q[0] <= rd_pw0_lo;
 			f_pw_b2_q[0] <= rd_pw0_hi; f_pw_b3_q[0] <= rd_pw0_hi;
 			f_pby_q[0]   <= rd_pby0;   f_pb_q[0]    <= {2{rd_border0}};
@@ -760,7 +761,7 @@ module atg_tu_cache #(
 			f_b8_q[0]    <= {2{tc_ctl[24:23] == 2'd2}};
 			f_b16_q[0]   <= {2{tc_ctl[19] || (tc_ctl[24:23] == 2'd1)}};
 		end
-		if (lfetch_ce[13]) begin
+		if (lfetch_ce_f[1]) begin
 			f_pw_b0_q[1] <= rd_pw1_lo; f_pw_b1_q[1] <= rd_pw1_lo;
 			f_pw_b2_q[1] <= rd_pw1_hi; f_pw_b3_q[1] <= rd_pw1_hi;
 			f_pby_q[1]   <= rd_pby1;   f_pb_q[1]    <= {2{rd_border1}};
@@ -768,7 +769,7 @@ module atg_tu_cache #(
 			f_b8_q[1]    <= {2{tc_ctl[24:23] == 2'd2}};
 			f_b16_q[1]   <= {2{tc_ctl[19] || (tc_ctl[24:23] == 2'd1)}};
 		end
-		if (lfetch_ce[14]) begin
+		if (lfetch_ce_f[2]) begin
 			f_pw_b0_q[2] <= rd_pw2_lo; f_pw_b1_q[2] <= rd_pw2_lo;
 			f_pw_b2_q[2] <= rd_pw2_hi; f_pw_b3_q[2] <= rd_pw2_hi;
 			f_pby_q[2]   <= rd_pby2;   f_pb_q[2]    <= {2{rd_border2}};
@@ -776,7 +777,7 @@ module atg_tu_cache #(
 			f_b8_q[2]    <= {2{tc_ctl[24:23] == 2'd2}};
 			f_b16_q[2]   <= {2{tc_ctl[19] || (tc_ctl[24:23] == 2'd1)}};
 		end
-		if (lfetch_ce[15]) begin
+		if (lfetch_ce_f[3]) begin
 			f_pw_b0_q[3] <= rd_pw3_lo; f_pw_b1_q[3] <= rd_pw3_lo;
 			f_pw_b2_q[3] <= rd_pw3_hi; f_pw_b3_q[3] <= rd_pw3_hi;
 			f_pby_q[3]   <= rd_pby3;   f_pb_q[3]    <= {2{rd_border3}};
@@ -813,33 +814,14 @@ module atg_tu_cache #(
 			b3_waddr_q <= b_waddr;
 		end
 
-		if (mwait_ok_g0) begin
-			mw_vld_set_oh[0]  <= dec2to4(mline_set_q[1:0]);
-			mw_plru_set_oh[0] <= dec2to4(mline_set_q[1:0]);
-			mw_way_oh[0]      <= dec2to4(fill_way_q);
-			drop_q_rep[3:0]   <= {4{drop || inv_b[17]}};
-			mw_plru_new[0]    <= mw_plru_pre;
-		end
-		if (mwait_ok_g1) begin
-			mw_vld_set_oh[1]  <= dec2to4(mline_set_q[1:0]);
-			mw_plru_set_oh[1] <= dec2to4(mline_set_q[1:0]);
-			mw_way_oh[1]      <= dec2to4(fill_way_q);
-			drop_q_rep[7:4]   <= {4{drop || inv_b[17]}};
-			mw_plru_new[1]    <= mw_plru_pre;
-		end
-		if (mwait_ok_g2) begin
-			mw_vld_set_oh[2]  <= dec2to4(mline_set_q[1:0]);
-			mw_plru_set_oh[2] <= dec2to4(mline_set_q[1:0]);
-			mw_way_oh[2]      <= dec2to4(fill_way_q);
-			drop_q_rep[11:8]  <= {4{drop || inv_b[17]}};
-			mw_plru_new[2]    <= mw_plru_pre;
-		end
-		if (mwait_ok_g3) begin
-			mw_vld_set_oh[3]  <= dec2to4(mline_set_q[1:0]);
-			mw_plru_set_oh[3] <= dec2to4(mline_set_q[1:0]);
-			mw_way_oh[3]      <= dec2to4(fill_way_q);
-			drop_q_rep[15:12] <= {4{drop || inv_b[17]}};
-			mw_plru_new[3]    <= mw_plru_pre;
+		for (j = 0; j < REPS; j = j + 1) begin
+			if (mwait_ok_w[j]) begin
+				mw_vld_set_oh[j]     <= dec2to4(mline_set_q[1:0]);
+				mw_plru_set_oh[j]    <= dec2to4(mline_set_q[1:0]);
+				mw_way_oh[j]         <= dec2to4(fill_way_q);
+				drop_q_rep[j*4 +: 4] <= {4{drop || inv_b[NGRPS+1]}};
+				mw_plru_new[j]       <= mw_plru_pre;
+			end
 		end
 	end
 
@@ -854,7 +836,9 @@ module atg_tu_cache #(
 			lchk_en <= 3'd0;
 			lchk_ce <= 29'd0;
 			lwait_ce <= 4'd0;
-			lfetch_ce <= 16'd0;
+			lfetch_ce_rd <= {(2*REPS){1'b0}};
+			lfetch_ce_grp <= {REPS{1'b0}};
+			lfetch_ce_f <= 4'd0;
 			b0_we_q <= {NS{1'b0}};
 			b1_we_q <= {NS{1'b0}};
 			b2_we_q <= {NS{1'b0}};
@@ -900,15 +884,17 @@ module atg_tu_cache #(
 			end
 			lchk_en   <= {3{st == LANE_TAG_WAIT}};
 			lchk_ce   <= {{9{lchk_en[2]}}, {10{lchk_en[1]}}, {10{lchk_en[0]}}};
-			lwait_ce  <= {4{st == LANE_CHECK && !any_miss}};
-			lfetch_ce <= {{8{lfetch_en[1]}}, {8{lfetch_en[0]}}};
+			lwait_ce      <= {4{st == LANE_CHECK && !any_miss}};
+			lfetch_ce_rd  <= {(2*REPS){lfetch_en[0]}};
+			lfetch_ce_grp <= {REPS{lfetch_en[1]}};
+			lfetch_ce_f   <= {4{lfetch_en[1]}};
 			for (g_idx = 0; g_idx < NGRPS; g_idx = g_idx + 1) begin
-				lex_plru_grp_en0[g_idx] <= lfetch_ce[8 + (g_idx >> 2)] && rd_plru_en0_w && (rd_set0_grp == g_idx[GRP_W-1:0]);
-				lex_plru_grp_en1[g_idx] <= lfetch_ce[8 + (g_idx >> 2)] && rd_plru_en1_w && (rd_set1_grp == g_idx[GRP_W-1:0]);
-				lex_plru_grp_en2[g_idx] <= lfetch_ce[8 + (g_idx >> 2)] && rd_plru_en2_w && (rd_set2_grp == g_idx[GRP_W-1:0]);
-				lex_plru_grp_en3[g_idx] <= lfetch_ce[8 + (g_idx >> 2)] && rd_plru_en3_w && (rd_set3_grp == g_idx[GRP_W-1:0]);
-				mw_vld_grp_en[g_idx]    <= ((g_idx < 4) ? mwait_ok_g4 : (g_idx < 8) ? mwait_ok_g5 : (g_idx < 12) ? mwait_ok_g6 : mwait_ok_g7) && (mline_set_q[IW-1:2] == g_idx[GRP_W-1:0]);
-				mw_plru_grp_en[g_idx]   <= ((g_idx < 4) ? mwait_ok_g4 : (g_idx < 8) ? mwait_ok_g5 : (g_idx < 12) ? mwait_ok_g6 : mwait_ok_g7) && (mline_set_q[IW-1:2] == g_idx[GRP_W-1:0]);
+				lex_plru_grp_en0[g_idx] <= lfetch_ce_grp[g_idx >> 2] && rd_plru_en0_w && (rd_set0_grp == g_idx[GRP_W-1:0]);
+				lex_plru_grp_en1[g_idx] <= lfetch_ce_grp[g_idx >> 2] && rd_plru_en1_w && (rd_set1_grp == g_idx[GRP_W-1:0]);
+				lex_plru_grp_en2[g_idx] <= lfetch_ce_grp[g_idx >> 2] && rd_plru_en2_w && (rd_set2_grp == g_idx[GRP_W-1:0]);
+				lex_plru_grp_en3[g_idx] <= lfetch_ce_grp[g_idx >> 2] && rd_plru_en3_w && (rd_set3_grp == g_idx[GRP_W-1:0]);
+				mw_vld_grp_en[g_idx]    <= mwait_ok_g[g_idx >> 2] && (mline_set_q[IW-1:2] == g_idx[GRP_W-1:0]);
+				mw_plru_grp_en[g_idx]   <= mwait_ok_g[g_idx >> 2] && (mline_set_q[IW-1:2] == g_idx[GRP_W-1:0]);
 				for (k_idx = 0; k_idx < 4; k_idx = k_idx + 1) begin
 					if (inv_b[g_idx])
 						vld[g_idx*4 + k_idx] <= {WAYS{1'b0}};
@@ -939,10 +925,10 @@ module atg_tu_cache #(
 						slot_err <= 4'd0;
 					end
 				end else begin
-					s0_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s0_set];
-					s1_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s1_set];
-					s2_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s2_set];
-					s3_vld_q <= inv_b[16] ? {WAYS{1'b0}} : vld[s3_set];
+					s0_vld_q <= inv_b[NGRPS] ? {WAYS{1'b0}} : vld[s0_set];
+					s1_vld_q <= inv_b[NGRPS] ? {WAYS{1'b0}} : vld[s1_set];
+					s2_vld_q <= inv_b[NGRPS] ? {WAYS{1'b0}} : vld[s2_set];
+					s3_vld_q <= inv_b[NGRPS] ? {WAYS{1'b0}} : vld[s3_set];
 					st <= LANE_TAG_WAIT;
 				end
 			end
@@ -951,10 +937,10 @@ module atg_tu_cache #(
 			end
 			LANE_CMP: begin
 				for (j = 0; j < WAYS; j = j + 1) begin
-					s0_hit_w_q[j] <= !inv_b[17] && ({s0_vld_q[j], s0_tag_w_q[j]} == {1'b1, s0_tag});
-					s1_hit_w_q[j] <= !inv_b[17] && ({s1_vld_q[j], s1_tag_w_q[j]} == {1'b1, s1_tag});
-					s2_hit_w_q[j] <= !inv_b[17] && ({s2_vld_q[j], s2_tag_w_q[j]} == {1'b1, s2_tag});
-					s3_hit_w_q[j] <= !inv_b[17] && ({s3_vld_q[j], s3_tag_w_q[j]} == {1'b1, s3_tag});
+					s0_hit_w_q[j] <= !inv_b[NGRPS+1] && ({s0_vld_q[j], s0_tag_w_q[j]} == {1'b1, s0_tag});
+					s1_hit_w_q[j] <= !inv_b[NGRPS+1] && ({s1_vld_q[j], s1_tag_w_q[j]} == {1'b1, s1_tag});
+					s2_hit_w_q[j] <= !inv_b[NGRPS+1] && ({s2_vld_q[j], s2_tag_w_q[j]} == {1'b1, s2_tag});
+					s3_hit_w_q[j] <= !inv_b[NGRPS+1] && ({s3_vld_q[j], s3_tag_w_q[j]} == {1'b1, s3_tag});
 				end
 				s0_need_q <= use_slot[0] && !border0 && !slot_err[0];
 				s1_need_q <= use_slot[1] && !border1 && !slot_err[1];
@@ -964,7 +950,7 @@ module atg_tu_cache #(
 			end
 			LANE_CHECK: begin
 				if (any_miss) begin
-					drop <= inv_b[17];
+					drop <= inv_b[NGRPS+1];
 					st <= MREQ;
 					req_valid_r <= 1'b1;
 				end else begin
@@ -1032,13 +1018,13 @@ module atg_tu_cache #(
 			default: st <= IDLE;
 			endcase
 
-			if (inv_b[16]) begin
+			if (inv_b[NGRPS]) begin
 				s0_vld_q <= {WAYS{1'b0}};
 				s1_vld_q <= {WAYS{1'b0}};
 				s2_vld_q <= {WAYS{1'b0}};
 				s3_vld_q <= {WAYS{1'b0}};
 			end
-			if (inv_b[17]) begin
+			if (inv_b[NGRPS+1]) begin
 				s0_hit_w_q <= {WAYS{1'b0}};
 				s1_hit_w_q <= {WAYS{1'b0}};
 				s2_hit_w_q <= {WAYS{1'b0}};
