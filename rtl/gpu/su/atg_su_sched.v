@@ -637,7 +637,7 @@ module atg_su_sched #(
 						nf_st = S_READY;
 				S_WC:
 					if (wc_valid && wc_warp == gc[WARP_W-1:0])
-						nf_st = wc_op == 2'd1 ? S_ENDED : wc_op == 2'd2 ? S_BAR : S_READY;
+						nf_st = (wc_op == 2'd3) ? S_FREE : (wc_op == 2'd1) ? S_ENDED : (wc_op == 2'd2) ? S_BAR : S_READY;
 				S_BAR:
 					if (bar_go[gc])
 						nf_st = S_READY;
@@ -698,6 +698,7 @@ module atg_su_sched #(
 
 				nxt_st_w = st_free_r[w] ? {1'b0, s_rdy_free[w], s_alloc_free[w]} : nxt_st_nonfree[w*3 +: 3];
 				nxt_free_w = (st_free_r[w] && !s_rdy_free[w] && !s_alloc_free[w]) ||
+					((st[(w)*3 +: 3] == S_WC) && wc_valid && (wc_warp == w[WARP_W-1:0]) && (wc_op == 2'd3)) ||
 					((st[(w)*3 +: 3] == S_ENDED) && xr_valid && (xr_warp == w[WARP_W-1:0]));
 				st[(w)*3 +: 3] <= nxt_st_w;
 				st_free_r[w]     <= nxt_free_w;

@@ -452,7 +452,7 @@ cmd_session_open(
 		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
 		return;
 	}
-	if (!fw_mmu_walker_present() && tag >= 1u) {
+	if (!fw_mmu_walker_present() && !fw_prot_present() && tag >= 1u) {
 		command->status = FW_VK_ERROR_FEATURE_NOT_PRESENT;
 		return;
 	}
@@ -483,8 +483,10 @@ cmd_session_open(
 				command->status = FW_VK_ERROR_INITIALIZATION_FAILED;
 			else
 				command->status = FW_VK_ERROR_OUT_OF_DEVICE_MEMORY;
+			return;
 		}
 	}
+	fw_mmu_session_open(tag);
 }
 
 /* GHCI_SESSION_CLOSE: [u32 tag]; a packet in the ring only. */

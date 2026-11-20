@@ -164,7 +164,8 @@ module am_mmu_bridge_tb;
 		.mmu_fault_session(mmu_f_sess), .mmu_fault_client(mmu_f_client), .mmu_fault_addr(mmu_f_addr),
 		.brg_fault_valid(perm_fv), .brg_fault_session(perm_fs), .brg_fault_addr(perm_fa),
 		.ctl_fault_valid(ctl_fv), .ctl_fault_kind(ctl_fk), .ctl_fault_session(ctl_fs),
-		.ctl_fault_mc_client(ctl_fc), .ctl_fault_addr(ctl_fa)
+		.ctl_fault_mc_client(ctl_fc), .ctl_fault_addr(ctl_fa),
+		.hcr_ridx(10'd0), .hcr_rdata(), .fault_session_clear(1'b0), .fault_session_tag(8'd0)
 	);
 
 	wire wlk_req_v;

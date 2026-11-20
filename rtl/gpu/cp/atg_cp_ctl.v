@@ -65,6 +65,7 @@ module atg_cp_ctl #(
 	parameter C_DC = 8'hFF,
 	parameter C_SU = 8,
 	parameter HAS_PROT = 0,
+	parameter HAS_HW_WALKER = 0,
 	parameter VA_BITS = 32
 ) (
 	input wire clk,
@@ -589,7 +590,7 @@ module atg_cp_ctl #(
 	                     wdt_fire ? wdt_tag : sf_info[15:8];
 `endif
 
-	wire is_session_fault = (HAS_PROT != 0) && (win_tag != 8'd0);
+	wire is_session_fault = ((HAS_PROT != 0) || (HAS_HW_WALKER != 0)) && (win_tag != 8'd0);
 	assign fault_session_clear = take_fault && is_session_fault;
 	assign fault_session_tag = win_tag;
 

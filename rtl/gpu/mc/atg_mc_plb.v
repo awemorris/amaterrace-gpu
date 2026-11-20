@@ -126,20 +126,21 @@ module atg_mc_plb #(
 	wire inv_n_zero = inv_n == 32'd0;
 
 	/* Fast carry-select ie[GW:0] = inv_g[GW-1:0] + inv_n[31:0] */
+	wire [63:0] inv_n64 = {32'd0, inv_n};
 	wire [LINE_SHIFT-1:0] ie_lo;
 	wire ie_c0;
 	am_add #(.W(LINE_SHIFT)) u_ie0 (
-		.a(inv_g[LINE_SHIFT-1:0]), .b(inv_n[LINE_SHIFT-1:0]), .ci(1'b0),
+		.a(inv_g[LINE_SHIFT-1:0]), .b(inv_n64[LINE_SHIFT-1:0]), .ci(1'b0),
 		.s(ie_lo), .co(ie_c0)
 	);
 	wire [IE_M_W-1:0] ie_m0, ie_m1;
 	wire ie_mc0, ie_mc1;
 	am_add #(.W(IE_M_W)) u_iem0 (
-		.a(inv_g[LINE_SHIFT +: IE_M_W]), .b(inv_n[LINE_SHIFT +: IE_M_W]), .ci(1'b0),
+		.a(inv_g[LINE_SHIFT +: IE_M_W]), .b(inv_n64[LINE_SHIFT +: IE_M_W]), .ci(1'b0),
 		.s(ie_m0), .co(ie_mc0)
 	);
 	am_add #(.W(IE_M_W)) u_iem1 (
-		.a(inv_g[LINE_SHIFT +: IE_M_W]), .b(inv_n[LINE_SHIFT +: IE_M_W]), .ci(1'b1),
+		.a(inv_g[LINE_SHIFT +: IE_M_W]), .b(inv_n64[LINE_SHIFT +: IE_M_W]), .ci(1'b1),
 		.s(ie_m1), .co(ie_mc1)
 	);
 	wire [IE_M_W-1:0] ie_mid = ie_c0 ? ie_m1 : ie_m0;
@@ -149,17 +150,25 @@ module atg_mc_plb #(
 	wire ie_hc0, ie_hc1;
 	am_add #(.W(IE_H_W)) u_ieh0 (
 		.a({1'b0, inv_g[GW-1:LINE_SHIFT+IE_M_W]}),
-		.b(inv_n[LINE_SHIFT+IE_M_W +: IE_H_W]),
+		.b(inv_n64[LINE_SHIFT+IE_M_W +: IE_H_W]),
 		.ci(1'b0), .s(ie_h0), .co(ie_hc0)
 	);
 	am_add #(.W(IE_H_W)) u_ieh1 (
 		.a({1'b0, inv_g[GW-1:LINE_SHIFT+IE_M_W]}),
-		.b(inv_n[LINE_SHIFT+IE_M_W +: IE_H_W]),
+		.b(inv_n64[LINE_SHIFT+IE_M_W +: IE_H_W]),
 		.ci(1'b1), .s(ie_h1), .co(ie_hc1)
 	);
 	wire [IE_H_W-1:0] ie_hi = ie_cmid ? ie_h1 : ie_h0;
-	wire ie_ov = (|inv_n[31:GW+1]) || (ie_cmid ? ie_hc1 : ie_hc0);
+	wire ie_ov;
+	generate
+		if (GW < 31) begin : g_ie_ov_narrow
+			assign ie_ov = (|inv_n[31:GW+1]) || (ie_cmid ? ie_hc1 : ie_hc0);
+		end else begin : g_ie_ov_wide
+			assign ie_ov = ie_cmid ? ie_hc1 : ie_hc0;
+		end
+	endgenerate
 	wire [GW:0] ie_21 = {ie_hi, ie_mid, ie_lo};
+	wire unused_inv_n_hi = &{1'b0, inv_n64[63:32]};
 
 	/* is_l = inv_g - (1 << LINE_SHIFT): low LINE_SHIFT bits unchanged; subtract 1 from upper TAGW bits. */
 	wire [TAG_LO_W-1:0] isl_lo;

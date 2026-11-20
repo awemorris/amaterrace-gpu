@@ -158,7 +158,7 @@ module atg_top_fw_harness #(
 	localparam FILL_WORDS = 1300;	/* one 1024-pixel row and a short one */
 	localparam COPY_BYTES = 5198;	/* not whole words: 16-bit pixels */
 	localparam [31:0] FILL_DATA = 32'hC0DE1234;
-	localparam [7:0] TAG = 8'd5;
+	localparam [7:0] TAG = 8'd0;
 	localparam [31:0] NO_RESULT = 32'hFFFFFFFF;
 	localparam [31:0] DATA_CHECK = 32'h0DA7A001;
 	localparam [31:0] VK_FEATURE_NOT_PRESENT = 32'hFFFFFFF8;

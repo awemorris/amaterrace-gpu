@@ -909,6 +909,7 @@ module atg_cp #(
 		.C_DC(C_DC),
 		.C_SU(C_SU),
 		.HAS_PROT(HAS_PROT),
+		.HAS_HW_WALKER(HAS_HW_WALKER),
 		.VA_BITS(VA_BITS)
 	) u_ctl (
 		.clk(clk), .rst_n(rst_n),

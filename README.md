@@ -32,8 +32,23 @@ high-end PCIe board (13.9 TFLOPS).
 | gfx-vk10-su32         | 32           | 32           | 3.5 TFLOPS @1.7GHz     | Vulkan 1.0 Baseline           | ≈ GTX 1650, RX 6400             |
 | gfx-vk10-su64         | 32           | 64           | 7.0 TFLOPS @1.7GHz     | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
 | gfx-vk10-su128        | 32           | 128          | 13.9 TFLOPS @1.7GHz    | Vulkan 1.0 Baseline           | ≈ RTX 5050 - RTX 5060           |
+| compute-node-su4      | 32           | 4            | 64 GFLOPS @500MHz      | QSFP28 RDMA Compute Node      | Xilinx XCKU5P                    |
 | gfx-fpga-test         | 4            | 1            | 1.6 GFLOPS @200MHz     | Basic Rendering               | Xilinx KC705                     |
 | compute-fpga-test     | 32           | 1            | 12.8 GFLOPS @200MHz    | Basic Compute                 | Xilinx KC705                     |
+
+### Scalable Compute Cluster
+
+Lumiere GPU can also be configured as a `Scalable Compute Cluster`.
+
+- Each node can be either an ASIC board or an FPGA board, such as the XCKU5P.
+- No PCIe is required for a `Shader Node`.
+- The target FPGA frequency is 500 MHz (at `-2` speed grade).
+- The `Core Node` is optional, as the host computer can handle control and provide main memory.
+- The `QSFP28 Switch` is optional, as the host computer can directly accommodate QSFP28 cards.
+
+![Scalable COmpute Cluster](docs/svg/compute-cluster.svg)
+
+### Disclaimer
 
 Please note that most features of Lumiere are "opt-in" settings.
 Developers must enable only those options for which they want to use
@@ -417,6 +432,6 @@ lumiere-gpu/
 
 ---
 
-# 7. Misc & Trivia
+## 7. Misc & Trivia
 
 Lumiere GPU is formerly known as Amaterrace GPU.

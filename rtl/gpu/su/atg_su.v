@@ -530,6 +530,34 @@ module atg_su #(
 	wire sb_fault;
 	wire [15:0] sb_fault_pc;
 	wire [WARP_W-1:0] sb_fault_warp;
+	/* Deferred release for faulted warps parked in S_WC so S_FAULTED aborts ahead of su_busy=0
+	 * on whole-GPU faults while isolated session faults recover cleanly. */
+	reg [15:0] fault_rel_sr;
+	reg [NWARPS-1:0] fault_rel_pend;
+	reg [WARP_W-1:0] fault_rel_warp;
+	integer fri;
+	always @(*) begin
+		fault_rel_warp = {WARP_W{1'b0}};
+		for (fri = NWARPS - 1; fri >= 0; fri = fri - 1)
+			if (fault_rel_pend[fri])
+				fault_rel_warp = fri[WARP_W-1:0];
+	end
+	wire fault_rel_fire = (|fault_rel_pend) && !(|fault_rel_sr) && !wc_valid;
+	always @(posedge clk or posedge rst_p) begin
+		if (rst_p) begin
+			fault_rel_sr   <= 16'd0;
+			fault_rel_pend <= {NWARPS{1'b0}};
+		end else begin
+			fault_rel_sr <= sb_fault ? 16'h0001 : {fault_rel_sr[14:0], 1'b0};
+			if (sb_fault)
+				fault_rel_pend[sb_fault_warp] <= 1'b1;
+			if (fault_rel_fire && (!sb_fault || (fault_rel_warp != sb_fault_warp)))
+				fault_rel_pend[fault_rel_warp] <= 1'b0;
+		end
+	end
+	wire sch_wc_valid = wc_valid || fault_rel_fire;
+	wire [WARP_W-1:0] sch_wc_warp = fault_rel_fire ? fault_rel_warp : wc_warp;
+	wire [1:0] sch_wc_op = fault_rel_fire ? 2'd3 : wc_op;
 	/* Scoreboard releases, write port, rq. */
 	wire rel_valid, wb_stall;
 	wire [WARP_W-1:0] rel_warp;
@@ -733,7 +761,7 @@ module atg_su #(
 		.f_valid(sch_f_valid), .f_ready(sch_f_ready), .f_warp(sch_f_warp), .f_pc(sch_f_pc), .f_addr(sch_f_addr),
 		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake | r_wake),
 		.warp_ready(warp_ready),
-		.wc_valid(wc_valid), .wc_warp(wc_warp), .wc_op(wc_op), .wc_pc(wc_pc),
+		.wc_valid(sch_wc_valid), .wc_warp(sch_wc_warp), .wc_op(sch_wc_op), .wc_pc(wc_pc),
 		.q_warp(a_q_warp), .q_warp_rep(a_q_warp_rep), .q_info(q_info),
 		.init_valid(init_valid), .init_warp(init_warp), .init_mask(init_mask),
 		.pt_ok(pt_ok), .xr_valid(xr_valid), .xr_warp(xr_warp), .busy(sched_busy)

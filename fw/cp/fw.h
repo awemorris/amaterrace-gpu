@@ -603,6 +603,7 @@ void fw_mmu_init(void);
 int fw_mmu_walker_present(void);
 int fw_mmu_map(uint32_t session_id, uint32_t flags, uint64_t gpu_va, uint64_t phys_addr, uint64_t size_bytes);
 int fw_mmu_unmap(uint32_t session_id, uint32_t flags, uint64_t gpu_va, uint64_t size_bytes);
+void fw_mmu_session_open(uint32_t session_id);
 void fw_mmu_session_close(uint32_t session_id);
 
 /* object.c: the object table. */

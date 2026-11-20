@@ -314,6 +314,14 @@ mmu_free_tree(
 }
 
 void
+fw_mmu_session_open(
+	uint32_t session_id)
+{
+	if (walker_present && session_id >= 1u && session_id < FW_SESSIONS)
+		hw_write(HW_MMU_SESSION, 0x100u | session_id);
+}
+
+void
 fw_mmu_session_close(
 	uint32_t session_id)
 {
@@ -321,6 +329,9 @@ fw_mmu_session_close(
 
 	if (session_id >= FW_SESSIONS)
 		return;
+
+	if (walker_present && session_id >= 1u)
+		hw_write(HW_MMU_SESSION, 0x200u | session_id);
 
 	root = session_root_pt[session_id];
 	if (root == 0)

@@ -351,6 +351,15 @@ module atg_cp_prot #(
 		.s(tgran), .co(tg_co)
 	);
 	wire [ADDR_W-1:0] tbytes = {tgran[ADDR_W-1:12], 12'd0};
+	wire [63:0] sb_wdata64 = {32'd0, sb_wdata};
+	wire [63:0] tbase_wmask = {32'd0, hcr_wmask};
+	wire [63:0] tbase_wdata = {32'd0, hcr_wdata};
+	wire [ADDR_W-1:0] tbase_next = (tbase & ~tbase_wmask[ADDR_W-1:0]) |
+		(tbase_wdata[ADDR_W-1:0] & tbase_wmask[ADDR_W-1:0]);
+	wire [63:0] tbase_ext = {{(64-ADDR_W){1'b0}}, tbase};
+	wire [63:0] tbytes_ext = {{(64-ADDR_W){1'b0}}, tbytes};
+	wire [63:0] g0_ext = {{(64-GW){1'b0}}, g0};
+	wire [63:0] g1_ext = {{(63-GW){1'b0}}, g1};
 
 	reg inv_p, gw_p;
 	reg [19:0] gbase;
@@ -375,11 +384,10 @@ module atg_cp_prot #(
 			inv_p <= 1'b0;
 			gw_p <= 1'b0;
 			if (hcr_we && hcr_widx == I_TABLE && n_slots == 7'd0)
-				tbase <= ((tbase & ~hcr_wmask) | (hcr_wdata & hcr_wmask)) &
-					~{{(ADDR_W-12){1'b0}}, 12'hFFF};
+				tbase <= tbase_next & ~{{(ADDR_W-12){1'b0}}, 12'hFFF};
 			if (sb_we) begin
 				case (sb_idx)
-				W_INV_G: inv_g <= sb_wdata[GW-1:0];
+				W_INV_G: inv_g <= sb_wdata64[GW-1:0];
 				W_INV_N: begin
 					inv_n <= sb_wdata;
 					inv_p <= 1'b1;
@@ -402,23 +410,25 @@ module atg_cp_prot #(
 		case (hcr_ridx)
 		HCR_IDX_SESSION_ACTIVE: hcr_rdata = {16'd0, map_v[15:1], 1'b1};
 		I_CAPS: hcr_rdata = {GRANTS, 8'd12, SLOTS};
-		I_TABLE: hcr_rdata = tbase;
-		I_TBYTES: hcr_rdata = tbytes;
+		I_TABLE: hcr_rdata = tbase_ext[31:0];
+		I_TBYTES: hcr_rdata = tbytes_ext[31:0];
 		default: ;
 		endcase
 		sb_rdata = 32'd0;
 		case (sb_idx)
 		W_INFO: sb_rdata = {GRANTS, 2'd0, SLOTS[5:0], 4'd0, inv_pending, drain_ok, tbase != 0,
 			1'b1};
-		W_TBASE: sb_rdata = tbase;
-		W_G0: sb_rdata = {{(32-GW){1'b0}}, g0};
-		W_G1: sb_rdata = {{(31-GW){1'b0}}, g1};
+		W_TBASE: sb_rdata = tbase_ext[31:0];
+		W_G0: sb_rdata = g0_ext[31:0];
+		W_G1: sb_rdata = g1_ext[31:0];
 		default: ;
 		endcase
 	end
 
 	wire unused_ok = &{1'b0, lim_up, tgran, hcr_wdata, SLOTS[7:6], gctl[3], aperture_base[11:0],
-		ns_co, sw_co, lim_co, span_bo, tg_co};
+		ns_co, sw_co, lim_co, span_bo, tg_co,
+		sb_wdata64[63:32], tbase_wmask[63:32], tbase_wdata[63:32],
+		tbase_ext[63:32], tbytes_ext[63:32], g0_ext[63:32], g1_ext[63:32]};
 endmodule
 
 `default_nettype wire

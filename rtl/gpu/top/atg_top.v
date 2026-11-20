@@ -242,7 +242,11 @@ module atg_top #(
 `endif
 	parameter SU_NWARPS = 4,
 	parameter SU_WARP_W = 2,	/* log2(SU_NWARPS) */
+`ifdef CFG_SU_GRP_W
+	parameter SU_GRP_W = `CFG_SU_GRP_W,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
+`else
 	parameter SU_GRP_W = 2,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
+`endif
 	parameter SU_NREGS = 32,
 	parameter SU_SB_ENTRIES = 4,
 	parameter SU_SBE_W = 2,	/* log2(SU_SB_ENTRIES) */
@@ -774,6 +778,7 @@ module atg_top #(
 
 	wire [3:0] cp_active_session;
 	wire [31:0] mmu_sb_rdata;
+	wire [31:0] mmu_hcr_rdata;
 	wire ctl_mmu_fault;
 	wire [3:0] ctl_mmu_fault_kind, ctl_mmu_fault_session;
 	wire [7:0] ctl_mmu_fault_client;
@@ -967,14 +972,14 @@ module atg_top #(
 		.x_fault({1'b0, su_fault}),
 		.x_fault_kind(8'h01),
 		.x_fault_addr({32'd0, su_fault_addr}),
-		.x_fault_tag({8'd0, prot_unit_tag}),
+		.x_fault_tag({8'd0, (HAS_PROT != 0) ? prot_unit_tag : (HAS_HW_WALKER != 0 ? {4'd0, active_mmu_session} : 8'd0)}),
 		.su_fault_stage(su_fault_stage),
 		.hcr_we(hcr_we),
 		.hcr_widx(hcr_widx),
 		.hcr_wdata(hcr_wdata),
 		.hcr_wmask(hcr_wmask),
 		.hcr_ridx(hcr_ridx),
-		.x_rdata(cpu_hcr_rdata | sa_hcr_rdata | prot_hcr_rdata),
+		.x_rdata(cpu_hcr_rdata | sa_hcr_rdata | prot_hcr_rdata | mmu_hcr_rdata),
 		.v_valid(v_valid),
 		.v_addr(v_addr),
 		.v_dwords(v_dwords),
@@ -2133,14 +2138,16 @@ module atg_top #(
 				assign u_req_tag[gi*8 +: 8] = 8'd0;
 				wire unused_phys_u = &{1'b0, u_req_chk[gi], u_req_tbl[gi], u_req_slot[gi*6 +: 6]};
 			end else begin : g_no_blt_sink
+				assign c_req_valid[1] = u_req_valid[1];
+				assign c_req_write[1] = u_req_write[1];
+				assign c_req_line[1*LA_W +: LA_W] = {LA_W{1'b0}};
+				assign c_req_be[1*LINE_BYTES +: LINE_BYTES] = u_req_be[1*LINE_BYTES +: LINE_BYTES];
+				assign c_req_wdata[1*LINE_BITS +: LINE_BITS] = u_req_wdata[1*LINE_BITS +: LINE_BITS];
+				assign c_req_tag[1*8 +: 8] = u_req_tag[1*8 +: 8];
 				assign c_req_chk[1] = 1'b0;
 				assign c_req_tbl[1] = 1'b0;
 				assign c_req_slot[1*6 +: 6] = 6'd0;
-				wire unused_no_blt = &{1'b0, u_req_valid[1], u_req_write[1],
-					u_req_line[1*UNIT_LA_W +: UNIT_LA_W],
-					u_req_be[1*LINE_BYTES +: LINE_BYTES],
-					u_req_wdata[1*LINE_BITS +: LINE_BITS],
-					u_req_tag[1*8 +: 8],
+				wire unused_no_blt = &{1'b0, u_req_line[1*UNIT_LA_W +: UNIT_LA_W],
 					u_req_chk[1], u_req_tbl[1], u_req_slot[1*6 +: 6]};
 			end
 		end
@@ -2206,7 +2213,11 @@ module atg_top #(
 			.ctl_fault_kind(ctl_mmu_fault_kind),
 			.ctl_fault_session(ctl_mmu_fault_session),
 			.ctl_fault_mc_client(ctl_mmu_fault_client),
-			.ctl_fault_addr(ctl_mmu_fault_addr)
+			.ctl_fault_addr(ctl_mmu_fault_addr),
+			.hcr_ridx(hcr_ridx),
+			.hcr_rdata(mmu_hcr_rdata),
+			.fault_session_clear(cp_fault_session_clear),
+			.fault_session_tag(cp_fault_session_tag)
 		);
 
 		atg_mmu #(
@@ -2249,6 +2260,7 @@ module atg_top #(
 	end else begin : g_no_mmu
 		assign any_brg_inflight = 1'b0;
 		assign mmu_sb_rdata = 32'd0;
+		assign mmu_hcr_rdata = 32'd0;
 		assign ctl_mmu_fault = 1'b0;
 		assign ctl_mmu_fault_kind = 4'd0;
 		assign ctl_mmu_fault_session = 4'd0;

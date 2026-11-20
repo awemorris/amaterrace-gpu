@@ -81,8 +81,15 @@ module atg_cp_mmu #(
 	output reg [3:0] ctl_fault_kind,
 	output reg [3:0] ctl_fault_session,
 	output reg [7:0] ctl_fault_mc_client,
-	output reg [VA_BITS-1:0] ctl_fault_addr
+	output reg [VA_BITS-1:0] ctl_fault_addr,
+
+	/* Session active HCR readback when HAS_PROT=0 & HAS_HW_WALKER=1 */
+	input wire [9:0] hcr_ridx,
+	output wire [31:0] hcr_rdata,
+	input wire fault_session_clear,
+	input wire [7:0] fault_session_tag
 );
+	`include "ghci_regs.vh"
 	localparam [5:0] W_BOOT_CAPS       = 6'h36;
 	localparam [5:0] W_MMU_FAULT_VA_HI = 6'h37;
 	localparam [5:0] W_MMU_SESSION     = 6'h38;
@@ -98,6 +105,7 @@ module atg_cp_mmu #(
 
 	reg [3:0]  r_session;
 	reg [31:0] r_root_hi;
+	reg [15:1] r_session_active;
 
 	reg        r_fault_valid;
 	reg [3:0]  r_fault_kind;
@@ -202,6 +210,7 @@ module atg_cp_mmu #(
 		if (!rst_n) begin
 			r_session           <= 4'd0;
 			r_root_hi           <= 32'd0;
+			r_session_active    <= 15'd0;
 			cp_pt_root_we       <= 1'b0;
 			cp_pt_root_session  <= 4'd0;
 			cp_pt_root_base     <= {PPN_BITS{1'b0}};
@@ -236,9 +245,19 @@ module atg_cp_mmu #(
 				r_fault_addr   <= f_va;
 			end
 
+			if (fault_session_clear && fault_session_tag[7:4] == 4'd0 && fault_session_tag[3:0] != 4'd0)
+				r_session_active[fault_session_tag[3:0]] <= 1'b0;
+
 			if (sb_we) begin
 				case (sb_idx)
-				W_MMU_SESSION: r_session <= sb_wdata[3:0];
+				W_MMU_SESSION: begin
+					if (!sb_wdata[8] && !sb_wdata[9])
+						r_session <= sb_wdata[3:0];
+					if (sb_wdata[8] && sb_wdata[3:0] != 4'd0)
+						r_session_active[sb_wdata[3:0]] <= 1'b1;
+					if (sb_wdata[9] && sb_wdata[3:0] != 4'd0)
+						r_session_active[sb_wdata[3:0]] <= 1'b0;
+				end
 				W_MMU_ROOT_PT_HI: r_root_hi <= sb_wdata;
 				W_MMU_ROOT_PT: begin
 					cp_pt_root_we      <= 1'b1;
@@ -278,6 +297,8 @@ module atg_cp_mmu #(
 			endcase
 		end
 	end
+
+	assign hcr_rdata = (hcr_ridx == HCR_IDX_SESSION_ACTIVE) ? {16'd0, r_session_active, 1'b0} : 32'd0;
 
 	wire unused_ok = &{1'b0, co_s0, co_s1, co_s2, co_s3, root_comb64};
 endmodule

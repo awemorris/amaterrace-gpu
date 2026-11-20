@@ -655,7 +655,7 @@ module atg_cp_seq #(
 
 	assign occ_clear = (is_op_std && is_query_r && flags[0]) ||
 		(st == Q_FREQ && f_ready && is_query_r && flags[1]);
-	assign f_valid = (st == Q_FREQ) || (st == Q_QCAPS_REQ);
+	assign f_valid = !seq_abort && ((st == Q_FREQ) || (st == Q_QCAPS_REQ));
 	assign f_op = is_fop_fence_r ? 2'd0 : (is_fop_res_q_r || st == Q_QCAPS_REQ) ? 2'd1 : 2'd2;
 	assign f_addr = (st == Q_QCAPS_REQ) ? {qc_cur_addr_hi, qc_cur_addr} : {
 		is_fc_b[1] ? a0_hi[31:16] : 16'd0,
@@ -1135,7 +1135,10 @@ module atg_cp_seq #(
 					end
 				end
 			Q_EXEC: begin
-				if (nop_r) begin
+				if (seq_abort) begin
+					st <= Q_DEAD;
+					st_is_pay_r <= 1'b0;
+				end else if (nop_r) begin
 					st <= Q_IDLE;
 					settle <= 1'b0;
 				end else if (is_query_caps_r) begin
