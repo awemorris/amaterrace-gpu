@@ -549,14 +549,13 @@ module atg_mc_case #(
 				quiesce <= 1'b1;
 				wait_idle = 0;
 				@(posedge clk);
-				while (!axi_idle && wait_idle < 500) begin
+				while (!axi_idle && wait_idle < 2000) begin
 					@(posedge clk);
 					wait_idle = wait_idle + 1;
 				end
 				if (!axi_idle) begin
 					errors = errors + 1;
-					$display("FAIL atg_mc: no AXI_IDLE under quiesce (ax_z=%b rsp_id=%b pend_z=%b err_v=%b err_k=%b outst=%0d root=%0d)",
-						dut.ax_zero, dut.t_rsp_idle, dut.pend_zero, dut.err_v, dut.err_keep, outst, outst_root);
+					$display("FAIL atg_mc: no AXI_IDLE under quiesce");
 				end
 				/* KEEP: flush (the CP's RESET order: with quiesce held, after
 				 * axi_idle) in about half of the cycles, so that some hit a

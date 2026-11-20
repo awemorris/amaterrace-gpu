@@ -33,6 +33,7 @@ high-end PCIe board (13.9 TFLOPS).
 | gfx-vk10-su64         | 32           | 64           | 7.0 TFLOPS @1.7GHz     | Vulkan 1.0 Baseline           | ≈ RTX 3050 6GB                  |
 | gfx-vk10-su128        | 32           | 128          | 13.9 TFLOPS @1.7GHz    | Vulkan 1.0 Baseline           | ≈ RTX 5050 - RTX 5060           |
 | compute-node-su4      | 32           | 4            | 64 GFLOPS @500MHz      | QSFP28 RDMA Compute Node      | Xilinx XCKU5P                    |
+| compute-node-su16     | 32           | 16           | 1.7 TFLOPS @1.7GHz     | QSFP28 RDMA Compute Node      | 5nm ASIC                         |
 | gfx-fpga-test         | 4            | 1            | 1.6 GFLOPS @200MHz     | Basic Rendering               | Xilinx KC705                     |
 | compute-fpga-test     | 32           | 1            | 12.8 GFLOPS @200MHz    | Basic Compute                 | Xilinx KC705                     |
 
