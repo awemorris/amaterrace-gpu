@@ -49,9 +49,19 @@ Lumiere GPU can also be configured as a `Scalable Compute Cluster`.
 
 ![Scalable Compute Cluster](docs/imgs/compute-cluster.png)
 
+### Target Markets
+
+This GPU is not intended to replace existing GPUs. Primarily, the
+author anticipates realistic demand in filling the gap for open-source
+GPU IP within the RISC-V market.  Additionally, it could carve out a
+new niche as an affordable inference accelerator.  There is no
+intention to replace high-end GPUs.
+
 ### Disclaimer
 
-Please note that most features of Lumiere are "opt-in" settings.
+Regarding patents, the core architecture can be built using only
+foundational technologies, while advanced features can be enabled on
+an "opt-in" basis once users obtain the necessary patent licenses.
 Developers must enable only those options for which they want to use
 and/or hold a patent license.
 
