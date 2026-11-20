@@ -555,7 +555,8 @@ module atg_mc_case #(
 				end
 				if (!axi_idle) begin
 					errors = errors + 1;
-					$display("FAIL atg_mc: no AXI_IDLE under quiesce");
+					$display("FAIL atg_mc: no AXI_IDLE under quiesce (ax_z=%b rsp_id=%b pend_z=%b err_v=%b err_k=%b outst=%0d root=%0d)",
+						dut.ax_zero, dut.t_rsp_idle, dut.pend_zero, dut.err_v, dut.err_keep, outst, outst_root);
 				end
 				/* KEEP: flush (the CP's RESET order: with quiesce held, after
 				 * axi_idle) in about half of the cycles, so that some hit a
@@ -597,8 +598,8 @@ endmodule
 
 module atg_mc_tb;
 	reg clk = 1'b0;
-	wire done_a, done_b, done_c, done_d, done_e, done_f;
-	wire [31:0] err_a, err_b, err_c, err_d, err_e, err_f;
+	wire done_a, done_b, done_c, done_d, done_e, done_f, done_g, done_h;
+	wire [31:0] err_a, err_b, err_c, err_d, err_e, err_f, err_g, err_h;
 
 	always #5 clk = !clk;
 
@@ -624,14 +625,23 @@ module atg_mc_tb;
 		.SEED0(19)) f (
 		.clk(clk), .done(done_f), .errors(err_f)
 	);
+	atg_mc_case #(.N(10), .HIGH(10'b0000100001), .ROOT(5), .SU_BASE(6), .USE_NOC(1),
+		.VRAM_AW(32), .FAR(0), .PROT(1), .KEEP(1), .URGENT(1), .TWO(1), .SEED0(23)) g (
+		.clk(clk), .done(done_g), .errors(err_g)
+	);
+	atg_mc_case #(.N(3), .HIGH(3'b001), .ROOT(-1), .USE_NOC(1), .VRAM_AW(32), .FAR(0),
+		.SEED0(29)) h (
+		.clk(clk), .done(done_h), .errors(err_h)
+	);
 
 	initial begin
-		wait (done_a && done_b && done_c && done_d && done_e && done_f);
-		if (err_a == 0 && err_b == 0 && err_c == 0 && err_d == 0 && err_e == 0 && err_f == 0)
+		wait (done_a && done_b && done_c && done_d && done_e && done_f && done_g && done_h);
+		if (err_a == 0 && err_b == 0 && err_c == 0 && err_d == 0 && err_e == 0 && err_f == 0 &&
+		    err_g == 0 && err_h == 0)
 			$display("PASS atg_mc");
 		else
-			$display("FAIL atg_mc: %0d + %0d + %0d + %0d + %0d + %0d errors", err_a, err_b,
-				err_c, err_d, err_e, err_f);
+			$display("FAIL atg_mc: %0d + %0d + %0d + %0d + %0d + %0d + %0d + %0d errors",
+				err_a, err_b, err_c, err_d, err_e, err_f, err_g, err_h);
 		$finish;
 	end
 
