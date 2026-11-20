@@ -138,7 +138,7 @@ module atg_mc_tree #(
 			am_amb_to_rt #(
 				.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 				.VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE), .RW(RW), .ROUTE(client_route(c)),
-				.CLIENT(C8), .PRIO(HIGH_MASK[c] ? 1 : 0)
+				.CLIENT(C8), .CLIENT_HI(4'd0), .PRIO(HIGH_MASK[c] ? 1 : 0)
 			) leaf_split (
 `ifdef MUT_MC_NOKEEP
 				.clk(clk), .rst_n(rst_n), .flush(flush), .hold(hold[c]),
@@ -152,6 +152,7 @@ module atg_mc_tree #(
 				.req_wdata(c_req_wdata[c*LB +: LB]), .req_tag(c_req_tag[c*8 +: 8]),
 				.req_chk(c_req_chk[c]), .req_tbl(c_req_tbl[c]),
 				.req_slot(c_req_slot[c*6 +: 6]),
+				.req_session(4'd0), .req_exec_type(2'd0),
 				.rsp_valid(c_rsp_valid[c]), .rsp_write(c_rsp_write[c]),
 				.rsp_tag(c_rsp_tag[c*8 +: 8]), .rsp_rdata(c_rsp_rdata[c*LB +: LB]),
 				.rsp_error(c_rsp_error[c]),
@@ -223,7 +224,7 @@ module atg_mc_tree #(
 			am_amb_to_rt #(
 				.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
 				.VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE), .RW(RW), .ROUTE(client_route(c)),
-				.CLIENT(C8), .PRIO(HIGH_MASK[c] ? 1 : 0)
+				.CLIENT(C8), .CLIENT_HI(4'd0), .PRIO(HIGH_MASK[c] ? 1 : 0)
 			) leaf_cross (
 				.clk(clk), .rst_n(rst_n), .flush(flush), .hold(hold[c]),
 				.req_valid(c_req_valid[c]), .req_ready(c_req_ready[c]),
@@ -232,6 +233,7 @@ module atg_mc_tree #(
 				.req_wdata(c_req_wdata[c*LB +: LB]), .req_tag(c_req_tag[c*8 +: 8]),
 				.req_chk(c_req_chk[c]), .req_tbl(c_req_tbl[c]),
 				.req_slot(c_req_slot[c*6 +: 6]),
+				.req_session(4'd0), .req_exec_type(2'd0),
 				.rsp_valid(c_rsp_valid[c]), .rsp_write(c_rsp_write[c]),
 				.rsp_tag(c_rsp_tag[c*8 +: 8]), .rsp_rdata(c_rsp_rdata[c*LB +: LB]),
 				.rsp_error(c_rsp_error[c]),

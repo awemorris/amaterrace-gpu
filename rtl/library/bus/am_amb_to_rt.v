@@ -44,6 +44,7 @@ module am_amb_to_rt #(
 	parameter RW = 1,	/* route bits */
 	parameter [RW-1:0] ROUTE = {RW{1'b0}},
 	parameter [7:0] CLIENT = 8'd0,
+	parameter [3:0] CLIENT_HI = 4'd0,
 	parameter PRIO = 0,
 	parameter FW = LINE_BYTES * 8,	/* request flit width (a line) */
 	parameter RFW = LINE_BYTES * 8 + 10 + RW	/* response flit width */
@@ -64,6 +65,8 @@ module am_amb_to_rt #(
 	input wire req_chk,	/* session protection: held with the request like the rest */
 	input wire req_tbl,
 	input wire [5:0] req_slot,
+	input wire [3:0] req_session,
+	input wire [1:0] req_exec_type,
 	output wire rsp_valid,
 	output wire rsp_write,
 	output wire [7:0] rsp_tag,
@@ -81,6 +84,7 @@ module am_amb_to_rt #(
 );
 	localparam LAW = VRAM_AW - LINE_SHIFT;
 	localparam HW = 20 + RW + LAW + LINE_BYTES + 7;
+	localparam EXTHW = HW + 10;	/* +{req_exec_type[1:0], req_session[3:0], CLIENT_HI[3:0]} */
 	localparam LINE_BITS = LINE_BYTES * 8;
 
 	/* 0: the header goes next, 1: the data flit of a write. */
@@ -97,13 +101,14 @@ module am_amb_to_rt #(
 	end
 	endgenerate
 
-	wire [HW-1:0] header = {req_slot, req_tbl, req_be, req_line[LAW-1:0], ROUTE, CLIENT, req_tag,
+	wire [EXTHW-1:0] header = {req_exec_type, req_session, CLIENT_HI,
+		req_slot, req_tbl, req_be, req_line[LAW-1:0], ROUTE, CLIENT, req_tag,
 		req_chk, outside, req_write, PRIO != 0};
 
 	wire go = data_phase || !hold;
 
 	assign t_req_valid = req_valid && go;
-	assign t_req_data = data_phase ? req_wdata : {{(FW - HW){1'b0}}, header};
+	assign t_req_data = data_phase ? req_wdata : {{(FW - EXTHW){1'b0}}, header};
 	assign t_req_last = data_phase || !req_write;
 	assign req_ready = t_req_ready && t_req_last && go;
 

@@ -239,6 +239,8 @@ module atg_mc_case #(
 	parameter TWO = 0,	/* two destinations (case F) */
 	parameter KEEP = 0,	/* ROOT_KEEP, ROOT in QUIESCE_EXEMPT, flush after each quiesce */
 	parameter URGENT = 0,	/* exercise dc_urgent / dc_panic preemption */
+	parameter USE_NOC = 0,	/* 1: exercise Fat-Tree NoC (atg_mc_noc) */
+	parameter SU_BASE = N,
 	parameter SEED0 = 3
 ) (
 	input wire clk,
@@ -285,13 +287,14 @@ module atg_mc_case #(
 	atg_mc #(.NCLIENT(N), .HIGH_MASK(HIGH), .ROOT_CLIENT(ROOT), .VRAM_AW(VRAM_AW),
 		.UNIT_MASK(~EXEMPT), .HAS_PROT(PROT), .ROOT_KEEP(KEEP),
 		.QUIESCE_EXEMPT(EXEMPT),
+		.USE_NOC_FABRIC(USE_NOC), .SU_BASE(SU_BASE),
 		.LOCAL_BASE(TWO != 0 ? 32'h00020000 : 32'd0),
 		.LOCAL_BYTES(TWO != 0 ? 32'h00020000 : 32'd0)) dut (
 		.clk(clk), .rst_n(rst_n),
 		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready), .c_req_write(c_req_write),
 		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
 		.c_req_tag(c_req_tag), .c_req_chk({N{1'b0}}), .c_req_tbl({N{1'b0}}),
-		.c_req_slot({6*N{1'b0}}), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
+		.c_req_slot({6*N{1'b0}}), .c_req_session({4*N{1'b0}}), .c_req_exec_type({2*N{1'b0}}), .rsp_valid(rsp_valid), .rsp_write(rsp_write),
 		.rsp_tag(rsp_tag), .rsp_rdata(rsp_rdata), .rsp_error(rsp_error),
 		.quiesce(quiesce), .flush(flush), .flush_rep(4'd0), .l2_flush(1'b0),
 		.aperture_base(32'h00002000), .aperture_limit(32'h00080000),

@@ -280,6 +280,11 @@ module atg_top #(
 	parameter PROT_GIDX_W = 3,
 	parameter PROT_PLB = 4,
 	parameter PROT_PLB_W = 2,
+`ifdef CFG_USE_NOC_FABRIC
+	parameter USE_NOC_FABRIC = (`CFG_USE_NOC_FABRIC != 0),
+`else
+	parameter USE_NOC_FABRIC = 0,
+`endif
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
 	parameter L2_SET_W = 8
@@ -742,6 +747,8 @@ module atg_top #(
 	wire [NCLIENT*LINE_BYTES-1:0] c_req_be;
 	wire [NCLIENT*LINE_BITS-1:0] c_req_wdata;
 	wire [NCLIENT*8-1:0] c_req_tag;
+	wire [NCLIENT*4-1:0] c_req_session;
+	wire [NCLIENT*2-1:0] c_req_exec_type;
 	wire [NCLIENT-1:0] rsp_valid;
 	wire [NCLIENT-1:0] rsp_write_v;
 	wire [NCLIENT*8-1:0] rsp_tag_v;
@@ -1121,7 +1128,9 @@ module atg_top #(
 		.L2_WAYS(L2_WAYS),
 		.L2_SET_W(L2_SET_W),
 		.USE_FLUSH_REP(1),
-		.HAS_MMU_WALK(HAS_HW_WALKER != 0 ? 1 : 0)
+		.HAS_MMU_WALK(HAS_HW_WALKER != 0 ? 1 : 0),
+		.USE_NOC_FABRIC(USE_NOC_FABRIC != 0 ? 1 : 0),
+		.SU_BASE(C_SU)
 	) mc (
 		.clk(clk),
 		.rst_n(rst_n),
@@ -1135,6 +1144,8 @@ module atg_top #(
 		.c_req_chk(c_req_chk),
 		.c_req_tbl(c_req_tbl),
 		.c_req_slot(c_req_slot),
+		.c_req_session(c_req_session),
+		.c_req_exec_type(c_req_exec_type),
 		.rsp_valid(rsp_valid),
 		.rsp_write(rsp_write_v),
 		.rsp_tag(rsp_tag_v),
@@ -1290,6 +1301,8 @@ module atg_top #(
 			assign c_req_chk[pc] = PROT && cp_req_chk;
 			assign c_req_tbl[pc] = 1'b0;
 			assign c_req_slot[pc*6 +: 6] = PROT ? cp_req_slot : 6'd0;
+			assign c_req_session[pc*4 +: 4] = 4'd0;
+			assign c_req_exec_type[pc*2 +: 2] = c_req_write[pc] ? 2'b01 : 2'b00;
 			assign u_req_chk[pc] = 1'b0;
 			assign u_req_tbl[pc] = 1'b0;
 			assign u_req_slot[pc*6 +: 6] = 6'd0;
@@ -1297,6 +1310,8 @@ module atg_top #(
 			assign c_req_chk[pc] = PROT && cpu_req_chk;
 			assign c_req_tbl[pc] = PROT && cpu_req_tbl;
 			assign c_req_slot[pc*6 +: 6] = PROT ? cpu_req_slot : 6'd0;
+			assign c_req_session[pc*4 +: 4] = 4'd0;
+			assign c_req_exec_type[pc*2 +: 2] = c_req_write[pc] ? 2'b01 : 2'b00;
 			assign u_req_chk[pc] = 1'b0;
 			assign u_req_tbl[pc] = 1'b0;
 			assign u_req_slot[pc*6 +: 6] = 6'd0;
@@ -1304,6 +1319,8 @@ module atg_top #(
 			assign c_req_chk[pc] = 1'b0;
 			assign c_req_tbl[pc] = 1'b0;
 			assign c_req_slot[pc*6 +: 6] = 6'd0;
+			assign c_req_session[pc*4 +: 4] = 4'd0;
+			assign c_req_exec_type[pc*2 +: 2] = 2'b00;
 			assign u_req_chk[pc] = 1'b0;
 			assign u_req_tbl[pc] = 1'b0;
 			assign u_req_slot[pc*6 +: 6] = 6'd0;
@@ -2092,8 +2109,8 @@ module atg_top #(
 					.m_req_chk(c_req_chk[gi]),
 					.m_req_tbl(c_req_tbl[gi]),
 					.m_req_slot(c_req_slot[gi*6 +: 6]),
-					.m_req_session(),
-					.m_req_exec_type(),
+					.m_req_session(c_req_session[gi*4 +: 4]),
+					.m_req_exec_type(c_req_exec_type[gi*2 +: 2]),
 					.m_rsp_valid(rsp_valid[gi]),
 					.m_rsp_write(rsp_write_v[gi]),
 					.m_rsp_tag(rsp_tag_v[gi*8 +: 8]),
@@ -2116,6 +2133,8 @@ module atg_top #(
 				assign c_req_chk[gi] = u_req_chk[gi];
 				assign c_req_tbl[gi] = u_req_tbl[gi];
 				assign c_req_slot[gi*6 +: 6] = u_req_slot[gi*6 +: 6];
+				assign c_req_session[gi*4 +: 4] = active_mmu_session;
+				assign c_req_exec_type[gi*2 +: 2] = GI_EXEC ? 2'b10 : (u_req_write[gi] ? 2'b01 : 2'b00);
 				assign u_rsp_valid[gi] = rsp_valid[gi];
 				assign u_rsp_write[gi] = rsp_write_v[gi];
 				assign u_rsp_tag[gi*8 +: 8] = rsp_tag_v[gi*8 +: 8];
@@ -2147,6 +2166,8 @@ module atg_top #(
 				assign c_req_chk[1] = 1'b0;
 				assign c_req_tbl[1] = 1'b0;
 				assign c_req_slot[1*6 +: 6] = 6'd0;
+				assign c_req_session[1*4 +: 4] = 4'd0;
+				assign c_req_exec_type[1*2 +: 2] = 2'd0;
 				wire unused_no_blt = &{1'b0, u_req_line[1*UNIT_LA_W +: UNIT_LA_W],
 					u_req_chk[1], u_req_tbl[1], u_req_slot[1*6 +: 6]};
 			end

@@ -107,7 +107,9 @@ module atg_mc #(
 	parameter L2_WAYS = 16,
 	parameter L2_SET_W = 8,
 	parameter USE_FLUSH_REP = 0,
-	parameter HAS_MMU_WALK = 0
+	parameter HAS_MMU_WALK = 0,
+	parameter USE_NOC_FABRIC = 0,	/* 0: flat crossbar (FPGA minimal), 1: Fat-Tree NoC (atg_rt2/3/4) */
+	parameter SU_BASE = NCLIENT	/* client index where SU subtree starts (used when USE_NOC_FABRIC=1) */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -122,6 +124,8 @@ module atg_mc #(
 	input wire [NCLIENT-1:0] c_req_chk,
 	input wire [NCLIENT-1:0] c_req_tbl,
 	input wire [NCLIENT*6-1:0] c_req_slot,
+	input wire [NCLIENT*4-1:0] c_req_session,
+	input wire [NCLIENT*2-1:0] c_req_exec_type,
 
 	output wire [NCLIENT-1:0] rsp_valid,
 	output wire [NCLIENT-1:0] rsp_write,
@@ -210,7 +214,7 @@ module atg_mc #(
 	localparam HAS_ROOT = (ROOT_CLIENT >= 0 && ROOT_CLIENT < NCLIENT) ? 1 : 0;
 	localparam NT = NCLIENT - HAS_ROOT;
 	localparam TREE_L = NT > 1 ? $clog2(NT) : 0;
-	localparam RW = TREE_L + HAS_ROOT > 0 ? TREE_L + HAS_ROOT : 1;
+	localparam RW = (USE_NOC_FABRIC != 0) ? (HAS_ROOT + 6) : ((TREE_L + HAS_ROOT > 0) ? (TREE_L + HAS_ROOT) : 1);
 	localparam LAW = VRAM_AW - LINE_SHIFT;
 	localparam HW = 20 + RW + LAW + LINE_BYTES;	/* header bits used */
 	localparam RFW = LINE_BITS + 10 + RW;
@@ -280,27 +284,57 @@ module atg_mc #(
 	wire flush_cnt  = USE_FLUSH_REP ? flush_rep[2] : flush;
 	wire flush_l2   = USE_FLUSH_REP ? flush_rep[3] : flush;
 
-	atg_mc_tree #(
-		.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
-		.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
-		.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
-	) tree (
-		.clk(clk), .rst_n(rst_n), .flush(flush_tree), .hold(tree_hold),
-		.c_req_valid(c_req_valid), .c_req_ready(c_req_ready_raw), .c_req_write(c_req_write),
-		.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
-		.c_req_tag(c_req_tag),
-		.c_req_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}),
-		.c_req_tbl(HAS_PROT != 0 ? c_req_tbl : {NCLIENT{1'b0}}),
-		.c_req_slot(HAS_PROT != 0 ? c_req_slot : {6*NCLIENT{1'b0}}),
-		.c_rsp_valid(rsp_valid), .c_rsp_write(rsp_write), .c_rsp_tag(rsp_tag),
-		.c_rsp_rdata(rsp_rdata), .c_rsp_error(rsp_error),
-		.r_req_valid(t_req_valid), .r_req_ready(t_req_ready), .r_req_data(t_req_data),
-		.r_req_last(t_req_last),
-		.r_rsp_valid(t_rsp_valid), .r_rsp_ready(t_rsp_ready), .r_rsp_data(t_rsp_data),
-		.s_req_valid(s_req_valid), .s_req_ready(s_req_ready), .s_req_data(s_req_data),
-		.s_req_last(s_req_last), .s_rsp_valid(s_rsp_valid), .s_rsp_data(s_rsp_data),
-		.rsp_idle(t_rsp_idle)
-	);
+	generate
+	if (USE_NOC_FABRIC == 0) begin : g_xbar
+		atg_mc_tree #(
+			.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
+			.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .TREE_L(TREE_L), .RW(RW), .ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES),
+			.LINE_SHIFT(LINE_SHIFT), .VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
+		) tree (
+			.clk(clk), .rst_n(rst_n), .flush(flush_tree), .hold(tree_hold),
+			.c_req_valid(c_req_valid), .c_req_ready(c_req_ready_raw), .c_req_write(c_req_write),
+			.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
+			.c_req_tag(c_req_tag),
+			.c_req_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}),
+			.c_req_tbl(HAS_PROT != 0 ? c_req_tbl : {NCLIENT{1'b0}}),
+			.c_req_slot(HAS_PROT != 0 ? c_req_slot : {6*NCLIENT{1'b0}}),
+			.c_rsp_valid(rsp_valid), .c_rsp_write(rsp_write), .c_rsp_tag(rsp_tag),
+			.c_rsp_rdata(rsp_rdata), .c_rsp_error(rsp_error),
+			.r_req_valid(t_req_valid), .r_req_ready(t_req_ready), .r_req_data(t_req_data),
+			.r_req_last(t_req_last),
+			.r_rsp_valid(t_rsp_valid), .r_rsp_ready(t_rsp_ready), .r_rsp_data(t_rsp_data),
+			.s_req_valid(s_req_valid), .s_req_ready(s_req_ready), .s_req_data(s_req_data),
+			.s_req_last(s_req_last), .s_rsp_valid(s_rsp_valid), .s_rsp_data(s_rsp_data),
+			.rsp_idle(t_rsp_idle)
+		);
+		wire unused_noc_meta = &{1'b0, c_req_session, c_req_exec_type, SU_BASE[0]};
+	end else begin : g_noc
+		atg_mc_noc #(
+			.NCLIENT(NCLIENT), .HIGH_MASK(HIGH_MASK), .HAS_ROOT(HAS_ROOT), .ROOT_SPLIT(HAS_DC),
+			.ROOT_KEEP(HAS_KEEP), .ROOT_CLIENT(RC), .SU_BASE(SU_BASE), .RW(RW),
+			.ADDR_W(ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+			.VRAM_AW(VRAM_AW), .VRAM_BASE(VRAM_BASE)
+		) tree (
+			.clk(clk), .rst_n(rst_n), .flush(flush_tree), .hold(tree_hold),
+			.c_req_valid(c_req_valid), .c_req_ready(c_req_ready_raw), .c_req_write(c_req_write),
+			.c_req_line(c_req_line), .c_req_be(c_req_be), .c_req_wdata(c_req_wdata),
+			.c_req_tag(c_req_tag),
+			.c_req_chk(HAS_PROT != 0 ? c_req_chk : {NCLIENT{1'b0}}),
+			.c_req_tbl(HAS_PROT != 0 ? c_req_tbl : {NCLIENT{1'b0}}),
+			.c_req_slot(HAS_PROT != 0 ? c_req_slot : {6*NCLIENT{1'b0}}),
+			.c_req_session(c_req_session),
+			.c_req_exec_type(c_req_exec_type),
+			.c_rsp_valid(rsp_valid), .c_rsp_write(rsp_write), .c_rsp_tag(rsp_tag),
+			.c_rsp_rdata(rsp_rdata), .c_rsp_error(rsp_error),
+			.r_req_valid(t_req_valid), .r_req_ready(t_req_ready), .r_req_data(t_req_data),
+			.r_req_last(t_req_last),
+			.r_rsp_valid(t_rsp_valid), .r_rsp_ready(t_rsp_ready), .r_rsp_data(t_rsp_data),
+			.s_req_valid(s_req_valid), .s_req_ready(s_req_ready), .s_req_data(s_req_data),
+			.s_req_last(s_req_last), .s_rsp_valid(s_rsp_valid), .s_rsp_data(s_rsp_data),
+			.rsp_idle(t_rsp_idle)
+		);
+	end
+	endgenerate
 
 	/*
 	 * The requests being assembled at the root: the tree's (A) and the DC's

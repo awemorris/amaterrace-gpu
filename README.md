@@ -42,11 +42,11 @@ Lumiere GPU can also be configured as a `Scalable Compute Cluster`.
 
 - Each node can be either an ASIC board or an FPGA board, such as the XCKU5P.
 - No PCIe is required for a `Shader Node`.
-- The target FPGA frequency is 500 MHz (at `-2` speed grade).
+- The target frequency is 1.7GHz for 5nm ASIC and 500 MHz for FPGA (at `-2` speed grade).
 - The `Core Node` is optional, as the host computer can handle control and provide main memory.
 - The `QSFP28 Switch` is optional, as the host computer can directly accommodate QSFP28 cards.
 
-![Scalable COmpute Cluster](docs/svg/compute-cluster.svg)
+![Scalable Compute Cluster](docs/imgs/compute-cluster.png)
 
 ### Disclaimer
 
