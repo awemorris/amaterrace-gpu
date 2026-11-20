@@ -34,7 +34,8 @@ module atg_su_pt #(
 	parameter GRP_W = 2,	/* log2(32/NPHYS) (1 for NPHYS 32) */
 	parameter UOP_W = 108,	/* Width of the decoded instruction (= ATG_UOP_W) */
 	parameter PT_ENTRIES = 64,	/* PT vertices: a multiple of 32, at most 256 */
-	parameter VARY_WORDS = 16	/* Varying words per vertex, at most 64 (KC705 64) */
+	parameter VARY_WORDS = 16,	/* Varying words per vertex, at most 64 (KC705 64) */
+	parameter SHARED_PT = 0		/* 0: local inside SU; 1: Spine PT driven by pt_exp_* */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -46,6 +47,15 @@ module atg_su_pt #(
 	input wire [NPHYS*32-1:0] x_b,
 	input wire [2*NPHYS-1:0] x_mask,
 	input wire [31:0] x_info,
+	/* Shared Spine stream input (used when SHARED_PT != 0) */
+	input wire pt_exp_valid,
+	output wire pt_exp_ready,
+	input wire pt_exp_end,
+	input wire [2:0] pt_exp_blk,
+	input wire [GRP_W-1:0] pt_exp_grp,
+	input wire [6:0] pt_exp_word,
+	input wire [NPHYS-1:0] pt_exp_mask,
+	input wire [NPHYS*32-1:0] pt_exp_data,
 	/* PT read port (atg_rx) */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
@@ -90,34 +100,54 @@ module atg_su_pt #(
 	wire [31:0] tgt = x_uop[ATG_UOP_IMM +: 32];
 	wire is_pos, is_var;
 	wire [31:0] wword;
+	wire [31:0] wrow;
+	wire wr;
+	wire [NPHYS-1:0] wr_mask_eff;
+	wire [NPHYS*32-1:0] wr_data_eff;
 	wire tv_bo_unused;
-	generate
-		if (32'h10 + VARY_WORDS <= 32'd128) begin : g_tgt_narrow
-			wire tgt_top0 = (tgt[31:7] == 25'd0);
-			wire is_pos_lo = (tgt[6:2] == 5'd0);
-			wire [6:0] tgt_v7;
-			am_sub #(.W(7)) u_tgt_v (.a(tgt[6:0]), .b(7'd12), .bi(1'b0), .d(tgt_v7), .bo(tv_bo_unused));
-			wire [6:0] wword7 = is_pos_lo ? tgt[6:0] : tgt_v7;
-			assign is_pos = tgt_top0 && is_pos_lo;
-			assign is_var = tgt_top0 && (tgt[6:0] >= 7'h10) && ({1'b0, tgt[6:0]} < (8'h10 + VARY_WORDS[7:0]));
-			assign wword = {25'd0, wword7};	/* varying v at word 4 + v */
-		end else begin : g_tgt_wide
-			wire [31:0] tgt_v;
-			am_sub #(.W(32)) u_tgt_v (.a(tgt), .b(32'd12), .bi(1'b0), .d(tgt_v), .bo(tv_bo_unused));
-			assign is_pos = tgt < 32'd4;
-			assign is_var = tgt >= 32'h10 && tgt < 32'h10 + VARY_WORDS;
-			assign wword = is_pos ? tgt : tgt_v;	/* varying v at word 4 + v */
-		end
-	endgenerate
-	wire wr = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd0 &&
-		(is_pos || is_var);
-
-	/* The block of each vertex warp (set at pt_take). */
+	/* The block of each vertex warp (set at pt_take in SHARED_PT=0 mode). */
 	reg [NWARPS*BW-1:0] wblk;
 	reg [NWARPS-1:0] wv;	/* a vertex warp that owns a block */
-	wire [BW-1:0] xblk = wblk[x_warp*BW +: BW];
-	/* the row (entry / NPHYS) of lane l of this group */
-	wire [31:0] wrow = ({{(32-BW){1'b0}}, xblk} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
+
+	generate
+		if (SHARED_PT != 0) begin : g_shared_pt_wr
+			wire [BW-1:0] s_xblk = pt_exp_blk[BW-1:0];
+			assign is_pos = 1'b0;
+			assign is_var = 1'b0;
+			assign tv_bo_unused = 1'b0;
+			assign wword = {25'd0, pt_exp_word};
+			assign pt_exp_ready = !(scrub_i || sc_on);
+			assign wr = pt_exp_valid && pt_exp_ready && !pt_exp_end;
+			assign wrow = ({{(32-BW){1'b0}}, s_xblk} << G_W) | ({{(32-GRP_W){1'b0}}, pt_exp_grp} % G);
+			assign wr_mask_eff = pt_exp_mask;
+			assign wr_data_eff = pt_exp_data;
+		end else begin : g_local_pt_wr
+			wire [BW-1:0] xblk = wblk[x_warp*BW +: BW];
+			assign pt_exp_ready = 1'b0;
+			if (32'h10 + VARY_WORDS <= 32'd128) begin : g_tgt_narrow
+				wire tgt_top0 = (tgt[31:7] == 25'd0);
+				wire is_pos_lo = (tgt[6:2] == 5'd0);
+				wire [6:0] tgt_v7;
+				am_sub #(.W(7)) u_tgt_v (.a(tgt[6:0]), .b(7'd12), .bi(1'b0), .d(tgt_v7), .bo(tv_bo_unused));
+				wire [6:0] wword7 = is_pos_lo ? tgt[6:0] : tgt_v7;
+				assign is_pos = tgt_top0 && is_pos_lo;
+				assign is_var = tgt_top0 && (tgt[6:0] >= 7'h10) && ({1'b0, tgt[6:0]} < (8'h10 + VARY_WORDS[7:0]));
+				assign wword = {25'd0, wword7};	/* varying v at word 4 + v */
+			end else begin : g_tgt_wide
+				wire [31:0] tgt_v;
+				am_sub #(.W(32)) u_tgt_v (.a(tgt), .b(32'd12), .bi(1'b0), .d(tgt_v), .bo(tv_bo_unused));
+				assign is_pos = tgt < 32'd4;
+				assign is_var = tgt >= 32'h10 && tgt < 32'h10 + VARY_WORDS;
+				assign wword = is_pos ? tgt : tgt_v;	/* varying v at word 4 + v */
+			end
+			assign wr = x_valid && x_uop[ATG_UOP_UNIT +: 4] == ATG_UNIT_EXP && x_info[17:16] == 2'd0 &&
+				(is_pos || is_var);
+			/* the row (entry / NPHYS) of lane l of this group */
+			assign wrow = ({{(32-BW){1'b0}}, xblk} << G_W) | ({{(32-GRP_W){1'b0}}, x_grp} % G);
+			assign wr_mask_eff = x_mask[2*NPHYS-1:NPHYS];
+			assign wr_data_eff = x_b;
+		end
+	endgenerate
 	wire [31:0] rrow = {24'd0, pt_idx} / NPHYS;
 
 	/*
@@ -193,7 +223,7 @@ module atg_su_pt #(
 				m_wa_r <= sc_a_next;
 			end
 		end else begin
-			m_we_r <= wr ? x_mask[2*NPHYS-1:NPHYS] : {NPHYS{1'b0}};
+			m_we_r <= wr ? wr_mask_eff : {NPHYS{1'b0}};
 			m_wa_r <= waddr[AW-1:0];
 		end
 	end
@@ -210,7 +240,7 @@ module atg_su_pt #(
 				else if (wd_zero_h)
 					m_wd_h <= 16'd0;
 				else
-					m_wd_h <= x_b[b*32 + gbh*16 +: 16];
+					m_wd_h <= wr_data_eff[b*32 + gbh*16 +: 16];
 			end
 			assign m_wd_r[b*32 + gbh*16 +: 16] = m_wd_h;
 		end
@@ -348,8 +378,9 @@ module atg_su_pt #(
 		.a(pop32_s),  .b(6'd1), .bi(1'b0), .d(pop32_dec),     .bo(pt_dec_bo1)
 	);
 
-	wire [BW-1:0] end_blk = wblk[wc_warp*BW +: BW];
-	wire end_own = wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp;
+	wire [BW-1:0] end_blk = (SHARED_PT != 0) ? pt_exp_blk[BW-1:0] : wblk[wc_warp*BW +: BW];
+	wire end_own = (SHARED_PT != 0) ? (pt_exp_valid && pt_exp_ready && pt_exp_end) :
+		(wc_end && wv[wc_warp] && own[end_blk*WARP_W +: WARP_W] == wc_warp);
 
 	integer cb_i;
 	always @(posedge clk or posedge rst_p) begin
@@ -383,19 +414,23 @@ module atg_su_pt #(
 			end
 			if (end_own)
 				done[end_blk] <= 1'b1;
-			if (wc_end)
+			if (wc_end && SHARED_PT == 0)
 				wv[wc_warp] <= 1'b0;
 			if (pt_take) begin
 				own[fb*WARP_W +: WARP_W] <= pt_warp;
 				done[fb] <= 1'b0;
 				last_blk <= fb;
-				wblk[pt_warp*BW +: BW] <= fb;
-				wv[pt_warp] <= 1'b1;
+				if (SHARED_PT == 0) begin
+					wblk[pt_warp*BW +: BW] <= fb;
+					wv[pt_warp] <= 1'b1;
+				end
 			end
 		end
 	end
 
-	wire unused_ok = &{1'b0, waddr, raddr, rbank, pt_free_idx, x_info, x_uop,
+	wire unused_ok = &{1'b0, waddr, raddr, rbank, pt_free_idx, x_valid, x_warp, x_grp, x_b, x_mask, x_info, x_uop,
+		pt_exp_valid, pt_exp_end, pt_exp_blk, pt_exp_grp, pt_exp_word, pt_exp_mask, pt_exp_data,
+		pt_warp, wc_end, wc_warp, tv_bo_unused, is_pos, is_var,
 		sc_a_co_unused, pop32_co_unused, pt_dec_bo0, pt_dec_bo1};
 endmodule
 

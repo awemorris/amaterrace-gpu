@@ -302,7 +302,10 @@ module atg_su #(
 	parameter LINE_BYTES = 32,	/* AMB line size: 32 or 64 (KC705) */
 	parameter LINE_SHIFT = 5,	/* log2(LINE_BYTES) */
 	parameter MRT_COUNT = 8,	/* Colour attachments supported (1..8) */
-	parameter DUAL_SOURCE = 1	/* Dual-source color1 export support (0/1) */
+	parameter DUAL_SOURCE = 1,	/* Dual-source color1 export support (0/1) */
+	parameter SHARED_PT = 0,	/* 1: vertex PT writes + wc_end stream out to Spine PT */
+	parameter HAS_GFX = 1,		/* 1: VF/RX/ROP support; 0: compute-only SU */
+	parameter HAS_TU = 1		/* 1: atg_su_tex present; 0: stubbed */
 ) (
 	input wire clk,
 	(* keep = "true" *) input wire rst_n,
@@ -320,16 +323,19 @@ module atg_su #(
 	output wire vl_gnt,
 	output wire [WARP_W-1:0] vl_slot,
 	output wire [7:0] vl_ptbase,
+	output wire vl_avail,
 	input wire vl_we,
 	input wire [5:0] vl_reg,
 	input wire [4:0] vl_lane,
 	input wire [31:0] vl_data,
 	input wire vl_go,
 	input wire [31:0] vl_mask,
+	input wire [7:0] vl_go_ptbase,
 	/* Fragment warps from the RX */
 	input wire fl_req,
 	output wire fl_gnt,
 	output wire [WARP_W-1:0] fl_slot,
+	output wire fl_avail,
 	input wire fl_we,
 	input wire [5:0] fl_reg,
 	input wire [4:0] fl_lane,
@@ -340,7 +346,7 @@ module atg_su #(
 	input wire fl_go,
 	input wire [31:0] fl_mask,
 	input wire [63:0] fl_info,
-	/* PT read for the RX */
+	/* PT read for the RX (used when SHARED_PT == 0 && HAS_GFX != 0) */
 	input wire pt_rd,
 	input wire [7:0] pt_idx,
 	input wire [6:0] pt_word,
@@ -348,6 +354,15 @@ module atg_su #(
 	input wire pt_free,
 	input wire [7:0] pt_free_idx,
 	output wire [7:0] pt_done,
+	/* Shared Spine PT export stream (used when SHARED_PT != 0 && HAS_GFX != 0) */
+	output wire pt_exp_valid,
+	input wire pt_exp_ready,
+	output wire pt_exp_end,
+	output wire [2:0] pt_exp_blk,
+	output wire [GRP_W-1:0] pt_exp_grp,
+	output wire [6:0] pt_exp_word,
+	output wire [NPHYS-1:0] pt_exp_mask,
+	output wire [NPHYS*32-1:0] pt_exp_data,
 	/* TU */
 	output wire tx_valid,
 	input wire tx_ready,
@@ -751,12 +766,15 @@ module atg_su #(
 
 	atg_su_sched #(
 		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .NSU(NSU), .SU_INDEX(SU_INDEX),
-		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1), .USE_QW_REP(1)
+		.FRAG_RESERVE(FRAG_RESERVE), .GTO(1), .USE_QW_REP(1),
+		.HAS_GFX(HAS_GFX), .SHARED_PT(SHARED_PT)
 	) sched (
 		.clk(clk), .rst_n(rst_n), .st_we(st_we), .st_idx(st_idx), .st_wdata(st_wdata),
 		.cs_kick(cs_kick), .cs_mesh(cs_mesh), .cs_is_mesh_act(cs_is_mesh_act),
-		.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot), .vl_go(vl_go_sch), .vl_mask(vl_mask),
-		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_go(fl_go_sch), .fl_mask(fl_mask),
+		.vl_req(vl_req), .vl_gnt(vl_gnt), .vl_slot(vl_slot), .vl_avail(vl_avail),
+		.vl_go(vl_go_sch), .vl_mask(vl_mask),
+		.fl_req(fl_req), .fl_gnt(fl_gnt), .fl_slot(fl_slot), .fl_avail(fl_avail),
+		.fl_go(fl_go_sch), .fl_mask(fl_mask),
 		.fl_info(fl_info),
 		.f_valid(sch_f_valid), .f_ready(sch_f_ready), .f_warp(sch_f_warp), .f_pc(sch_f_pc), .f_addr(sch_f_addr),
 		.fb_valid(r_fb_valid), .fb_warp(r_fb_warp), .fb_kind(r_fb_kind), .wake(wake | r_wake),
@@ -1176,22 +1194,52 @@ module atg_su #(
 		.req_valid(cb_m_req_valid), .req_ready(cb_m_req_ready), .req_write(cb_m_req_write), .req_line(cb_m_req_line), .req_be(cb_m_req_be), .req_wdata(cb_m_req_wdata), .req_tag(cb_m_req_tag), .rsp_valid(cb_m_rsp_valid), .rsp_write(cb_m_rsp_write), .rsp_tag(cb_m_rsp_tag), .rsp_rdata(cb_m_rsp_rdata), .rsp_error(cb_m_rsp_error)
 	);
 
-	atg_su_tex #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) tex (
-		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid_tex), .x_warp(x_warp_tex), .x_grp(x_grp_tex), .x_last(x_last_tex), .x_sbe(x_sbe_tex),
-		.x_pc(x_pc), .x_uop(x_uop_tex), .x_a(x_a_tex), .x_b(x_b_tex), .x_c(x_c_tex), .x_mask(x_mask_tex),
-		.x_info(x_info), .x_ready(tex_ready),
-		.l_valid(tex_l_valid), .l_ready(tex_l_ready), .l_warp(tex_l_warp),
-		.l_grp(tex_l_grp), .l_rd(tex_l_rd), .l_data(tex_l_data), .l_lanes(tex_l_lanes),
-		.l_wr(tex_l_wr), .l_last(tex_l_last), .l_sbe(tex_l_sbe), .l_cls(tex_l_cls),
-		.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
-		.tx_samp_slot(tx_samp_slot),
-		.tx_vs(tx_vs),
-		.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
-		.tx_last(tx_last),
-		.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
-		.tr_last(tr_last)
-	);
+	generate
+		if (HAS_TU != 0) begin : g_tex
+			atg_su_tex #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W)) tex (
+				.clk(clk), .rst_n(rst_n),
+				.x_valid(x_valid_tex), .x_warp(x_warp_tex), .x_grp(x_grp_tex), .x_last(x_last_tex), .x_sbe(x_sbe_tex),
+				.x_pc(x_pc), .x_uop(x_uop_tex), .x_a(x_a_tex), .x_b(x_b_tex), .x_c(x_c_tex), .x_mask(x_mask_tex),
+				.x_info(x_info), .x_ready(tex_ready),
+				.l_valid(tex_l_valid), .l_ready(tex_l_ready), .l_warp(tex_l_warp),
+				.l_grp(tex_l_grp), .l_rd(tex_l_rd), .l_data(tex_l_data), .l_lanes(tex_l_lanes),
+				.l_wr(tex_l_wr), .l_last(tex_l_last), .l_sbe(tex_l_sbe), .l_cls(tex_l_cls),
+				.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), .tx_slot(tx_slot),
+				.tx_samp_slot(tx_samp_slot),
+				.tx_vs(tx_vs),
+				.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), .tx_tag(tx_tag),
+				.tx_last(tx_last),
+				.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
+				.tr_last(tr_last)
+			);
+		end else begin : g_no_tex
+			assign tex_ready = 1'b0;
+			assign tex_l_valid = 1'b0;
+			assign tex_l_warp = {WARP_W{1'b0}};
+			assign tex_l_grp = {GRP_W{1'b0}};
+			assign tex_l_rd = 7'd0;
+			assign tex_l_data = {DW{1'b0}};
+			assign tex_l_lanes = {NPHYS{1'b0}};
+			assign tex_l_wr = 1'b0;
+			assign tex_l_last = 1'b0;
+			assign tex_l_sbe = {(SBE_W+1){1'b0}};
+			assign tex_l_cls = 3'd0;
+			assign tx_valid = 1'b0;
+			assign tx_op = 8'd0;
+			assign tx_slot = 4'd0;
+			assign tx_samp_slot = 4'd0;
+			assign tx_vs = 1'b0;
+			assign tx_mask = 4'd0;
+			assign tx_coord = 640'd0;
+			assign tx_off = 12'd0;
+			assign tx_tag = 16'd0;
+			assign tx_last = 1'b0;
+			assign tr_ready = 1'b1;
+			wire unused_tex = &{1'b0, x_valid_tex, x_warp_tex, x_grp_tex, x_last_tex, x_sbe_tex,
+				x_uop_tex, x_a_tex, x_b_tex, x_c_tex, x_mask_tex, tex_l_ready, tx_ready,
+				tr_valid, tr_tag, tr_data, tr_last};
+		end
+	endgenerate
 
 	generate
 		if (HAS_SFU) begin : g_xu
@@ -1237,40 +1285,207 @@ module atg_su #(
 	);
 
 	wire mesh_busy_unused;
-	atg_su_exp #(
-		.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
-		.LDS_BYTES(LDS_BYTES), .LDS_AW(LDS_AW), .HAS_MESH(HAS_MESH),
-		.MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(DUAL_SOURCE)
-	) exp (
-		.scrub(scrub_exp), .scrub_busy(scb_exp),
-		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid_exp), .x_warp(x_warp_exp), .x_grp(x_grp_exp), .x_last(x_last_exp), .x_sbe(x_sbe_exp),
-		.x_pc(x_pc), .x_uop(x_uop_exp), .x_a(x_a_exp), .x_b(x_b_exp), .x_c(x_c_exp), .x_mask(x_mask_exp),
-		.x_info(x_info), .x_ready(exp_ready),
-		.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
-		.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last),
-		.ex_next(ex_next),
-		.fl_we(fl_we), .fl_slot(fl_slot_exp), .fl_reg(fl_reg), .fl_lane(fl_lane_exp), .fl_data(fl_data_exp),
-		.fl_go(fl_go_exp), .fl_info(fl_info),
-		.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
-		.xr_valid(xr_valid), .xr_warp(xr_warp),
-		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp),
-		.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri), .mesh_last(mesh_last),
-		.mesh_id(mesh_id), .mesh_busy(mesh_busy_unused),
-		.mesh_lds_rd_en(mesh_lds_rd_en), .mesh_lds_rd_addr(mesh_lds_rd_addr), .mesh_lds_rd_data(mesh_lds_rd_data)
-	);
+	wire pt_q_busy;
 
-	atg_su_pt #(.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS)) pt (
-		.scrub(scrub_pt), .scrub_busy(scb_pt),
-		.clk(clk), .rst_n(rst_n),
-		.x_valid(x_valid_pt), .x_warp(x_warp_pt), .x_grp(x_grp_pt), .x_uop(x_uop_pt_ded), .x_b(x_b_pt),
-		.x_mask(x_mask_pt), .x_info(x_info),
-		.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
-		.pt_free(pt_free), .pt_free_idx(pt_free_idx),
-		.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot_rf), .pt_base(vl_ptbase),
-		.vl_go(vl_go_pt), .vl_mask(vl_mask), .pt_done(pt_done),
-		.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
-	);
+	generate
+		if (HAS_GFX != 0) begin : g_gfx
+			wire exp_x_ready;
+			wire exp_xr_valid;
+			wire [WARP_W-1:0] exp_xr_warp;
+			wire exp_wc_end = (SHARED_PT != 0) ?
+				(wc_valid && (wc_op == 2'd1) && (warp_stage[wc_warp] != 2'd0)) :
+				(wc_valid && (wc_op == 2'd1));
+
+			atg_su_exp #(
+				.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W), .SBE_W(SBE_W), .UOP_W(UOP_W),
+				.LDS_BYTES(LDS_BYTES), .LDS_AW(LDS_AW), .HAS_MESH(HAS_MESH),
+				.MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(DUAL_SOURCE)
+			) exp (
+				.scrub(scrub_exp), .scrub_busy(scb_exp),
+				.clk(clk), .rst_n(rst_n),
+				.x_valid(x_valid_exp && ((SHARED_PT == 0) || exp_ready)),
+				.x_warp(x_warp_exp), .x_grp(x_grp_exp), .x_last(x_last_exp), .x_sbe(x_sbe_exp),
+				.x_pc(x_pc), .x_uop(x_uop_exp), .x_a(x_a_exp), .x_b(x_b_exp), .x_c(x_c_exp), .x_mask(x_mask_exp),
+				.x_info(x_info), .x_ready(exp_x_ready),
+				.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), .ex_xy(ex_xy),
+				.ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), .ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last),
+				.ex_next(ex_next),
+				.fl_we(fl_we), .fl_slot(fl_slot_exp), .fl_reg(fl_reg), .fl_lane(fl_lane_exp), .fl_data(fl_data_exp),
+				.fl_go(fl_go_exp), .fl_info(fl_info),
+				.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), .ex_aux(ex_aux),
+				.xr_valid(exp_xr_valid), .xr_warp(exp_xr_warp),
+				.wc_end(exp_wc_end), .wc_warp(wc_warp),
+				.mesh_valid(mesh_valid), .mesh_ready(mesh_ready), .mesh_tri(mesh_tri), .mesh_last(mesh_last),
+				.mesh_id(mesh_id), .mesh_busy(mesh_busy_unused),
+				.mesh_lds_rd_en(mesh_lds_rd_en), .mesh_lds_rd_addr(mesh_lds_rd_addr), .mesh_lds_rd_data(mesh_lds_rd_data)
+			);
+
+			if (SHARED_PT == 0) begin : g_local_pt
+				assign exp_ready = exp_x_ready;
+				assign xr_valid = exp_xr_valid;
+				assign xr_warp = exp_xr_warp;
+				assign pt_q_busy = 1'b0;
+				assign pt_exp_valid = 1'b0;
+				assign pt_exp_end = 1'b0;
+				assign pt_exp_blk = 3'd0;
+				assign pt_exp_grp = {GRP_W{1'b0}};
+				assign pt_exp_word = 7'd0;
+				assign pt_exp_mask = {NPHYS{1'b0}};
+				assign pt_exp_data = {DW{1'b0}};
+
+				atg_su_pt #(
+					.NPHYS(NPHYS), .NWARPS(NWARPS), .WARP_W(WARP_W), .GRP_W(GRP_W),
+					.UOP_W(UOP_W), .PT_ENTRIES(PT_ENTRIES), .VARY_WORDS(VARY_WORDS), .SHARED_PT(0)
+				) pt (
+					.scrub(scrub_pt), .scrub_busy(scb_pt),
+					.clk(clk), .rst_n(rst_n),
+					.x_valid(x_valid_pt), .x_warp(x_warp_pt), .x_grp(x_grp_pt), .x_uop(x_uop_pt_ded), .x_b(x_b_pt),
+					.x_mask(x_mask_pt), .x_info(x_info),
+					.pt_exp_valid(1'b0), .pt_exp_ready(), .pt_exp_end(1'b0),
+					.pt_exp_blk(3'd0), .pt_exp_grp({GRP_W{1'b0}}), .pt_exp_word(7'd0),
+					.pt_exp_mask({NPHYS{1'b0}}), .pt_exp_data({DW{1'b0}}),
+					.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
+					.pt_free(pt_free), .pt_free_idx(pt_free_idx),
+					.pt_ok(pt_ok), .pt_take(vl_gnt), .pt_warp(vl_slot_rf), .pt_base(vl_ptbase),
+					.vl_go(vl_go_pt), .vl_mask(vl_mask), .pt_done(pt_done),
+					.wc_end(wc_valid && wc_op == 2'd1), .wc_warp(wc_warp)
+				);
+				wire unused_spt = &{1'b0, vl_go_ptbase, pt_exp_ready};
+			end else begin : g_shared_pt
+				localparam PT_PKT_W = 1 + 3 + GRP_W + 7 + NPHYS + DW;
+				localparam [7:0] VARY_LIM = 8'd16 + VARY_WORDS[7:0];
+
+				assign pt_ok = 1'b1;
+				assign vl_ptbase = 8'd0;
+				assign pt_rdata = 32'd0;
+				assign pt_done = 8'd0;
+				assign scb_pt = 1'b0;
+
+				reg [NWARPS*3-1:0] pt_wblk;
+				reg [NWARPS-1:0] wc_pend;
+
+				wire [31:0] pt_tgt = x_uop_pt_ded[40 +: 32];
+				wire pt_tgt_top0 = (pt_tgt[31:7] == 25'd0);
+				wire pt_is_pos_lo = (pt_tgt[6:2] == 5'd0);
+				wire [6:0] pt_tgt_v7;
+				wire pt_tv_bo_unused;
+				am_sub #(.W(7)) u_pt_tgt_v (
+					.a(pt_tgt[6:0]), .b(7'd12), .bi(1'b0), .d(pt_tgt_v7), .bo(pt_tv_bo_unused)
+				);
+				wire [6:0] pt_wword7 = pt_is_pos_lo ? pt_tgt[6:0] : pt_tgt_v7;
+				wire pt_is_pos = pt_tgt_top0 && pt_is_pos_lo;
+				wire pt_is_var = pt_tgt_top0 && (pt_tgt[6:0] >= 7'h10) && ({1'b0, pt_tgt[6:0]} < VARY_LIM);
+				wire pt_wr_want = x_valid_pt && (x_uop_pt_ded[3:0] == 4'd10) &&
+					(x_info[17:16] == 2'd0) && (pt_is_pos || pt_is_var);
+
+				wire pt_q_in_ready;
+				wire [3:0] pt_q_cnt;
+				wire pt_q_out_valid;
+				wire [PT_PKT_W-1:0] pt_q_out_data;
+
+				reg [WARP_W-1:0] pend_w;
+				integer pwi;
+				always @(*) begin
+					pend_w = {WARP_W{1'b0}};
+					for (pwi = NWARPS - 1; pwi >= 0; pwi = pwi - 1)
+						if (wc_pend[pwi])
+							pend_w = pwi[WARP_W-1:0];
+				end
+				wire pend_has = |wc_pend;
+				wire pt_wr_fire = pt_wr_want && pt_q_in_ready;
+				wire end_push = pend_has && !pt_wr_want && pt_q_in_ready && !exp_xr_valid;
+				wire wc_vtx_end = wc_valid && (wc_op == 2'd1) && (warp_stage[wc_warp] == 2'd0);
+
+				wire [PT_PKT_W-1:0] pt_q_in_data = pt_wr_fire ?
+					{1'b0, pt_wblk[x_warp_pt*3 +: 3], x_grp_pt, pt_wword7, x_mask_pt[2*NPHYS-1:NPHYS], x_b_pt} :
+					{1'b1, pt_wblk[pend_w*3 +: 3], {GRP_W{1'b0}}, 7'd0, {NPHYS{1'b0}}, {DW{1'b0}}};
+
+				am_fifo #(.W(PT_PKT_W), .DEPTH_LOG2(3)) u_pt_q (
+					.clk(clk), .rst_n(rst_n),
+					.in_valid(pt_wr_fire || end_push), .in_ready(pt_q_in_ready),
+					.in_data(pt_q_in_data),
+					.out_valid(pt_q_out_valid), .out_ready(pt_exp_ready),
+					.out_data(pt_q_out_data), .count(pt_q_cnt)
+				);
+
+				assign {pt_exp_end, pt_exp_blk, pt_exp_grp, pt_exp_word, pt_exp_mask, pt_exp_data} = pt_q_out_data;
+				assign pt_exp_valid = pt_q_out_valid;
+				assign exp_ready = exp_x_ready && (pt_q_in_ready || (x_info[17:16] != 2'd0));
+				assign xr_valid = exp_xr_valid || end_push;
+				assign xr_warp = exp_xr_valid ? exp_xr_warp : pend_w;
+				assign pt_q_busy = pt_q_out_valid || pend_has;
+
+				always @(posedge clk or posedge rst_p) begin
+					if (rst_p) begin
+						pt_wblk <= {(NWARPS*3){1'b0}};
+						wc_pend <= {NWARPS{1'b0}};
+					end else begin
+						if (vl_go_pt)
+							pt_wblk[vl_slot_rf*3 +: 3] <= vl_go_ptbase[7:5];
+						if (end_push)
+							wc_pend[pend_w] <= 1'b0;
+						if (wc_vtx_end)
+							wc_pend[wc_warp] <= 1'b1;
+					end
+				end
+				wire unused_lpt = &{1'b0, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx, scrub_pt,
+					pt_tv_bo_unused, pt_q_cnt};
+			end
+		end else begin : g_no_gfx
+			reg xr_c_v;
+			reg [WARP_W-1:0] xr_c_w;
+			always @(posedge clk or posedge rst_p) begin
+				if (rst_p) begin
+					xr_c_v <= 1'b0;
+					xr_c_w <= {WARP_W{1'b0}};
+				end else begin
+					xr_c_v <= wc_valid && (wc_op == 2'd1);
+					xr_c_w <= wc_warp;
+				end
+			end
+			assign xr_valid = xr_c_v;
+			assign xr_warp = xr_c_w;
+			assign exp_ready = 1'b1;
+			assign scb_exp = 1'b0;
+			assign scb_pt = 1'b0;
+			assign pt_ok = 1'b1;
+			assign vl_ptbase = 8'd0;
+			assign pt_rdata = 32'd0;
+			assign pt_done = 8'd0;
+			assign pt_q_busy = 1'b0;
+			assign pt_exp_valid = 1'b0;
+			assign pt_exp_end = 1'b0;
+			assign pt_exp_blk = 3'd0;
+			assign pt_exp_grp = {GRP_W{1'b0}};
+			assign pt_exp_word = 7'd0;
+			assign pt_exp_mask = {NPHYS{1'b0}};
+			assign pt_exp_data = {DW{1'b0}};
+			assign ex_valid = 1'b0;
+			assign ex_seq = 16'd0;
+			assign ex_xy = 32'd0;
+			assign ex_mask = 4'd0;
+			assign ex_color = 512'd0;
+			assign ex_color1 = 512'd0;
+			assign ex_has_src1 = 1'b0;
+			assign ex_depth = 128'd0;
+			assign ex_last = 1'b0;
+			assign ex_aux = 155'd0;
+			assign mesh_valid = 1'b0;
+			assign mesh_tri = 702'd0;
+			assign mesh_last = 1'b0;
+			assign mesh_id = 16'd0;
+			assign mesh_busy_unused = 1'b0;
+			assign mesh_lds_rd_en = 1'b0;
+			assign mesh_lds_rd_addr = {LDS_AW{1'b0}};
+			wire unused_nogfx = &{1'b0, scrub_exp, scrub_pt, x_valid_exp, x_warp_exp, x_grp_exp,
+				x_last_exp, x_sbe_exp, x_uop_exp, x_a_exp, x_b_exp, x_c_exp, x_mask_exp,
+				x_valid_pt, x_warp_pt, x_grp_pt, x_b_pt, x_mask_pt, x_uop_pt_ded,
+				ex_ready, ex_next, fl_we, fl_reg, fl_lane_exp, fl_data_exp, fl_go_exp, fl_info,
+				fl_pw_we, fl_pw_addr, fl_pw_data, mesh_ready, mesh_lds_rd_data,
+				pt_rd, pt_idx, pt_word, pt_free, pt_free_idx, vl_go_pt, vl_go_ptbase,
+				pt_exp_ready, vl_slot_rf, fl_slot_exp};
+		end
+	endgenerate
 
 	atg_su_rq #(.NPHYS(NPHYS), .UOP_W(UOP_W), .HAS_SA(HAS_SA)) rq (
 		.clk(clk), .rst_n(rst_n),
@@ -1347,7 +1562,7 @@ module atg_su #(
 			r_busy <= 1'b0;
 		else
 			r_busy <= lc_kick || cs_kick || vl_req || fl_req || vl_go || fl_go ||
-				sched_busy || sb_busy || cbank_busy;
+				sched_busy || sb_busy || cbank_busy || pt_q_busy;
 	end
 	assign busy = r_busy;
 	assign fsm = {scrub_busy, cbank_busy, sb_busy, sched_busy};

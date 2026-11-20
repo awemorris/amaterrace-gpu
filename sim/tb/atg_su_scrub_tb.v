@@ -80,13 +80,15 @@ module atg_su_scrub_tb;
 		.clk(clk), .rst_n(rst_n), .st_we(1'b0), .st_idx(9'd0), .st_wdata(32'd0),
 		.scrub(scrub), .scrub_busy(scrub_busy),
 		.cs_kick(1'b0), .cs_mesh(1'b0), .lc_kick(1'b0), .inv(4'd0),
-		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_we(1'b0), .vl_reg(6'd0),
-		.vl_lane(5'd0), .vl_data(32'd0), .vl_go(1'b0), .vl_mask(32'd0),
-		.fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_we(1'b0), .fl_reg(6'd0), .fl_lane(5'd0),
+		.vl_req(1'b0), .vl_gnt(), .vl_slot(), .vl_ptbase(), .vl_avail(), .vl_we(1'b0), .vl_reg(6'd0),
+		.vl_lane(5'd0), .vl_data(32'd0), .vl_go(1'b0), .vl_mask(32'd0), .vl_go_ptbase(8'd0),
+		.fl_req(1'b0), .fl_gnt(), .fl_slot(), .fl_avail(), .fl_we(1'b0), .fl_reg(6'd0), .fl_lane(5'd0),
 		.fl_data(32'd0), .fl_pw_we(1'b0), .fl_pw_addr(12'd0), .fl_pw_data(32'd0),
 		.fl_go(1'b0), .fl_mask(32'd0), .fl_info(64'd0),
 		.pt_rd(1'b0), .pt_idx(8'd0), .pt_word(7'd0), .pt_rdata(), .pt_free(1'b0),
 		.pt_free_idx(8'd0), .pt_done(),
+		.pt_exp_valid(), .pt_exp_ready(1'b1), .pt_exp_end(), .pt_exp_blk(),
+		.pt_exp_grp(), .pt_exp_word(), .pt_exp_mask(), .pt_exp_data(),
 		.tx_valid(), .tx_ready(1'b1), .tx_op(), .tx_slot(), .tx_samp_slot(), .tx_vs(),
 		.tx_mask(), .tx_coord(), .tx_off(), .tx_tag(), .tx_last(),
 		.tr_valid(1'b0), .tr_ready(), .tr_tag(16'd0), .tr_data(512'd0), .tr_last(1'b0),
@@ -129,34 +131,34 @@ module atg_su_scrub_tb;
 		end
 		for (g = 0; g < NPHYS; g = g + 1) begin : g_pt
 			always @(fill)
-				for (k = 0; k < dut.pt.DEPTH; k = k + 1)
-					dut.pt.g_bank[g].m[k] = 32'h77000000 + k;
+				for (k = 0; k < dut.g_gfx.g_local_pt.pt.DEPTH; k = k + 1)
+					dut.g_gfx.g_local_pt.pt.g_bank[g].m[k] = 32'h77000000 + k;
 			always @(count)
-				for (k = 0; k < dut.pt.DEPTH; k = k + 1)
-					nz = nz + (dut.pt.g_bank[g].m[k] != 0);
+				for (k = 0; k < dut.g_gfx.g_local_pt.pt.DEPTH; k = k + 1)
+					nz = nz + (dut.g_gfx.g_local_pt.pt.g_bank[g].m[k] != 0);
 		end
 		for (g = 0; g < NPHYS; g = g + 1) begin : g_exp
 			always @(fill) begin
-				for (k = 0; k < dut.exp.ROWS * 8; k = k + 1) begin
-					dut.exp.g_bank[g].g_col_sl[0].m0[k] = 8'h1;
-					dut.exp.g_bank[g].g_col_sl[0].m1[k] = 8'h2;
-					dut.exp.g_bank[g].g_col_sl[0].m2[k] = 8'h3;
-					dut.exp.g_bank[g].g_col_sl[0].m3[k] = 8'h4;
+				for (k = 0; k < dut.g_gfx.exp.ROWS * 8; k = k + 1) begin
+					dut.g_gfx.exp.g_bank[g].g_col_sl[0].m0[k] = 8'h1;
+					dut.g_gfx.exp.g_bank[g].g_col_sl[0].m1[k] = 8'h2;
+					dut.g_gfx.exp.g_bank[g].g_col_sl[0].m2[k] = 8'h3;
+					dut.g_gfx.exp.g_bank[g].g_col_sl[0].m3[k] = 8'h4;
 				end
-				for (k = 0; k < dut.exp.ROWS; k = k + 1) begin
-					dut.exp.g_bank[g].g_row_sl[0].m4[k] = 16'h5;
-					dut.exp.g_bank[g].g_row_sl[0].mz[k] = 16'h6;
-					dut.exp.g_bank[g].m5[k] = 4'h7;
-					dut.exp.g_bank[g].mr6[k] = 4'h8;
+				for (k = 0; k < dut.g_gfx.exp.ROWS; k = k + 1) begin
+					dut.g_gfx.exp.g_bank[g].g_row_sl[0].m4[k] = 16'h5;
+					dut.g_gfx.exp.g_bank[g].g_row_sl[0].mz[k] = 16'h6;
+					dut.g_gfx.exp.g_bank[g].m5[k] = 4'h7;
+					dut.g_gfx.exp.g_bank[g].mr6[k] = 4'h8;
 				end
 			end
 			always @(count) begin
-				for (k = 0; k < dut.exp.ROWS * 8; k = k + 1)
-					nz = nz + (dut.exp.g_bank[g].g_col_sl[0].m0[k] != 0) + (dut.exp.g_bank[g].g_col_sl[0].m1[k] != 0) +
-						(dut.exp.g_bank[g].g_col_sl[0].m2[k] != 0) + (dut.exp.g_bank[g].g_col_sl[0].m3[k] != 0);
-				for (k = 0; k < dut.exp.ROWS; k = k + 1)
-					nz = nz + (dut.exp.g_bank[g].g_row_sl[0].m4[k] != 0) + (dut.exp.g_bank[g].g_row_sl[0].mz[k] != 0) +
-						(dut.exp.g_bank[g].m5[k] != 0) + (dut.exp.g_bank[g].mr6[k] != 0);
+				for (k = 0; k < dut.g_gfx.exp.ROWS * 8; k = k + 1)
+					nz = nz + (dut.g_gfx.exp.g_bank[g].g_col_sl[0].m0[k] != 0) + (dut.g_gfx.exp.g_bank[g].g_col_sl[0].m1[k] != 0) +
+						(dut.g_gfx.exp.g_bank[g].g_col_sl[0].m2[k] != 0) + (dut.g_gfx.exp.g_bank[g].g_col_sl[0].m3[k] != 0);
+				for (k = 0; k < dut.g_gfx.exp.ROWS; k = k + 1)
+					nz = nz + (dut.g_gfx.exp.g_bank[g].g_row_sl[0].m4[k] != 0) + (dut.g_gfx.exp.g_bank[g].g_row_sl[0].mz[k] != 0) +
+						(dut.g_gfx.exp.g_bank[g].m5[k] != 0) + (dut.g_gfx.exp.g_bank[g].mr6[k] != 0);
 			end
 		end
 		for (g = 0; g < 2; g = g + 1) begin : g_lda

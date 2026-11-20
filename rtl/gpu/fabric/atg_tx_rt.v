@@ -69,7 +69,6 @@ module atg_tx_rt #(
 
 	wire [K-1:0] sk_v, sk_r;
 	wire [K*TX_W-1:0] sk_d_flat;
-	wire [K-1:0] sk_last;
 
 	genvar gk;
 	generate
@@ -101,12 +100,10 @@ module atg_tx_rt #(
 				.out_valid(sk_v[gk]), .out_ready(sk_r[gk]),
 				.out_data(sk_d_flat[gk*TX_W +: TX_W])
 			);
-			assign sk_last[gk] = sk_d_flat[gk*TX_W];
 		end
 	endgenerate
 
-	reg          lock;
-	reg [KW-1:0] owner, last_won;
+	reg [KW-1:0] last_won;
 	reg [KW-1:0] rr_pick;
 	integer      st, ii;
 
@@ -120,9 +117,11 @@ module atg_tx_rt #(
 		end
 	end
 
-	wire [KW-1:0] pick = lock ? owner : rr_pick;
-	wire pick_valid = |sk_v && (!lock || sk_v[owner]);
-	wire pick_last  = sk_last[pick];
+	/* Every tx_valid beat is an independent 1-flit quad request (tx_last is
+	 * per-instruction on the last active group and can be absent if masked).
+	 * Arbitrate per quad cleanly without locking across beats. */
+	wire [KW-1:0] pick = rr_pick;
+	wire pick_valid = |sk_v;
 
 	wire out_in_ready;
 	wire fire = pick_valid && out_in_ready;
@@ -156,18 +155,9 @@ module atg_tx_rt #(
 
 	always @(posedge clk or negedge rst_n) begin
 		if (!rst_n) begin
-			lock     <= 1'b0;
-			owner    <= {KW{1'b0}};
 			last_won <= {KW{1'b0}};
 		end else if (fire) begin
-			if (!lock)
-				last_won <= pick;
-			if (pick_last) begin
-				lock <= 1'b0;
-			end else begin
-				lock  <= 1'b1;
-				owner <= pick;
-			end
+			last_won <= pick;
 		end
 	end
 

@@ -1476,7 +1476,8 @@ module atg_top #(
 	wire [31:0] at_old;
 	wire at_error;
 	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v, su_scrub_v;
-	assign su_scrub_any = NSU > 0 && |su_scrub_v;
+	wire spine_pt_scrub_busy;
+	assign su_scrub_any = (NSU > 0 && |su_scrub_v) || spine_pt_scrub_busy;
 	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
 	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fault_stage_v;	/* each SU's fault stage */
 	wire [(NSU > 0 ? NSU : 1)*2-1:0] su_at_stage;
@@ -1781,13 +1782,66 @@ module atg_top #(
 	endgenerate
 
 
-	/* The SUs, and the MC's atomic unit they share. */
-	genvar k;
+	/* The SUs, Spine PT/warp/tex/export interconnect, and MC atomics. */
+	localparam SU_HAS_GFX = (HAS_VF != 0) || (HAS_RX != 0) || (HAS_ROP != 0);
+	localparam SU_SHARED_PT = (NSU > 1 && SU_HAS_GFX != 0) ? 1 : 0;
+	localparam SU_PT_W = 1 + 3 + SU_GRP_W + 7 + SU_NPHYS + DW;
+	localparam NSU_V = (NSU > 0) ? NSU : 1;
+	localparam SU_PT_ENTRIES = (NSU >= 8) ? 256 : ((NSU >= 4) ? 128 : 64);
+
+	/* Packed per-SU fabric vectors */
+	wire [NSU_V-1:0] su_vl_req_v, su_vl_gnt_v, su_vl_avail_v, su_vl_we_v, su_vl_go_v;
+	wire [NSU_V*8-1:0] su_vl_ptbase_v, su_vl_go_ptbase_v;
+	wire [NSU_V*6-1:0] su_vl_reg_v;
+	wire [NSU_V*5-1:0] su_vl_lane_v;
+	wire [NSU_V*32-1:0] su_vl_data_v, su_vl_mask_v;
+
+	wire [NSU_V-1:0] su_fl_req_v, su_fl_gnt_v, su_fl_avail_v, su_fl_we_v, su_fl_pw_we_v, su_fl_go_v;
+	wire [NSU_V*6-1:0] su_fl_reg_v;
+	wire [NSU_V*5-1:0] su_fl_lane_v;
+	wire [NSU_V*32-1:0] su_fl_data_v, su_fl_pw_data_v, su_fl_mask_v;
+	wire [NSU_V*12-1:0] su_fl_pw_addr_v;
+	wire [NSU_V*64-1:0] su_fl_info_v;
+
+	wire [NSU_V-1:0] su_pt_rd_v, su_pt_free_v;
+	wire [NSU_V*8-1:0] su_pt_idx_v, su_pt_free_idx_v, su_pt_done_v;
+	wire [NSU_V*7-1:0] su_pt_word_v;
+	wire [NSU_V*32-1:0] su_pt_rdata_v;
+
+	wire [NSU_V-1:0] su_pt_exp_valid_v, su_pt_exp_ready_v;
+	wire [NSU_V*SU_PT_W-1:0] su_pt_exp_data_v;
+
+	wire [NSU_V-1:0] su_tx_valid_v, su_tx_ready_v, su_tx_vs_v, su_tx_last_v;
+	wire [NSU_V*8-1:0] su_tx_op_v;
+	wire [NSU_V*4-1:0] su_tx_slot_v, su_tx_samp_slot_v, su_tx_mask_v;
+	wire [NSU_V*640-1:0] su_tx_coord_v;
+	wire [NSU_V*12-1:0] su_tx_off_v;
+	wire [NSU_V*16-1:0] su_tx_tag_v;
+	wire [NSU_V-1:0] su_tr_valid_v, su_tr_ready_v, su_tr_last_v;
+	wire [NSU_V*16-1:0] su_tr_tag_v;
+	wire [NSU_V*512-1:0] su_tr_data_v;
+
+	wire [NSU_V-1:0] su_ex_valid_v, su_ex_ready_v, su_ex_has_src1_v, su_ex_last_v;
+	wire [NSU_V*16-1:0] su_ex_seq_v, su_ex_next_v;
+	wire [NSU_V*32-1:0] su_ex_xy_v;
+	wire [NSU_V*4-1:0] su_ex_mask_v;
+	wire [NSU_V*512-1:0] su_ex_color_v, su_ex_color1_v;
+	wire [NSU_V*128-1:0] su_ex_depth_v;
+	wire [NSU_V*155-1:0] su_ex_aux_v;
+
+	genvar k, gs, gg, gl;
 	generate
 	for (k = 0; k < NSU; k = k + 1) begin : g_su
 		localparam CD = C_SU + 2 * k;
 		localparam CI = C_SU + 2 * k + 1;
-		wire s_vl_gnt, s_fl_gnt, s_tx_valid, s_tx_last, s_tr_ready, s_ex_valid, s_ex_last;
+		wire s_vl_gnt, s_fl_gnt, s_vl_avail, s_fl_avail;
+		wire s_tx_valid, s_tx_last, s_tr_ready, s_ex_valid, s_ex_last;
+		wire s_pt_exp_valid, s_pt_exp_end;
+		wire [2:0] s_pt_exp_blk;
+		wire [SU_GRP_W-1:0] s_pt_exp_grp;
+		wire [6:0] s_pt_exp_word;
+		wire [SU_NPHYS-1:0] s_pt_exp_mask;
+		wire [DW-1:0] s_pt_exp_data;
 		wire s_mesh_valid, s_mesh_last;
 		wire [701:0] s_mesh_tri;
 		wire [15:0] s_mesh_id;
@@ -1814,31 +1868,47 @@ module atg_top #(
 			.SU_INDEX(k), .FRAG_RESERVE(SU_FRAG_RESERVE), .PACKED(SU_PACKED),
 			.PK_SHARED(SU_PK_SHARED), .SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4),
 			.HAS_MESH(HAS_MESH),
-			.LDS_BYTES(SU_LDS_BYTES), .VARY_WORDS(SU_VARY_WORDS),
+			.LDS_BYTES(SU_LDS_BYTES), .PT_ENTRIES(SU_PT_ENTRIES), .VARY_WORDS(SU_VARY_WORDS),
 			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
-			.MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(ROP_DUAL_SOURCE)
+			.MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(ROP_DUAL_SOURCE),
+			.SHARED_PT(SU_SHARED_PT), .HAS_GFX(SU_HAS_GFX ? 1 : 0), .HAS_TU(HAS_TU != 0 ? 1 : 0)
 		) su (
 			.clk(clk), .rst_n(core_rst_n), .st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata),
 			.cs_kick(cs_kick), .cs_mesh(cs_mesh), .lc_kick(lc_kick), .inv(inv),
-			.vl_req(g0 && vl_req), .vl_gnt(s_vl_gnt), .vl_slot(s_vl_slot),
-			.vl_ptbase(s_vl_ptbase), .vl_we(g0 && vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane),
-			.vl_data(vl_data), .vl_go(g0 && vl_go), .vl_mask(vl_mask),
-			.fl_req(g0 && fl_req), .fl_gnt(s_fl_gnt), .fl_slot(s_fl_slot),
-			.fl_we(g0 && fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data),
-			.fl_pw_we(g0 && fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data),
-			.fl_go(g0 && fl_go), .fl_mask(fl_mask), .fl_info(fl_info),
-			.pt_rd(g0 && pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(s_pt_rdata),
-			.pt_free(g0 && pt_free), .pt_free_idx(pt_free_idx), .pt_done(s_pt_done),
-			.tx_valid(s_tx_valid), .tx_ready(g0 && tx_ready), .tx_op(s_tx_op),
+			.vl_req(su_vl_req_v[k]), .vl_gnt(s_vl_gnt), .vl_slot(s_vl_slot),
+			.vl_ptbase(s_vl_ptbase), .vl_avail(s_vl_avail),
+			.vl_we(su_vl_we_v[k]), .vl_reg(su_vl_reg_v[k*6 +: 6]),
+			.vl_lane(su_vl_lane_v[k*5 +: 5]), .vl_data(su_vl_data_v[k*32 +: 32]),
+			.vl_go(su_vl_go_v[k]), .vl_mask(su_vl_mask_v[k*32 +: 32]),
+			.vl_go_ptbase(su_vl_go_ptbase_v[k*8 +: 8]),
+			.fl_req(su_fl_req_v[k]), .fl_gnt(s_fl_gnt), .fl_slot(s_fl_slot),
+			.fl_avail(s_fl_avail),
+			.fl_we(su_fl_we_v[k]), .fl_reg(su_fl_reg_v[k*6 +: 6]),
+			.fl_lane(su_fl_lane_v[k*5 +: 5]), .fl_data(su_fl_data_v[k*32 +: 32]),
+			.fl_pw_we(su_fl_pw_we_v[k]), .fl_pw_addr(su_fl_pw_addr_v[k*12 +: 12]),
+			.fl_pw_data(su_fl_pw_data_v[k*32 +: 32]),
+			.fl_go(su_fl_go_v[k]), .fl_mask(su_fl_mask_v[k*32 +: 32]),
+			.fl_info(su_fl_info_v[k*64 +: 64]),
+			.pt_rd(su_pt_rd_v[k]), .pt_idx(su_pt_idx_v[k*8 +: 8]),
+			.pt_word(su_pt_word_v[k*7 +: 7]), .pt_rdata(s_pt_rdata),
+			.pt_free(su_pt_free_v[k]), .pt_free_idx(su_pt_free_idx_v[k*8 +: 8]),
+			.pt_done(s_pt_done),
+			.pt_exp_valid(s_pt_exp_valid), .pt_exp_ready(su_pt_exp_ready_v[k]),
+			.pt_exp_end(s_pt_exp_end), .pt_exp_blk(s_pt_exp_blk),
+			.pt_exp_grp(s_pt_exp_grp), .pt_exp_word(s_pt_exp_word),
+			.pt_exp_mask(s_pt_exp_mask), .pt_exp_data(s_pt_exp_data),
+			.tx_valid(s_tx_valid), .tx_ready(su_tx_ready_v[k]), .tx_op(s_tx_op),
 			.tx_slot(s_tx_slot), .tx_samp_slot(s_tx_samp_slot), .tx_vs(s_tx_vs),
 			.tx_mask(s_tx_mask), .tx_coord(s_tx_coord), .tx_off(s_tx_off),
-			.tx_tag(s_tx_tag),
-			.tx_last(s_tx_last),
-			.tr_valid(g0 && tr_valid), .tr_ready(s_tr_ready), .tr_tag(tr_tag), .tr_data(tr_data),
-			.tr_last(tr_last),
-			.ex_valid(s_ex_valid), .ex_ready(g0 && ex_ready), .ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
-			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_color1(s_ex_color1), .ex_has_src1(s_ex_has_src1), .ex_depth(s_ex_depth),
-			.ex_last(s_ex_last), .ex_next(ex_next), .ex_aux(s_ex_aux),
+			.tx_tag(s_tx_tag), .tx_last(s_tx_last),
+			.tr_valid(su_tr_valid_v[k]), .tr_ready(s_tr_ready),
+			.tr_tag(su_tr_tag_v[k*16 +: 16]), .tr_data(su_tr_data_v[k*512 +: 512]),
+			.tr_last(su_tr_last_v[k]),
+			.ex_valid(s_ex_valid), .ex_ready(su_ex_ready_v[k]),
+			.ex_seq(s_ex_seq), .ex_xy(s_ex_xy),
+			.ex_mask(s_ex_mask), .ex_color(s_ex_color), .ex_color1(s_ex_color1),
+			.ex_has_src1(s_ex_has_src1), .ex_depth(s_ex_depth),
+			.ex_last(s_ex_last), .ex_next(su_ex_next_v[k*16 +: 16]), .ex_aux(s_ex_aux),
 			.mesh_valid(s_mesh_valid), .mesh_ready(g0 ? su_mesh_ready : 1'b1), .mesh_tri(s_mesh_tri),
 			.mesh_last(s_mesh_last), .mesh_id(s_mesh_id),
 			.d_req_valid(u_req_valid[CD]), .d_req_ready(u_req_ready[CD]),
@@ -1870,33 +1940,40 @@ module atg_top #(
 			.fsm(su_fsm_v[k*4 +: 4])
 		);
 
+		assign su_vl_gnt_v[k] = s_vl_gnt;
+		assign su_vl_ptbase_v[k*8 +: 8] = s_vl_ptbase;
+		assign su_vl_avail_v[k] = s_vl_avail;
+		assign su_fl_gnt_v[k] = s_fl_gnt;
+		assign su_fl_avail_v[k] = s_fl_avail;
+		assign su_pt_rdata_v[k*32 +: 32] = s_pt_rdata;
+		assign su_pt_done_v[k*8 +: 8] = s_pt_done;
+		assign su_pt_exp_valid_v[k] = s_pt_exp_valid;
+		assign su_pt_exp_data_v[k*SU_PT_W +: SU_PT_W] = {
+			s_pt_exp_end, s_pt_exp_blk, s_pt_exp_grp, s_pt_exp_word, s_pt_exp_mask, s_pt_exp_data
+		};
+		assign su_tx_valid_v[k] = s_tx_valid;
+		assign su_tx_op_v[k*8 +: 8] = s_tx_op;
+		assign su_tx_slot_v[k*4 +: 4] = s_tx_slot;
+		assign su_tx_samp_slot_v[k*4 +: 4] = s_tx_samp_slot;
+		assign su_tx_vs_v[k] = s_tx_vs;
+		assign su_tx_mask_v[k*4 +: 4] = s_tx_mask;
+		assign su_tx_coord_v[k*640 +: 640] = s_tx_coord;
+		assign su_tx_off_v[k*12 +: 12] = s_tx_off;
+		assign su_tx_tag_v[k*16 +: 16] = s_tx_tag;
+		assign su_tx_last_v[k] = s_tx_last;
+		assign su_tr_ready_v[k] = s_tr_ready;
+		assign su_ex_valid_v[k] = s_ex_valid;
+		assign su_ex_seq_v[k*16 +: 16] = s_ex_seq;
+		assign su_ex_xy_v[k*32 +: 32] = s_ex_xy;
+		assign su_ex_mask_v[k*4 +: 4] = s_ex_mask;
+		assign su_ex_color_v[k*512 +: 512] = s_ex_color;
+		assign su_ex_color1_v[k*512 +: 512] = s_ex_color1;
+		assign su_ex_has_src1_v[k] = s_ex_has_src1;
+		assign su_ex_depth_v[k*128 +: 128] = s_ex_depth;
+		assign su_ex_last_v[k] = s_ex_last;
+		assign su_ex_aux_v[k*155 +: 155] = s_ex_aux;
+
 		if (k == 0) begin : g_su0
-			assign vl_gnt = s_vl_gnt;
-			assign vl_ptbase = s_vl_ptbase;
-			assign fl_gnt = s_fl_gnt;
-			assign pt_rdata = s_pt_rdata;
-			assign pt_done = s_pt_done;
-			assign tx_valid = s_tx_valid;
-			assign tx_op = s_tx_op;
-			assign tx_slot = s_tx_slot;
-			assign tx_samp_slot = s_tx_samp_slot;
-			assign tx_vs = s_tx_vs;
-			assign tx_mask = s_tx_mask;
-			assign tx_coord = s_tx_coord;
-			assign tx_off = s_tx_off;
-			assign tx_tag = s_tx_tag;
-			assign tx_last = s_tx_last;
-			assign tr_ready = s_tr_ready;
-			assign ex_valid = s_ex_valid;
-			assign ex_seq = s_ex_seq;
-			assign ex_xy = s_ex_xy;
-			assign ex_mask = s_ex_mask;
-			assign ex_color = s_ex_color;
-			assign ex_color1 = s_ex_color1;
-			assign ex_has_src1 = s_ex_has_src1;
-			assign ex_depth = s_ex_depth;
-			assign ex_last = s_ex_last;
-			assign ex_aux = s_ex_aux;
 			assign sa_push_valid = s_sa_push_valid;
 			assign sa_push_data = s_sa_push_data;
 			assign sa_pop_ready = s_sa_pop_ready;
@@ -1907,13 +1984,523 @@ module atg_top #(
 			assign su_mesh_last = s_mesh_last;
 			assign su_mesh_id = s_mesh_id;
 		end else begin : g_sun
-			wire unused_sun = &{1'b0, s_vl_gnt, s_vl_ptbase, s_pt_done, s_fl_gnt, s_pt_rdata, s_tx_valid,
-				s_tx_op, s_tx_slot, s_tx_samp_slot, s_tx_vs, s_tx_mask, s_tx_coord, s_tx_off, s_tx_tag, s_tx_last, s_tr_ready,
-				s_ex_valid, s_ex_seq, s_ex_xy, s_ex_mask, s_ex_color, s_ex_color1, s_ex_has_src1, s_ex_depth, s_ex_last, s_ex_aux,
-				s_sa_push_valid, s_sa_push_data, s_sa_pop_ready, s_sa_ctl_valid, s_sa_ctl_data,
-				s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
+			wire unused_sun = &{1'b0, s_sa_push_valid, s_sa_push_data, s_sa_pop_ready,
+				s_sa_ctl_valid, s_sa_ctl_data, s_mesh_valid, s_mesh_last, s_mesh_tri, s_mesh_id};
 		end
 		wire unused_slots = &{1'b0, s_vl_slot, s_fl_slot};
+	end
+
+	if (NSU == 1) begin : g_su_spine_1
+		assign spine_pt_scrub_busy = 1'b0;
+		assign su_vl_req_v[0] = vl_req;
+		assign vl_gnt = su_vl_gnt_v[0];
+		assign vl_ptbase = su_vl_ptbase_v[7:0];
+		assign su_vl_we_v[0] = vl_we;
+		assign su_vl_reg_v[5:0] = vl_reg;
+		assign su_vl_lane_v[4:0] = vl_lane;
+		assign su_vl_data_v[31:0] = vl_data;
+		assign su_vl_go_v[0] = vl_go;
+		assign su_vl_mask_v[31:0] = vl_mask;
+		assign su_vl_go_ptbase_v[7:0] = 8'd0;
+
+		assign su_fl_req_v[0] = fl_req;
+		assign fl_gnt = su_fl_gnt_v[0];
+		assign su_fl_we_v[0] = fl_we;
+		assign su_fl_reg_v[5:0] = fl_reg;
+		assign su_fl_lane_v[4:0] = fl_lane;
+		assign su_fl_data_v[31:0] = fl_data;
+		assign su_fl_pw_we_v[0] = fl_pw_we;
+		assign su_fl_pw_addr_v[11:0] = fl_pw_addr;
+		assign su_fl_pw_data_v[31:0] = fl_pw_data;
+		assign su_fl_go_v[0] = fl_go;
+		assign su_fl_mask_v[31:0] = fl_mask;
+		assign su_fl_info_v[63:0] = fl_info;
+
+		assign su_pt_rd_v[0] = pt_rd;
+		assign su_pt_idx_v[7:0] = pt_idx;
+		assign su_pt_word_v[6:0] = pt_word;
+		assign pt_rdata = su_pt_rdata_v[31:0];
+		assign su_pt_free_v[0] = pt_free;
+		assign su_pt_free_idx_v[7:0] = pt_free_idx;
+		assign pt_done = su_pt_done_v[7:0];
+		assign su_pt_exp_ready_v[0] = 1'b1;
+
+		assign tx_valid = su_tx_valid_v[0];
+		assign su_tx_ready_v[0] = tx_ready;
+		assign tx_op = su_tx_op_v[7:0];
+		assign tx_slot = su_tx_slot_v[3:0];
+		assign tx_samp_slot = su_tx_samp_slot_v[3:0];
+		assign tx_vs = su_tx_vs_v[0];
+		assign tx_mask = su_tx_mask_v[3:0];
+		assign tx_coord = su_tx_coord_v[639:0];
+		assign tx_off = su_tx_off_v[11:0];
+		assign tx_tag = su_tx_tag_v[15:0];
+		assign tx_last = su_tx_last_v[0];
+		assign su_tr_valid_v[0] = tr_valid;
+		assign tr_ready = su_tr_ready_v[0];
+		assign su_tr_tag_v[15:0] = tr_tag;
+		assign su_tr_data_v[511:0] = tr_data;
+		assign su_tr_last_v[0] = tr_last;
+
+		assign ex_valid = su_ex_valid_v[0];
+		assign su_ex_ready_v[0] = ex_ready;
+		assign ex_seq = su_ex_seq_v[15:0];
+		assign ex_xy = su_ex_xy_v[31:0];
+		assign ex_mask = su_ex_mask_v[3:0];
+		assign ex_color = su_ex_color_v[511:0];
+		assign ex_color1 = su_ex_color1_v[511:0];
+		assign ex_has_src1 = su_ex_has_src1_v[0];
+		assign ex_depth = su_ex_depth_v[127:0];
+		assign ex_last = su_ex_last_v[0];
+		assign su_ex_next_v[15:0] = ex_next;
+		assign ex_aux = su_ex_aux_v[154:0];
+		wire unused_s1 = &{1'b0, su_vl_avail_v, su_fl_avail_v, su_pt_exp_valid_v, su_pt_exp_data_v};
+	end else if (NSU > 1) begin : g_su_spine_n
+		/* Temporary Phase 3 K<=4 tree (up to 16 SUs); replaced by atg_su_fabric_n1..n128 in Phase 4 */
+		localparam NG = (NSU > 4) ? ((NSU + 3) / 4) : 1;
+		assign su_pt_rd_v = {NSU_V{1'b0}};
+		assign su_pt_idx_v = {(NSU_V*8){1'b0}};
+		assign su_pt_word_v = {(NSU_V*7){1'b0}};
+		assign su_pt_free_v = {NSU_V{1'b0}};
+		assign su_pt_free_idx_v = {(NSU_V*8){1'b0}};
+
+		if (SU_HAS_GFX != 0) begin : g_sp_gfx
+			wire spine_pt_ok;
+			wire [7:0] spine_pt_base;
+			wire sp_pt_exp_valid, sp_pt_exp_ready;
+			wire [SU_PT_W-1:0] sp_pt_exp_data;
+			wire sp_pt_exp_end;
+			wire [2:0] sp_pt_exp_blk;
+			wire [SU_GRP_W-1:0] sp_pt_exp_grp;
+			wire [6:0] sp_pt_exp_word;
+			wire [SU_NPHYS-1:0] sp_pt_exp_mask;
+			wire [DW-1:0] sp_pt_exp_wdata;
+			assign {sp_pt_exp_end, sp_pt_exp_blk, sp_pt_exp_grp, sp_pt_exp_word, sp_pt_exp_mask, sp_pt_exp_wdata} = sp_pt_exp_data;
+
+			wire dist_vl_gnt, dist_vl_avail, dist_fl_avail;
+			reg spine_vl_wait;
+			reg [7:0] vl_ptbase_hold;
+			always @(posedge clk or negedge core_rst_n) begin
+				if (!core_rst_n) begin
+					spine_vl_wait <= 1'b0;
+					vl_ptbase_hold <= 8'd0;
+				end else begin
+					if (dist_vl_gnt) begin
+						spine_vl_wait <= 1'b1;
+						vl_ptbase_hold <= spine_pt_base;
+					end else if (vl_go) begin
+						spine_vl_wait <= 1'b0;
+					end
+				end
+			end
+
+			assign vl_gnt = dist_vl_gnt;
+			assign vl_ptbase = spine_pt_base;
+			wire dist_vl_req = vl_req && spine_pt_ok && !spine_vl_wait;
+
+			atg_su_pt #(
+				.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
+				.UOP_W(108), .PT_ENTRIES(SU_PT_ENTRIES), .VARY_WORDS(SU_VARY_WORDS), .SHARED_PT(1)
+			) spine_pt (
+				.clk(clk), .rst_n(core_rst_n),
+				.x_valid(1'b0), .x_warp({SU_WARP_W{1'b0}}), .x_grp({SU_GRP_W{1'b0}}),
+				.x_uop(108'd0), .x_b({DW{1'b0}}), .x_mask({(2*SU_NPHYS){1'b0}}), .x_info(32'd0),
+				.pt_exp_valid(sp_pt_exp_valid), .pt_exp_ready(sp_pt_exp_ready),
+				.pt_exp_end(sp_pt_exp_end), .pt_exp_blk(sp_pt_exp_blk),
+				.pt_exp_grp(sp_pt_exp_grp), .pt_exp_word(sp_pt_exp_word),
+				.pt_exp_mask(sp_pt_exp_mask), .pt_exp_data(sp_pt_exp_wdata),
+				.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
+				.pt_free(pt_free), .pt_free_idx(pt_free_idx),
+				.pt_ok(spine_pt_ok), .pt_take(dist_vl_gnt), .pt_warp({SU_WARP_W{1'b0}}),
+				.pt_base(spine_pt_base), .vl_go(vl_go), .vl_mask(vl_mask), .pt_done(pt_done),
+				.wc_end(1'b0), .wc_warp({SU_WARP_W{1'b0}}),
+				.scrub(prot_scrub), .scrub_busy(spine_pt_scrub_busy)
+			);
+
+			if (NG == 1) begin : g_gfx_l1
+				wire [5:0] l1_vl_reg, l1_fl_reg;
+				wire [4:0] l1_vl_lane, l1_fl_lane;
+				wire [31:0] l1_vl_data, l1_vl_mask, l1_fl_data, l1_fl_pw_data, l1_fl_mask;
+				wire [7:0] l1_vl_go_ptbase;
+				wire [11:0] l1_fl_pw_addr;
+				wire [63:0] l1_fl_info;
+
+				atg_warp_dist #(.K(NSU)) u_wdist (
+					.clk(clk), .rst_n(core_rst_n),
+					.p_vl_req(dist_vl_req), .p_vl_gnt(dist_vl_gnt), .p_vl_ptbase(), .p_vl_avail(dist_vl_avail),
+					.p_vl_we(vl_we), .p_vl_reg(vl_reg), .p_vl_lane(vl_lane), .p_vl_data(vl_data),
+					.p_vl_go(vl_go), .p_vl_mask(vl_mask), .p_vl_go_ptbase(vl_ptbase_hold),
+					.c_vl_req(su_vl_req_v), .c_vl_gnt(su_vl_gnt_v), .c_vl_ptbase(su_vl_ptbase_v), .c_vl_avail(su_vl_avail_v),
+					.c_vl_we(su_vl_we_v), .c_vl_reg(l1_vl_reg), .c_vl_lane(l1_vl_lane),
+					.c_vl_data(l1_vl_data), .c_vl_go(su_vl_go_v), .c_vl_mask(l1_vl_mask),
+					.c_vl_go_ptbase(l1_vl_go_ptbase),
+					.p_fl_req(fl_req), .p_fl_gnt(fl_gnt), .p_fl_avail(dist_fl_avail),
+					.p_fl_we(fl_we), .p_fl_reg(fl_reg), .p_fl_lane(fl_lane), .p_fl_data(fl_data),
+					.p_fl_pw_we(fl_pw_we), .p_fl_pw_addr(fl_pw_addr), .p_fl_pw_data(fl_pw_data),
+					.p_fl_go(fl_go), .p_fl_mask(fl_mask), .p_fl_info(fl_info),
+					.c_fl_req(su_fl_req_v), .c_fl_gnt(su_fl_gnt_v), .c_fl_avail(su_fl_avail_v),
+					.c_fl_we(su_fl_we_v), .c_fl_reg(l1_fl_reg), .c_fl_lane(l1_fl_lane),
+					.c_fl_data(l1_fl_data), .c_fl_pw_we(su_fl_pw_we_v),
+					.c_fl_pw_addr(l1_fl_pw_addr), .c_fl_pw_data(l1_fl_pw_data),
+					.c_fl_go(su_fl_go_v), .c_fl_mask(l1_fl_mask), .c_fl_info(l1_fl_info)
+				);
+				for (gs = 0; gs < NSU; gs = gs + 1) begin : g_wd_shr
+					assign su_vl_reg_v[gs*6 +: 6] = l1_vl_reg;
+					assign su_vl_lane_v[gs*5 +: 5] = l1_vl_lane;
+					assign su_vl_data_v[gs*32 +: 32] = l1_vl_data;
+					assign su_vl_mask_v[gs*32 +: 32] = l1_vl_mask;
+					assign su_vl_go_ptbase_v[gs*8 +: 8] = l1_vl_go_ptbase;
+					assign su_fl_reg_v[gs*6 +: 6] = l1_fl_reg;
+					assign su_fl_lane_v[gs*5 +: 5] = l1_fl_lane;
+					assign su_fl_data_v[gs*32 +: 32] = l1_fl_data;
+					assign su_fl_pw_addr_v[gs*12 +: 12] = l1_fl_pw_addr;
+					assign su_fl_pw_data_v[gs*32 +: 32] = l1_fl_pw_data;
+					assign su_fl_mask_v[gs*32 +: 32] = l1_fl_mask;
+					assign su_fl_info_v[gs*64 +: 64] = l1_fl_info;
+				end
+				atg_pt_exp_rt #(.K(NSU), .W(SU_PT_W)) u_ptrt (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_valid(su_pt_exp_valid_v), .c_ready(su_pt_exp_ready_v), .c_data(su_pt_exp_data_v),
+					.p_valid(sp_pt_exp_valid), .p_ready(sp_pt_exp_ready), .p_data(sp_pt_exp_data)
+				);
+			end else begin : g_gfx_l2
+				wire [NG-1:0] w_vl_req, w_vl_gnt, w_vl_avail, w_vl_we, w_vl_go;
+				wire [NG*8-1:0] w_vl_ptbase;
+				wire [5:0] w_vl_reg; wire [4:0] w_vl_lane;
+				wire [31:0] w_vl_data, w_vl_mask; wire [7:0] w_vl_go_ptbase;
+				wire [NG-1:0] w_fl_req, w_fl_gnt, w_fl_avail, w_fl_we, w_fl_pw_we, w_fl_go;
+				wire [5:0] w_fl_reg; wire [4:0] w_fl_lane;
+				wire [31:0] w_fl_data, w_fl_pw_data, w_fl_mask; wire [11:0] w_fl_pw_addr; wire [63:0] w_fl_info;
+				wire [NG-1:0] w_pt_v, w_pt_r;
+				wire [NG*SU_PT_W-1:0] w_pt_d;
+
+				atg_warp_dist #(.K(NG)) u_wdist_root (
+					.clk(clk), .rst_n(core_rst_n),
+					.p_vl_req(dist_vl_req), .p_vl_gnt(dist_vl_gnt), .p_vl_ptbase(), .p_vl_avail(dist_vl_avail),
+					.p_vl_we(vl_we), .p_vl_reg(vl_reg), .p_vl_lane(vl_lane), .p_vl_data(vl_data),
+					.p_vl_go(vl_go), .p_vl_mask(vl_mask), .p_vl_go_ptbase(vl_ptbase_hold),
+					.c_vl_req(w_vl_req), .c_vl_gnt(w_vl_gnt), .c_vl_ptbase(w_vl_ptbase), .c_vl_avail(w_vl_avail),
+					.c_vl_we(w_vl_we), .c_vl_reg(w_vl_reg), .c_vl_lane(w_vl_lane),
+					.c_vl_data(w_vl_data), .c_vl_go(w_vl_go), .c_vl_mask(w_vl_mask), .c_vl_go_ptbase(w_vl_go_ptbase),
+					.p_fl_req(fl_req), .p_fl_gnt(fl_gnt), .p_fl_avail(dist_fl_avail),
+					.p_fl_we(fl_we), .p_fl_reg(fl_reg), .p_fl_lane(fl_lane), .p_fl_data(fl_data),
+					.p_fl_pw_we(fl_pw_we), .p_fl_pw_addr(fl_pw_addr), .p_fl_pw_data(fl_pw_data),
+					.p_fl_go(fl_go), .p_fl_mask(fl_mask), .p_fl_info(fl_info),
+					.c_fl_req(w_fl_req), .c_fl_gnt(w_fl_gnt), .c_fl_avail(w_fl_avail),
+					.c_fl_we(w_fl_we), .c_fl_reg(w_fl_reg), .c_fl_lane(w_fl_lane),
+					.c_fl_data(w_fl_data), .c_fl_pw_we(w_fl_pw_we),
+					.c_fl_pw_addr(w_fl_pw_addr), .c_fl_pw_data(w_fl_pw_data),
+					.c_fl_go(w_fl_go), .c_fl_mask(w_fl_mask), .c_fl_info(w_fl_info)
+				);
+				atg_pt_exp_rt #(.K(NG), .W(SU_PT_W)) u_ptrt_root (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_valid(w_pt_v), .c_ready(w_pt_r), .c_data(w_pt_d),
+					.p_valid(sp_pt_exp_valid), .p_ready(sp_pt_exp_ready), .p_data(sp_pt_exp_data)
+				);
+				for (gg = 0; gg < NG; gg = gg + 1) begin : g_l2_grp
+					localparam GB = gg * 4;
+					localparam GS = (GB + 4 <= NSU) ? 4 : (NSU - GB);
+					if (GS == 1) begin : g_gs1
+						assign su_vl_req_v[GB] = w_vl_req[gg];
+						assign w_vl_gnt[gg] = su_vl_gnt_v[GB];
+						assign w_vl_ptbase[gg*8 +: 8] = su_vl_ptbase_v[GB*8 +: 8];
+						assign w_vl_avail[gg] = su_vl_avail_v[GB];
+						assign su_vl_we_v[GB] = w_vl_we[gg];
+						assign su_vl_reg_v[GB*6 +: 6] = w_vl_reg;
+						assign su_vl_lane_v[GB*5 +: 5] = w_vl_lane;
+						assign su_vl_data_v[GB*32 +: 32] = w_vl_data;
+						assign su_vl_go_v[GB] = w_vl_go[gg];
+						assign su_vl_mask_v[GB*32 +: 32] = w_vl_mask;
+						assign su_vl_go_ptbase_v[GB*8 +: 8] = w_vl_go_ptbase;
+						assign su_fl_req_v[GB] = w_fl_req[gg];
+						assign w_fl_gnt[gg] = su_fl_gnt_v[GB];
+						assign w_fl_avail[gg] = su_fl_avail_v[GB];
+						assign su_fl_we_v[GB] = w_fl_we[gg];
+						assign su_fl_reg_v[GB*6 +: 6] = w_fl_reg;
+						assign su_fl_lane_v[GB*5 +: 5] = w_fl_lane;
+						assign su_fl_data_v[GB*32 +: 32] = w_fl_data;
+						assign su_fl_pw_we_v[GB] = w_fl_pw_we[gg];
+						assign su_fl_pw_addr_v[GB*12 +: 12] = w_fl_pw_addr;
+						assign su_fl_pw_data_v[GB*32 +: 32] = w_fl_pw_data;
+						assign su_fl_go_v[GB] = w_fl_go[gg];
+						assign su_fl_mask_v[GB*32 +: 32] = w_fl_mask;
+						assign su_fl_info_v[GB*64 +: 64] = w_fl_info;
+						assign w_pt_v[gg] = su_pt_exp_valid_v[GB];
+						assign su_pt_exp_ready_v[GB] = w_pt_r[gg];
+						assign w_pt_d[gg*SU_PT_W +: SU_PT_W] = su_pt_exp_data_v[GB*SU_PT_W +: SU_PT_W];
+					end else begin : g_gsn
+						wire [5:0] g_vl_reg; wire [4:0] g_vl_lane;
+						wire [31:0] g_vl_data, g_vl_mask; wire [7:0] g_vl_go_ptbase;
+						wire [5:0] g_fl_reg; wire [4:0] g_fl_lane;
+						wire [31:0] g_fl_data, g_fl_pw_data, g_fl_mask; wire [11:0] g_fl_pw_addr; wire [63:0] g_fl_info;
+						atg_warp_dist #(.K(GS)) u_wdist_l2 (
+							.clk(clk), .rst_n(core_rst_n),
+							.p_vl_req(w_vl_req[gg]), .p_vl_gnt(w_vl_gnt[gg]), .p_vl_ptbase(w_vl_ptbase[gg*8 +: 8]), .p_vl_avail(w_vl_avail[gg]),
+							.p_vl_we(w_vl_we[gg]), .p_vl_reg(w_vl_reg), .p_vl_lane(w_vl_lane), .p_vl_data(w_vl_data),
+							.p_vl_go(w_vl_go[gg]), .p_vl_mask(w_vl_mask), .p_vl_go_ptbase(w_vl_go_ptbase),
+							.c_vl_req(su_vl_req_v[GB +: GS]), .c_vl_gnt(su_vl_gnt_v[GB +: GS]),
+							.c_vl_ptbase(su_vl_ptbase_v[GB*8 +: GS*8]), .c_vl_avail(su_vl_avail_v[GB +: GS]),
+							.c_vl_we(su_vl_we_v[GB +: GS]), .c_vl_reg(g_vl_reg), .c_vl_lane(g_vl_lane),
+							.c_vl_data(g_vl_data), .c_vl_go(su_vl_go_v[GB +: GS]), .c_vl_mask(g_vl_mask), .c_vl_go_ptbase(g_vl_go_ptbase),
+							.p_fl_req(w_fl_req[gg]), .p_fl_gnt(w_fl_gnt[gg]), .p_fl_avail(w_fl_avail[gg]),
+							.p_fl_we(w_fl_we[gg]), .p_fl_reg(w_fl_reg), .p_fl_lane(w_fl_lane), .p_fl_data(w_fl_data),
+							.p_fl_pw_we(w_fl_pw_we[gg]), .p_fl_pw_addr(w_fl_pw_addr), .p_fl_pw_data(w_fl_pw_data),
+							.p_fl_go(w_fl_go[gg]), .p_fl_mask(w_fl_mask), .p_fl_info(w_fl_info),
+							.c_fl_req(su_fl_req_v[GB +: GS]), .c_fl_gnt(su_fl_gnt_v[GB +: GS]),
+							.c_fl_avail(su_fl_avail_v[GB +: GS]), .c_fl_we(su_fl_we_v[GB +: GS]),
+							.c_fl_reg(g_fl_reg), .c_fl_lane(g_fl_lane), .c_fl_data(g_fl_data),
+							.c_fl_pw_we(su_fl_pw_we_v[GB +: GS]), .c_fl_pw_addr(g_fl_pw_addr), .c_fl_pw_data(g_fl_pw_data),
+							.c_fl_go(su_fl_go_v[GB +: GS]), .c_fl_mask(g_fl_mask), .c_fl_info(g_fl_info)
+						);
+						for (gl = 0; gl < GS; gl = gl + 1) begin : g_l2_shr
+							assign su_vl_reg_v[(GB+gl)*6 +: 6] = g_vl_reg;
+							assign su_vl_lane_v[(GB+gl)*5 +: 5] = g_vl_lane;
+							assign su_vl_data_v[(GB+gl)*32 +: 32] = g_vl_data;
+							assign su_vl_mask_v[(GB+gl)*32 +: 32] = g_vl_mask;
+							assign su_vl_go_ptbase_v[(GB+gl)*8 +: 8] = g_vl_go_ptbase;
+							assign su_fl_reg_v[(GB+gl)*6 +: 6] = g_fl_reg;
+							assign su_fl_lane_v[(GB+gl)*5 +: 5] = g_fl_lane;
+							assign su_fl_data_v[(GB+gl)*32 +: 32] = g_fl_data;
+							assign su_fl_pw_addr_v[(GB+gl)*12 +: 12] = g_fl_pw_addr;
+							assign su_fl_pw_data_v[(GB+gl)*32 +: 32] = g_fl_pw_data;
+							assign su_fl_mask_v[(GB+gl)*32 +: 32] = g_fl_mask;
+							assign su_fl_info_v[(GB+gl)*64 +: 64] = g_fl_info;
+						end
+						atg_pt_exp_rt #(.K(GS), .W(SU_PT_W)) u_ptrt_l2 (
+							.clk(clk), .rst_n(core_rst_n),
+							.c_valid(su_pt_exp_valid_v[GB +: GS]),
+							.c_ready(su_pt_exp_ready_v[GB +: GS]),
+							.c_data(su_pt_exp_data_v[GB*SU_PT_W +: GS*SU_PT_W]),
+							.p_valid(w_pt_v[gg]), .p_ready(w_pt_r[gg]), .p_data(w_pt_d[gg*SU_PT_W +: SU_PT_W])
+						);
+					end
+				end
+			end
+			wire unused_wd_av = &{1'b0, dist_vl_avail, dist_fl_avail};
+		end else begin : g_sp_nogfx
+			assign spine_pt_scrub_busy = 1'b0;
+			assign vl_gnt = 1'b0;
+			assign vl_ptbase = 8'd0;
+			assign fl_gnt = 1'b0;
+			assign pt_rdata = 32'd0;
+			assign pt_done = 8'd0;
+			assign su_vl_req_v = {NSU_V{1'b0}};
+			assign su_vl_we_v = {NSU_V{1'b0}};
+			assign su_vl_reg_v = {(NSU_V*6){1'b0}};
+			assign su_vl_lane_v = {(NSU_V*5){1'b0}};
+			assign su_vl_data_v = {(NSU_V*32){1'b0}};
+			assign su_vl_go_v = {NSU_V{1'b0}};
+			assign su_vl_mask_v = {(NSU_V*32){1'b0}};
+			assign su_vl_go_ptbase_v = {(NSU_V*8){1'b0}};
+			assign su_fl_req_v = {NSU_V{1'b0}};
+			assign su_fl_we_v = {NSU_V{1'b0}};
+			assign su_fl_reg_v = {(NSU_V*6){1'b0}};
+			assign su_fl_lane_v = {(NSU_V*5){1'b0}};
+			assign su_fl_data_v = {(NSU_V*32){1'b0}};
+			assign su_fl_pw_we_v = {NSU_V{1'b0}};
+			assign su_fl_pw_addr_v = {(NSU_V*12){1'b0}};
+			assign su_fl_pw_data_v = {(NSU_V*32){1'b0}};
+			assign su_fl_go_v = {NSU_V{1'b0}};
+			assign su_fl_mask_v = {(NSU_V*32){1'b0}};
+			assign su_fl_info_v = {(NSU_V*64){1'b0}};
+			assign su_pt_exp_ready_v = {NSU_V{1'b1}};
+			wire unused_sp_ng = &{1'b0, vl_req, vl_we, vl_reg, vl_lane, vl_data, vl_go, vl_mask,
+				fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr, fl_pw_data,
+				fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
+				su_vl_gnt_v, su_vl_ptbase_v, su_vl_avail_v, su_fl_gnt_v, su_fl_avail_v,
+				su_pt_exp_valid_v, su_pt_exp_data_v};
+		end
+
+		if (HAS_TU != 0) begin : g_sp_tu
+			if (NG == 1) begin : g_tu_l1
+				atg_tx_rt #(.K(NSU), .TBIT(14)) u_txrt (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_tx_valid(su_tx_valid_v), .c_tx_ready(su_tx_ready_v),
+					.c_tx_op(su_tx_op_v), .c_tx_slot(su_tx_slot_v), .c_tx_samp_slot(su_tx_samp_slot_v),
+					.c_tx_vs(su_tx_vs_v), .c_tx_mask(su_tx_mask_v), .c_tx_coord(su_tx_coord_v),
+					.c_tx_off(su_tx_off_v), .c_tx_tag(su_tx_tag_v), .c_tx_last(su_tx_last_v),
+					.c_tr_valid(su_tr_valid_v), .c_tr_ready(su_tr_ready_v),
+					.c_tr_tag(su_tr_tag_v), .c_tr_data(su_tr_data_v), .c_tr_last(su_tr_last_v),
+					.p_tx_valid(tx_valid), .p_tx_ready(tx_ready),
+					.p_tx_op(tx_op), .p_tx_slot(tx_slot), .p_tx_samp_slot(tx_samp_slot),
+					.p_tx_vs(tx_vs), .p_tx_mask(tx_mask), .p_tx_coord(tx_coord),
+					.p_tx_off(tx_off), .p_tx_tag(tx_tag), .p_tx_last(tx_last),
+					.p_tr_valid(tr_valid), .p_tr_ready(tr_ready),
+					.p_tr_tag(tr_tag), .p_tr_data(tr_data), .p_tr_last(tr_last)
+				);
+			end else begin : g_tu_l2
+				wire [NG-1:0] w_tx_v, w_tx_r, w_tx_vs, w_tx_l;
+				wire [NG*8-1:0] w_tx_op; wire [NG*4-1:0] w_tx_slot, w_tx_samp, w_tx_mask;
+				wire [NG*640-1:0] w_tx_coord; wire [NG*12-1:0] w_tx_off; wire [NG*16-1:0] w_tx_tag;
+				wire [NG-1:0] w_tr_v, w_tr_r, w_tr_l;
+				wire [NG*16-1:0] w_tr_tag; wire [NG*512-1:0] w_tr_data;
+				atg_tx_rt #(.K(NG), .TBIT(14)) u_txrt_root (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_tx_valid(w_tx_v), .c_tx_ready(w_tx_r), .c_tx_op(w_tx_op), .c_tx_slot(w_tx_slot),
+					.c_tx_samp_slot(w_tx_samp), .c_tx_vs(w_tx_vs), .c_tx_mask(w_tx_mask),
+					.c_tx_coord(w_tx_coord), .c_tx_off(w_tx_off), .c_tx_tag(w_tx_tag), .c_tx_last(w_tx_l),
+					.c_tr_valid(w_tr_v), .c_tr_ready(w_tr_r), .c_tr_tag(w_tr_tag),
+					.c_tr_data(w_tr_data), .c_tr_last(w_tr_l),
+					.p_tx_valid(tx_valid), .p_tx_ready(tx_ready), .p_tx_op(tx_op), .p_tx_slot(tx_slot),
+					.p_tx_samp_slot(tx_samp_slot), .p_tx_vs(tx_vs), .p_tx_mask(tx_mask),
+					.p_tx_coord(tx_coord), .p_tx_off(tx_off), .p_tx_tag(tx_tag), .p_tx_last(tx_last),
+					.p_tr_valid(tr_valid), .p_tr_ready(tr_ready), .p_tr_tag(tr_tag),
+					.p_tr_data(tr_data), .p_tr_last(tr_last)
+				);
+				for (gg = 0; gg < NG; gg = gg + 1) begin : g_tu_grp
+					localparam GB = gg * 4;
+					localparam GS = (GB + 4 <= NSU) ? 4 : (NSU - GB);
+					if (GS == 1) begin : g_tgs1
+						assign w_tx_v[gg] = su_tx_valid_v[GB];
+						assign su_tx_ready_v[GB] = w_tx_r[gg];
+						assign w_tx_op[gg*8 +: 8] = su_tx_op_v[GB*8 +: 8];
+						assign w_tx_slot[gg*4 +: 4] = su_tx_slot_v[GB*4 +: 4];
+						assign w_tx_samp[gg*4 +: 4] = su_tx_samp_slot_v[GB*4 +: 4];
+						assign w_tx_vs[gg] = su_tx_vs_v[GB];
+						assign w_tx_mask[gg*4 +: 4] = su_tx_mask_v[GB*4 +: 4];
+						assign w_tx_coord[gg*640 +: 640] = su_tx_coord_v[GB*640 +: 640];
+						assign w_tx_off[gg*12 +: 12] = su_tx_off_v[GB*12 +: 12];
+						assign w_tx_tag[gg*16 +: 16] = su_tx_tag_v[GB*16 +: 16];
+						assign w_tx_l[gg] = su_tx_last_v[GB];
+						assign su_tr_valid_v[GB] = w_tr_v[gg];
+						assign w_tr_r[gg] = su_tr_ready_v[GB];
+						assign su_tr_tag_v[GB*16 +: 16] = w_tr_tag[gg*16 +: 16];
+						assign su_tr_data_v[GB*512 +: 512] = w_tr_data[gg*512 +: 512];
+						assign su_tr_last_v[GB] = w_tr_l[gg];
+					end else begin : g_tgsn
+						atg_tx_rt #(.K(GS), .TBIT(12)) u_txrt_l2 (
+							.clk(clk), .rst_n(core_rst_n),
+							.c_tx_valid(su_tx_valid_v[GB +: GS]), .c_tx_ready(su_tx_ready_v[GB +: GS]),
+							.c_tx_op(su_tx_op_v[GB*8 +: GS*8]), .c_tx_slot(su_tx_slot_v[GB*4 +: GS*4]),
+							.c_tx_samp_slot(su_tx_samp_slot_v[GB*4 +: GS*4]), .c_tx_vs(su_tx_vs_v[GB +: GS]),
+							.c_tx_mask(su_tx_mask_v[GB*4 +: GS*4]), .c_tx_coord(su_tx_coord_v[GB*640 +: GS*640]),
+							.c_tx_off(su_tx_off_v[GB*12 +: GS*12]), .c_tx_tag(su_tx_tag_v[GB*16 +: GS*16]),
+							.c_tx_last(su_tx_last_v[GB +: GS]),
+							.c_tr_valid(su_tr_valid_v[GB +: GS]), .c_tr_ready(su_tr_ready_v[GB +: GS]),
+							.c_tr_tag(su_tr_tag_v[GB*16 +: GS*16]), .c_tr_data(su_tr_data_v[GB*512 +: GS*512]),
+							.c_tr_last(su_tr_last_v[GB +: GS]),
+							.p_tx_valid(w_tx_v[gg]), .p_tx_ready(w_tx_r[gg]), .p_tx_op(w_tx_op[gg*8 +: 8]),
+							.p_tx_slot(w_tx_slot[gg*4 +: 4]), .p_tx_samp_slot(w_tx_samp[gg*4 +: 4]),
+							.p_tx_vs(w_tx_vs[gg]), .p_tx_mask(w_tx_mask[gg*4 +: 4]),
+							.p_tx_coord(w_tx_coord[gg*640 +: 640]), .p_tx_off(w_tx_off[gg*12 +: 12]),
+							.p_tx_tag(w_tx_tag[gg*16 +: 16]), .p_tx_last(w_tx_l[gg]),
+							.p_tr_valid(w_tr_v[gg]), .p_tr_ready(w_tr_r[gg]), .p_tr_tag(w_tr_tag[gg*16 +: 16]),
+							.p_tr_data(w_tr_data[gg*512 +: 512]), .p_tr_last(w_tr_l[gg])
+						);
+					end
+				end
+			end
+		end else begin : g_sp_notu
+			assign tx_valid = 1'b0;
+			assign tx_op = 8'd0;
+			assign tx_slot = 4'd0;
+			assign tx_samp_slot = 4'd0;
+			assign tx_vs = 1'b0;
+			assign tx_mask = 4'd0;
+			assign tx_coord = 640'd0;
+			assign tx_off = 12'd0;
+			assign tx_tag = 16'd0;
+			assign tx_last = 1'b0;
+			assign tr_ready = 1'b1;
+			assign su_tx_ready_v = {NSU_V{1'b0}};
+			assign su_tr_valid_v = {NSU_V{1'b0}};
+			assign su_tr_tag_v = {(NSU_V*16){1'b0}};
+			assign su_tr_data_v = {(NSU_V*512){1'b0}};
+			assign su_tr_last_v = {NSU_V{1'b0}};
+			wire unused_sp_ntu = &{1'b0, tx_ready, tr_valid, tr_tag, tr_data, tr_last,
+				su_tx_valid_v, su_tx_op_v, su_tx_slot_v, su_tx_samp_slot_v, su_tx_vs_v,
+				su_tx_mask_v, su_tx_coord_v, su_tx_off_v, su_tx_tag_v, su_tx_last_v, su_tr_ready_v};
+		end
+
+		if (HAS_ROP != 0) begin : g_sp_rop
+			if (NG == 1) begin : g_rop_l1
+				wire [15:0] c_ex_next_w;
+				atg_ex_rt #(.K(NSU)) u_exrt (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_ex_valid(su_ex_valid_v), .c_ex_ready(su_ex_ready_v),
+					.c_ex_seq(su_ex_seq_v), .c_ex_xy(su_ex_xy_v), .c_ex_mask(su_ex_mask_v),
+					.c_ex_color(su_ex_color_v), .c_ex_color1(su_ex_color1_v),
+					.c_ex_has_src1(su_ex_has_src1_v), .c_ex_depth(su_ex_depth_v),
+					.c_ex_last(su_ex_last_v), .c_ex_aux(su_ex_aux_v), .c_ex_next(c_ex_next_w),
+					.p_ex_valid(ex_valid), .p_ex_ready(ex_ready),
+					.p_ex_seq(ex_seq), .p_ex_xy(ex_xy), .p_ex_mask(ex_mask),
+					.p_ex_color(ex_color), .p_ex_color1(ex_color1),
+					.p_ex_has_src1(ex_has_src1), .p_ex_depth(ex_depth),
+					.p_ex_last(ex_last), .p_ex_aux(ex_aux), .p_ex_next(ex_next)
+				);
+				assign su_ex_next_v = {NSU_V{c_ex_next_w}};
+			end else begin : g_rop_l2
+				wire [NG-1:0] w_ex_v, w_ex_r, w_ex_hs1, w_ex_l;
+				wire [NG*16-1:0] w_ex_seq; wire [NG*32-1:0] w_ex_xy; wire [NG*4-1:0] w_ex_mask;
+				wire [NG*512-1:0] w_ex_col, w_ex_col1; wire [NG*128-1:0] w_ex_dep; wire [NG*155-1:0] w_ex_aux;
+				wire [15:0] w_ex_next;
+				atg_ex_rt #(.K(NG)) u_exrt_root (
+					.clk(clk), .rst_n(core_rst_n),
+					.c_ex_valid(w_ex_v), .c_ex_ready(w_ex_r), .c_ex_seq(w_ex_seq),
+					.c_ex_xy(w_ex_xy), .c_ex_mask(w_ex_mask), .c_ex_color(w_ex_col),
+					.c_ex_color1(w_ex_col1), .c_ex_has_src1(w_ex_hs1), .c_ex_depth(w_ex_dep),
+					.c_ex_last(w_ex_l), .c_ex_aux(w_ex_aux), .c_ex_next(w_ex_next),
+					.p_ex_valid(ex_valid), .p_ex_ready(ex_ready), .p_ex_seq(ex_seq),
+					.p_ex_xy(ex_xy), .p_ex_mask(ex_mask), .p_ex_color(ex_color),
+					.p_ex_color1(ex_color1), .p_ex_has_src1(ex_has_src1), .p_ex_depth(ex_depth),
+					.p_ex_last(ex_last), .p_ex_aux(ex_aux), .p_ex_next(ex_next)
+				);
+				for (gg = 0; gg < NG; gg = gg + 1) begin : g_rop_grp
+					localparam GB = gg * 4;
+					localparam GS = (GB + 4 <= NSU) ? 4 : (NSU - GB);
+					if (GS == 1) begin : g_egs1
+						assign w_ex_v[gg] = su_ex_valid_v[GB];
+						assign su_ex_ready_v[GB] = w_ex_r[gg];
+						assign w_ex_seq[gg*16 +: 16] = su_ex_seq_v[GB*16 +: 16];
+						assign w_ex_xy[gg*32 +: 32] = su_ex_xy_v[GB*32 +: 32];
+						assign w_ex_mask[gg*4 +: 4] = su_ex_mask_v[GB*4 +: 4];
+						assign w_ex_col[gg*512 +: 512] = su_ex_color_v[GB*512 +: 512];
+						assign w_ex_col1[gg*512 +: 512] = su_ex_color1_v[GB*512 +: 512];
+						assign w_ex_hs1[gg] = su_ex_has_src1_v[GB];
+						assign w_ex_dep[gg*128 +: 128] = su_ex_depth_v[GB*128 +: 128];
+						assign w_ex_l[gg] = su_ex_last_v[GB];
+						assign w_ex_aux[gg*155 +: 155] = su_ex_aux_v[GB*155 +: 155];
+						assign su_ex_next_v[GB*16 +: 16] = w_ex_next;
+					end else begin : g_egsn
+						wire [15:0] g_ex_next;
+						atg_ex_rt #(.K(GS)) u_exrt_l2 (
+							.clk(clk), .rst_n(core_rst_n),
+							.c_ex_valid(su_ex_valid_v[GB +: GS]), .c_ex_ready(su_ex_ready_v[GB +: GS]),
+							.c_ex_seq(su_ex_seq_v[GB*16 +: GS*16]), .c_ex_xy(su_ex_xy_v[GB*32 +: GS*32]),
+							.c_ex_mask(su_ex_mask_v[GB*4 +: GS*4]), .c_ex_color(su_ex_color_v[GB*512 +: GS*512]),
+							.c_ex_color1(su_ex_color1_v[GB*512 +: GS*512]), .c_ex_has_src1(su_ex_has_src1_v[GB +: GS]),
+							.c_ex_depth(su_ex_depth_v[GB*128 +: GS*128]), .c_ex_last(su_ex_last_v[GB +: GS]),
+							.c_ex_aux(su_ex_aux_v[GB*155 +: GS*155]), .c_ex_next(g_ex_next),
+							.p_ex_valid(w_ex_v[gg]), .p_ex_ready(w_ex_r[gg]),
+							.p_ex_seq(w_ex_seq[gg*16 +: 16]), .p_ex_xy(w_ex_xy[gg*32 +: 32]),
+							.p_ex_mask(w_ex_mask[gg*4 +: 4]), .p_ex_color(w_ex_col[gg*512 +: 512]),
+							.p_ex_color1(w_ex_col1[gg*512 +: 512]), .p_ex_has_src1(w_ex_hs1[gg]),
+							.p_ex_depth(w_ex_dep[gg*128 +: 128]), .p_ex_last(w_ex_l[gg]),
+							.p_ex_aux(w_ex_aux[gg*155 +: 155]), .p_ex_next(w_ex_next)
+						);
+						for (gl = 0; gl < GS; gl = gl + 1) begin : g_ex_shr
+							assign su_ex_next_v[(GB+gl)*16 +: 16] = g_ex_next;
+						end
+					end
+				end
+			end
+		end else begin : g_sp_norop
+			assign ex_valid = 1'b0;
+			assign ex_seq = 16'd0;
+			assign ex_xy = 32'd0;
+			assign ex_mask = 4'd0;
+			assign ex_color = 512'd0;
+			assign ex_color1 = 512'd0;
+			assign ex_has_src1 = 1'b0;
+			assign ex_depth = 128'd0;
+			assign ex_last = 1'b0;
+			assign ex_aux = 155'd0;
+			assign su_ex_ready_v = {NSU_V{1'b0}};
+			assign su_ex_next_v = {(NSU_V*16){1'b0}};
+			wire unused_sp_nrp = &{1'b0, ex_ready, ex_next, su_ex_valid_v, su_ex_seq_v,
+				su_ex_xy_v, su_ex_mask_v, su_ex_color_v, su_ex_color1_v,
+				su_ex_has_src1_v, su_ex_depth_v, su_ex_last_v, su_ex_aux_v};
+		end
 	end
 
 	if (NSU > 0) begin : g_atom
@@ -1957,6 +2544,39 @@ module atg_top #(
 			.rsp_rdata(u_rsp_rdata[C_ATOM*LINE_BITS +: LINE_BITS]), .rsp_error(u_rsp_error[C_ATOM])
 		);
 	end else begin : g_no_su
+		assign spine_pt_scrub_busy = 1'b0;
+		assign su_vl_req_v = 1'b0;
+		assign su_vl_we_v = 1'b0;
+		assign su_vl_reg_v = 6'd0;
+		assign su_vl_lane_v = 5'd0;
+		assign su_vl_data_v = 32'd0;
+		assign su_vl_go_v = 1'b0;
+		assign su_vl_mask_v = 32'd0;
+		assign su_vl_go_ptbase_v = 8'd0;
+		assign su_fl_req_v = 1'b0;
+		assign su_fl_we_v = 1'b0;
+		assign su_fl_reg_v = 6'd0;
+		assign su_fl_lane_v = 5'd0;
+		assign su_fl_data_v = 32'd0;
+		assign su_fl_pw_we_v = 1'b0;
+		assign su_fl_pw_addr_v = 12'd0;
+		assign su_fl_pw_data_v = 32'd0;
+		assign su_fl_go_v = 1'b0;
+		assign su_fl_mask_v = 32'd0;
+		assign su_fl_info_v = 64'd0;
+		assign su_pt_rd_v = 1'b0;
+		assign su_pt_idx_v = 8'd0;
+		assign su_pt_word_v = 7'd0;
+		assign su_pt_free_v = 1'b0;
+		assign su_pt_free_idx_v = 8'd0;
+		assign su_pt_exp_ready_v = 1'b0;
+		assign su_tx_ready_v = 1'b0;
+		assign su_tr_valid_v = 1'b0;
+		assign su_tr_tag_v = 16'd0;
+		assign su_tr_data_v = 512'd0;
+		assign su_tr_last_v = 1'b0;
+		assign su_ex_ready_v = 1'b0;
+		assign su_ex_next_v = 16'd0;
 		assign su_at_stage = 2'd0;
 		assign su_busy = 1'b0;
 		assign su_fault = 1'b0;
@@ -2011,13 +2631,54 @@ module atg_top #(
 		assign su_mesh_tri = 702'd0;
 		assign su_mesh_last = 1'b0;
 		assign su_mesh_id = 16'd0;
+		assign su_vl_gnt_v = 1'b0;
+		assign su_vl_ptbase_v = 8'd0;
+		assign su_vl_avail_v = 1'b0;
+		assign su_fl_gnt_v = 1'b0;
+		assign su_fl_avail_v = 1'b0;
+		assign su_pt_rdata_v = 32'd0;
+		assign su_pt_done_v = 8'd0;
+		assign su_pt_exp_valid_v = 1'b0;
+		assign su_pt_exp_data_v = {SU_PT_W{1'b0}};
+		assign su_tx_valid_v = 1'b0;
+		assign su_tx_op_v = 8'd0;
+		assign su_tx_slot_v = 4'd0;
+		assign su_tx_samp_slot_v = 4'd0;
+		assign su_tx_vs_v = 1'b0;
+		assign su_tx_mask_v = 4'd0;
+		assign su_tx_coord_v = 640'd0;
+		assign su_tx_off_v = 12'd0;
+		assign su_tx_tag_v = 16'd0;
+		assign su_tx_last_v = 1'b0;
+		assign su_tr_ready_v = 1'b0;
+		assign su_ex_valid_v = 1'b0;
+		assign su_ex_seq_v = 16'd0;
+		assign su_ex_xy_v = 32'd0;
+		assign su_ex_mask_v = 4'd0;
+		assign su_ex_color_v = 512'd0;
+		assign su_ex_color1_v = 512'd0;
+		assign su_ex_has_src1_v = 1'b0;
+		assign su_ex_depth_v = 128'd0;
+		assign su_ex_last_v = 1'b0;
+		assign su_ex_aux_v = 155'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,
 			fl_pw_data, fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
 			tx_ready, tr_valid, tr_tag, tr_data, tr_last, ex_ready, ex_next, sa_push_ready,
 			sa_pop_valid, sa_pop_data, sa_qstat, sa_stat, sa_qtag, at_ready, at_rsp_valid,
 			at_old, at_error, su_busy_v, su_fault_v, su_fault_addr_v, at_valid, at_op, at_addr,
-			at_a, at_b, su_mesh_ready};
+			at_a, at_b, su_mesh_ready, su_vl_req_v, su_vl_gnt_v, su_vl_ptbase_v, su_vl_avail_v,
+			su_vl_we_v, su_vl_reg_v, su_vl_lane_v, su_vl_data_v, su_vl_go_v, su_vl_mask_v,
+			su_vl_go_ptbase_v, su_fl_req_v, su_fl_gnt_v, su_fl_avail_v, su_fl_we_v, su_fl_reg_v,
+			su_fl_lane_v, su_fl_data_v, su_fl_pw_we_v, su_fl_pw_addr_v, su_fl_pw_data_v,
+			su_fl_go_v, su_fl_mask_v, su_fl_info_v, su_pt_rd_v, su_pt_idx_v, su_pt_word_v,
+			su_pt_rdata_v, su_pt_free_v, su_pt_free_idx_v, su_pt_done_v, su_pt_exp_valid_v,
+			su_pt_exp_ready_v, su_pt_exp_data_v, su_tx_valid_v, su_tx_ready_v, su_tx_op_v,
+			su_tx_slot_v, su_tx_samp_slot_v, su_tx_vs_v, su_tx_mask_v, su_tx_coord_v, su_tx_off_v,
+			su_tx_tag_v, su_tx_last_v, su_tr_valid_v, su_tr_ready_v, su_tr_tag_v, su_tr_data_v,
+			su_tr_last_v, su_ex_valid_v, su_ex_ready_v, su_ex_seq_v, su_ex_xy_v, su_ex_mask_v,
+			su_ex_color_v, su_ex_color1_v, su_ex_has_src1_v, su_ex_depth_v, su_ex_last_v,
+			su_ex_next_v, su_ex_aux_v};
 	end
 	endgenerate
 

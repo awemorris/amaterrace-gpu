@@ -27,7 +27,9 @@ module atg_su_sched #(
 	parameter SU_INDEX = 0,	/* This SU's number */
 	parameter FRAG_RESERVE = 1,	/* Slots kept for fragment warps (design §3.8; KC705 2) */
 	parameter GTO = 1,	/* Scheduling policy: 1 = Greedy-Then-Oldest, 0 = Round-Robin */
-	parameter USE_QW_REP = 0	/* 1: use 4-slice replicated q_warp_rep */
+	parameter USE_QW_REP = 0,	/* 1: use 4-slice replicated q_warp_rep */
+	parameter HAS_GFX = 1,	/* 1: vertex/fragment scheduling enabled; 0: compute-only */
+	parameter SHARED_PT = 0	/* 1: shared Spine PT; ignore local pt_ok */
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -42,12 +44,14 @@ module atg_su_sched #(
 	input wire vl_req,
 	output wire vl_gnt,
 	output wire [WARP_W-1:0] vl_slot,
+	output wire vl_avail,
 	input wire vl_go,
 	input wire [31:0] vl_mask,
 	/* Fragment warp allocation (RX, via atg_su ports fl_*) */
 	input wire fl_req,
 	output wire fl_gnt,
 	output wire [WARP_W-1:0] fl_slot,
+	output wire fl_avail,
 	input wire fl_go,
 	input wire [31:0] fl_mask,
 	input wire [63:0] fl_info,
@@ -260,14 +264,28 @@ module atg_su_sched #(
 	reg [WARP_W-1:0] vl_s, fl_s;
 	(* keep = "true" *) wire cs_try  = cs_act && !launching && mine_wg && n_free_ge_nw;
 	(* keep = "true" *) wire cs_skip = cs_act && !launching && !mine_wg;
-	wire fl_req_can = fl_req && !fl_wait && any_free;
-	wire vl_req_can = vl_req && !vl_wait && pt_ok && n_free_gt_frag;
+	wire fl_req_can = (HAS_GFX != 0) && fl_req && !fl_wait && any_free;
+	wire vl_req_can = (HAS_GFX != 0) && vl_req && !vl_wait && (SHARED_PT != 0 ? 1'b1 : pt_ok) && n_free_gt_frag;
 	wire fl_g = fl_req_can && !launching && !cs_try;
 	wire vl_g = vl_req_can && !fl_req_can && !launching && !cs_try;
 	assign fl_gnt = fl_gnt_r;
 	assign vl_gnt = vl_gnt_r;
 	assign fl_slot = fl_s;
 	assign vl_slot = vl_s;
+
+	reg vl_avail_r, fl_avail_r;
+	always @(posedge clk or negedge rst_n) begin
+		if (!rst_n) begin
+			vl_avail_r <= 1'b0;
+			fl_avail_r <= 1'b0;
+		end else begin
+			vl_avail_r <= (HAS_GFX != 0) && !vl_wait && (SHARED_PT != 0 ? 1'b1 : pt_ok) &&
+				n_free_gt_frag && !vl_g && !launching && !cs_try;
+			fl_avail_r <= (HAS_GFX != 0) && !fl_wait && any_free && !fl_g && !launching && !cs_try;
+		end
+	end
+	assign vl_avail = vl_avail_r;
+	assign fl_avail = fl_avail_r;
 
 	/* Initial EXEC: vertex/fragment go, else the next compute warp (0 CARRY4s, fanout <= 16). */
 	reg [31:0] lmask;	/* (1 << lanes_r[4:0]) - 1 */
@@ -817,7 +835,7 @@ module atg_su_sched #(
 
 	wire unused_ok = &{1'b0, fl_info[63:49], wk[3], lanes_r[23:9], rot1[8], slot_rdy_nogap,
 		w_fa_co_unused, wdata_m1_bo_unused, ix_co_unused, iy_co_unused, iz_co_unused,
-		rot_co_unused, unused_fsel_mux, rr, (NSU != 0)};
+		rot_co_unused, unused_fsel_mux, rr, pt_ok, (NSU != 0)};
 endmodule
 
 `default_nettype wire

@@ -86,7 +86,8 @@ module atg_ex_rt #(
 		end
 	endgenerate
 
-	wire [K-1:0] cand = (|sk_match_next) ? sk_match_next : sk_v;
+	/* Only forward quads matching p_ex_next to prevent head-of-line stalling atg_rop_order. */
+	wire [K-1:0] cand = sk_match_next;
 
 	reg          lock;
 	reg [KW-1:0] owner, last_won;
@@ -104,7 +105,7 @@ module atg_ex_rt #(
 	end
 
 	wire [KW-1:0] pick = lock ? owner : rr_pick;
-	wire pick_valid = lock ? sk_v[owner] : (|sk_v);
+	wire pick_valid = lock ? sk_v[owner] : (|sk_match_next);
 	wire pick_last  = sk_last[pick];
 
 	wire out_in_ready;

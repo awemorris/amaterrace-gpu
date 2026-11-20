@@ -290,7 +290,8 @@ bool query_caps(uint32_t ring_base, uint32_t caps_buf, uint32_t fence_addr, uint
 		}
 	}
 	host_write(GHCI_CTRL, GHCI_CTRL_RESET);
-	wait_clear(GHCI_CTRL_RESET);
+	for (int i = 0; i < 100000 && (GHCI_STATUS_CP_STATE(host_read(GHCI_STATUS)) == GHCI_LC_RESETTING || (host_read(GHCI_CTRL) & GHCI_CTRL_RESET)); i++)
+		;
 	if (!ok) {
 		std::printf("FAIL verilator: CMD_QUERY_CAPS timeout\n");
 		errors++;
