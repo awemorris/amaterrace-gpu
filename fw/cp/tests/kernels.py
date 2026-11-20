@@ -27,10 +27,7 @@ def run(name, words):
     mem = os.path.join(OUT, name + '.mem')
     texels = WIDTH * HEIGHT
     groups = (texels + 63) // 64
-    gsi1model = os.path.join(ROOT, 'plan', 'tools', 'gsi1model.py')
-    if not os.path.exists(gsi1model):
-        sys.stderr.write('kernels.py: plan/tools/gsi1model.py not present (private plan repository unavailable); cannot run compute kernels\n')
-        sys.exit(1)
+    gsi1model = os.path.join(ROOT, 'mk', 'gsi1model.py')
     subprocess.run([sys.executable, '-I', gsi1model,
                     os.path.join(ROOT, 'fw', 'cp', 'programs', name + '.s'), '--lanes', '64',
                     '--groups', str(groups), '--nregs', '64', '--data', data,
