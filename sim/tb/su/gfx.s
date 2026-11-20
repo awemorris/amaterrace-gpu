@@ -1,3 +1,8 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test (sim/tb/atg_su_gfx_tb.v): one program for a vertex warp (slot 0)
 # and three fragment warps (slots 1-3) started through vl_*/fl_* with
 # r0-r5 already written (fragment: b0, b1, b2, z, x + 0.5, y + 0.5 of the
@@ -8,6 +13,7 @@
 # (scratch memory) stores from them too.  Also the
 # packed arithmetic (PACKED) and the export targets of both warp kinds.
 # Needs SUBGROUP and PACKED.
+
 	slli r6, warp, 7
 	slli r7, lane, 2
 	add r6, r6, r7

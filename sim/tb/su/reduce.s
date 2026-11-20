@@ -1,3 +1,8 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: reduction of 256 fp32 values a[0..255] (0x8400) by one workgroup
 # of 128 lanes: each lane adds a[lidn] and a[lidn + 128], then a tree in LDS
 # with a barrier per level; lane 0 stores the sum at 0x9000.  Every lane
@@ -5,6 +10,7 @@
 # the shared-memory atomics (atoms): every operation on a private LDS word
 # per lane, two lanes (l and l + 8) on one word in lane order, and all 128
 # lanes adding lidn to one LDS word (8128 after a barrier).
+
 	slli r1, lidn, 2
 	movi r2, 0x8400
 	add r2, r2, r1

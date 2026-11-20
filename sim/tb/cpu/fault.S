@@ -1,8 +1,15 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
+#
 # atg_cpu_core fault test.  The testbench writes the case number to DMEM
 # 0x20000 before reset; the program jumps to case n at 0x100 + 16 n,
 # whose first instruction faults (case 7: the jump lands outside IMEM).
 # The store to TOHOST after each must never happen.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#
+	
 	.section .text.start
 	.globl _start
 _start:

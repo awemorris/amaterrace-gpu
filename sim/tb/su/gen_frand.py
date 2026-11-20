@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
+
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # Writes frand.s: a seeded random float program for the SU testbench: fp32
 # arithmetic with random rounding modes, modifiers and sat, compares,
 # conversions, fround/fract, the integer multiplies, the transcendentals and
 # the divider (long results right before their use: the scoreboard), sel and
 # masked sections; specials (0, -0, inf, NaN, denormals, huge) in some lanes.
 # Run by su-tests.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 import random
 import sys
 

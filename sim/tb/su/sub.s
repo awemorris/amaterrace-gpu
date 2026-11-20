@@ -1,7 +1,13 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: the lane unit: qd, and the subgroup instructions (shfl in every
 # mode with in-range, out-of-range and non-EXEC sources, vote, ballot) with
 # EXEC full, partial and empty, back to back and in dependent chains.
 # Needs SUBGROUP (an ISA fault at the first shfl without it).
+
 	slli r2, lidn, 2
 	movi r3, 0x8000
 	add r2, r2, r3

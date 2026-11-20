@@ -54,6 +54,22 @@ module atg_top #(
 	parameter TU_BILINEAR = 0,
 `endif
 	/* Which blocks are present (design §7.6; 0 = absent). */
+`ifdef CFG_USE_PRESET_DEFAULTS
+	parameter HAS_CPU = `ifdef CFG_CP_USE_RV32_CORE (`CFG_CP_USE_RV32_CORE != 0) `else 0 `endif,
+	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
+	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
+	parameter CPU_IMEM_WORDS = 8192,	/* its IMEM in 32-bit words (KC705: 32768, 128 KiB) */
+	parameter CPU_DMEM_WORDS = 4096,	/* its DMEM in words (KC705: 8192, 32 KiB) */
+	parameter NSU = `ifdef CFG_NSU `CFG_NSU `else 0 `endif,	/* shader units */
+	parameter HAS_VF = `ifdef CFG_HAS_VF (`CFG_HAS_VF != 0) `else 0 `endif,	/* vertex fetcher */
+	parameter HAS_RX = `ifdef CFG_HAS_RX (`CFG_HAS_RX != 0) `else 0 `endif,	/* rasterizer */
+	parameter HAS_TU = `ifdef CFG_HAS_TU (`CFG_HAS_TU != 0) `else 0 `endif,	/* texture unit */
+	parameter HAS_ROP = `ifdef CFG_HAS_ROP (`CFG_HAS_ROP != 0) `else 0 `endif,	/* buffer writer */
+	parameter HAS_SA = 0,	/* systolic array: reserved, 0 in v1 (design §3.9) */
+	parameter EXT_CLIENT = 0,	/* one more MC client outside (the KC705's DC), high priority */
+	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
+	parameter HAS_DISP = `ifdef CFG_HAS_DISP (`CFG_HAS_DISP != 0) `else 0 `endif,
+`else
 	parameter HAS_CPU = 0,	/* atg_cpu, the CP's firmware processor */
 	parameter CPU_IMEM_INIT = "",	/* its IMEM image ($readmemh) */
 	parameter CPU_DMEM_INIT = "",	/* its DMEM image */
@@ -69,6 +85,7 @@ module atg_top #(
 	parameter HAS_JTAG = 0,	/* a second register-bus master (am_jtag_regs, KC705) */
 	parameter HAS_DISP = 0,	/* the display controller atg_dc, a unit of the GPU (KC705): its
 				 * registers in the CP's DISP2 window (0x200), MC client C_DC (not with EXT_CLIENT) */
+`endif
 	parameter DC_HAS_I2C = 0,	/* atg_dc's I2C master (the KC705's ADV7511) */
 `ifdef CFG_DC_ENABLE_CURSOR
 	parameter DC_HAS_CURSOR = (`CFG_DC_ENABLE_CURSOR != 0),
@@ -233,13 +250,27 @@ module atg_top #(
 `endif
 	parameter HAS_INDIRECT_DRAW = 0,
 	parameter HAS_SECONDARY_RING = 0,
+`ifdef CFG_USE_PRESET_DEFAULTS
+	parameter HAS_HW_WALKER = `ifdef CFG_CP_AUTONOMOUS_MMU (`CFG_CP_AUTONOMOUS_MMU != 0) `else 0 `endif,
+`else
 	parameter HAS_HW_WALKER = 0,
+`endif
 	/* The SUs' shape (design §3.7). */
 `ifdef CFG_SU_NPHYS
 	parameter SU_NPHYS = `CFG_SU_NPHYS,
 `else
 	parameter SU_NPHYS = 8,	/* Physical lanes of an SU: 4, 8, 16 or 32 */
 `endif
+`ifdef CFG_USE_PRESET_DEFAULTS
+	parameter SU_NWARPS = `ifdef CFG_SU_NWARPS `CFG_SU_NWARPS `else 4 `endif,
+	parameter SU_WARP_W = (SU_NWARPS > 4) ? 3 : 2,
+`ifdef CFG_SU_GRP_W
+	parameter SU_GRP_W = `CFG_SU_GRP_W,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
+`else
+	parameter SU_GRP_W = 2,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
+`endif
+	parameter SU_NREGS = `ifdef CFG_SU_NREGS `CFG_SU_NREGS `else 32 `endif,
+`else
 	parameter SU_NWARPS = 4,
 	parameter SU_WARP_W = 2,	/* log2(SU_NWARPS) */
 `ifdef CFG_SU_GRP_W
@@ -248,6 +279,7 @@ module atg_top #(
 	parameter SU_GRP_W = 2,	/* log2(32/SU_NPHYS), 1 for SU_NPHYS 32 */
 `endif
 	parameter SU_NREGS = 32,
+`endif
 	parameter SU_SB_ENTRIES = 4,
 	parameter SU_SBE_W = 2,	/* log2(SU_SB_ENTRIES) */
 `ifdef CFG_ENABLE_FP16
@@ -285,9 +317,20 @@ module atg_top #(
 `else
 	parameter USE_NOC_FABRIC = 0,
 `endif
+`ifdef CFG_USE_PRESET_DEFAULTS
+	parameter HAS_L2 = `ifdef CFG_MC_L2_CACHE_KB (`CFG_MC_L2_CACHE_KB != 0) `else 0 `endif,
+	parameter L2_WAYS = `ifdef CFG_MC_L2_WAYS `CFG_MC_L2_WAYS `else 16 `endif,
+`ifdef CFG_MC_L2_CACHE_KB
+	parameter L2_SET_W = (`CFG_MC_L2_CACHE_KB != 0) ?
+		$clog2((((`CFG_MC_L2_CACHE_KB != 0 ? `CFG_MC_L2_CACHE_KB : 16) * 1024) / (LINE_BYTES * (`ifdef CFG_MC_L2_WAYS `CFG_MC_L2_WAYS `else 8 `endif)))) : 8
+`else
+	parameter L2_SET_W = 8
+`endif
+`else
 	parameter HAS_L2 = 0,
 	parameter L2_WAYS = 16,
 	parameter L2_SET_W = 8
+`endif
 ) (
 	input wire clk,
 	input wire rst_n,
@@ -429,8 +472,14 @@ module atg_top #(
 	localparam C_DC = C_EXT;	/* the DC takes the outside client's place (HAS_DISP) */
 	localparam [7:0] C_DC8 = C_DC;
 	localparam HAS_EXT = EXT_CLIENT != 0 || HAS_DISP != 0;
-	localparam C_SU = C_EXT + (HAS_EXT ? 1 : 0);	/* SU k: C_SU+2k (D$), C_SU+2k+1 (I$) */
-	localparam NCLIENT = C_SU + 2 * NSU;
+	localparam C_SU = C_EXT + (HAS_EXT ? 1 : 0);	/* SU/trunk base MC client index */
+	localparam SU_NOC_ACTIVE = (NSU > 0) && ((USE_NOC_FABRIC != 0) || (NSU > 2));
+	localparam SU_TRUNKS = (NSU == 0) ? 0 :
+	                       (!SU_NOC_ACTIVE ? (2 * NSU) :
+	                       ((NSU >= 128) ? 8 : ((NSU >= 16) ? 4 : ((NSU >= 8) ? 2 : 1))));
+	localparam ATOM_PORTS = (NSU == 0 || SU_NOC_ACTIVE) ? 1 : NSU;
+	localparam SU_STAT_PORTS = (NSU == 0 || SU_NOC_ACTIVE) ? 1 : NSU;
+	localparam NCLIENT = C_SU + SU_TRUNKS;
 	localparam [NCLIENT-1:0] HIGH = {{(NCLIENT-1){1'b0}}, 1'b1} |
 		({{(NCLIENT-1){1'b0}}, HAS_EXT} << C_EXT);
 	localparam UNIT_ADDR_W = (HAS_HW_WALKER != 0) ? VA_BITS : ((VA_BITS < 32) ? 32 : VA_BITS);
@@ -759,6 +808,7 @@ module atg_top #(
 	wire [NCLIENT-1:0] u_req_valid;
 	wire [NCLIENT-1:0] u_req_ready;
 	wire [NCLIENT-1:0] u_req_write;
+	wire [NCLIENT-1:0] u_req_exec;
 	wire [NCLIENT*UNIT_LA_W-1:0] u_req_line;
 	wire [NCLIENT*LINE_BYTES-1:0] u_req_be;
 	wire [NCLIENT*LINE_BITS-1:0] u_req_wdata;
@@ -779,7 +829,7 @@ module atg_top #(
 	localparam MMU_ATOM = MMU_ROP + ((HAS_ROP != 0) ? 1 : 0);
 	localparam MMU_SA   = MMU_ATOM + ((HAS_ATOM != 0) ? 1 : 0);
 	localparam MMU_SU   = MMU_SA + ((HAS_SA != 0) ? 1 : 0);
-	localparam MMU_NCLIENTS_RAW = MMU_SU + 2 * NSU;
+	localparam MMU_NCLIENTS_RAW = MMU_SU + SU_TRUNKS;
 	localparam MMU_NCLIENTS = (MMU_NCLIENTS_RAW > 0) ? MMU_NCLIENTS_RAW : 1;
 	localparam MMU_FC_W = (MMU_NCLIENTS > 8) ? 4 : 3;
 
@@ -1129,7 +1179,7 @@ module atg_top #(
 		.L2_SET_W(L2_SET_W),
 		.USE_FLUSH_REP(1),
 		.HAS_MMU_WALK(HAS_HW_WALKER != 0 ? 1 : 0),
-		.USE_NOC_FABRIC(USE_NOC_FABRIC != 0 ? 1 : 0),
+		.USE_NOC_FABRIC(SU_NOC_ACTIVE ? 1 : 0),
 		.SU_BASE(C_SU)
 	) mc (
 		.clk(clk),
@@ -1469,19 +1519,19 @@ module atg_top #(
 	wire [DW-1:0] sa_push_data, sa_pop_data;
 	wire [31:0] sa_ctl_data, sa_qstat, sa_stat, sa_qtag;
 	/* SUs ↔ the atomic unit. */
-	wire [(NSU > 0 ? NSU : 1)-1:0] at_valid, at_ready, at_rsp_valid;
-	wire [(NSU > 0 ? NSU : 1)*4-1:0] at_op;
-	wire [(NSU > 0 ? NSU : 1)*30-1:0] at_addr;
-	wire [(NSU > 0 ? NSU : 1)*32-1:0] at_a, at_b;
+	wire [ATOM_PORTS-1:0] at_valid, at_ready, at_rsp_valid;
+	wire [ATOM_PORTS*4-1:0] at_op;
+	wire [ATOM_PORTS*30-1:0] at_addr;
+	wire [ATOM_PORTS*32-1:0] at_a, at_b;
 	wire [31:0] at_old;
 	wire at_error;
-	wire [(NSU > 0 ? NSU : 1)-1:0] su_busy_v, su_fault_v, su_scrub_v;
+	wire [SU_STAT_PORTS-1:0] su_busy_v, su_fault_v, su_scrub_v;
 	wire spine_pt_scrub_busy;
 	assign su_scrub_any = (NSU > 0 && |su_scrub_v) || spine_pt_scrub_busy;
-	wire [(NSU > 0 ? NSU : 1)*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
-	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fault_stage_v;	/* each SU's fault stage */
-	wire [(NSU > 0 ? NSU : 1)*2-1:0] su_at_stage;
-	wire [(NSU > 0 ? NSU : 1)*4-1:0] su_fsm_v;
+	wire [SU_STAT_PORTS*32-1:0] su_fault_addr_v;	/* each SU's fault PC */
+	wire [SU_STAT_PORTS*4-1:0] su_fault_stage_v;	/* each SU's fault stage */
+	wire [ATOM_PORTS*2-1:0] su_at_stage;
+	wire [SU_STAT_PORTS*4-1:0] su_fsm_v;
 	wire [3:0] su_fsm = NSU > 0 ? su_fsm_v[3:0] : 4'd0;
 	wire [7:0] pipe_busy_mask = {blt_busy, sa_busy, su_busy, tu_busy, rop_busy, rx_busy, vf_busy, !mc_unit_idle};
 	assign diag_pipe_fsm = {pipe_busy_mask, blt_fsm, mc_fsm, su_fsm, rop_fsm, rx_fsm, vf_fsm};
@@ -1789,48 +1839,49 @@ module atg_top #(
 	localparam NSU_V = (NSU > 0) ? NSU : 1;
 	localparam SU_PT_ENTRIES = (NSU >= 8) ? 256 : ((NSU >= 4) ? 128 : 64);
 
-	/* Packed per-SU fabric vectors */
-	wire [NSU_V-1:0] su_vl_req_v, su_vl_gnt_v, su_vl_avail_v, su_vl_we_v, su_vl_go_v;
-	wire [NSU_V*8-1:0] su_vl_ptbase_v, su_vl_go_ptbase_v;
-	wire [NSU_V*6-1:0] su_vl_reg_v;
-	wire [NSU_V*5-1:0] su_vl_lane_v;
-	wire [NSU_V*32-1:0] su_vl_data_v, su_vl_mask_v;
-
-	wire [NSU_V-1:0] su_fl_req_v, su_fl_gnt_v, su_fl_avail_v, su_fl_we_v, su_fl_pw_we_v, su_fl_go_v;
-	wire [NSU_V*6-1:0] su_fl_reg_v;
-	wire [NSU_V*5-1:0] su_fl_lane_v;
-	wire [NSU_V*32-1:0] su_fl_data_v, su_fl_pw_data_v, su_fl_mask_v;
-	wire [NSU_V*12-1:0] su_fl_pw_addr_v;
-	wire [NSU_V*64-1:0] su_fl_info_v;
-
-	wire [NSU_V-1:0] su_pt_rd_v, su_pt_free_v;
-	wire [NSU_V*8-1:0] su_pt_idx_v, su_pt_free_idx_v, su_pt_done_v;
-	wire [NSU_V*7-1:0] su_pt_word_v;
-	wire [NSU_V*32-1:0] su_pt_rdata_v;
-
-	wire [NSU_V-1:0] su_pt_exp_valid_v, su_pt_exp_ready_v;
-	wire [NSU_V*SU_PT_W-1:0] su_pt_exp_data_v;
-
-	wire [NSU_V-1:0] su_tx_valid_v, su_tx_ready_v, su_tx_vs_v, su_tx_last_v;
-	wire [NSU_V*8-1:0] su_tx_op_v;
-	wire [NSU_V*4-1:0] su_tx_slot_v, su_tx_samp_slot_v, su_tx_mask_v;
-	wire [NSU_V*640-1:0] su_tx_coord_v;
-	wire [NSU_V*12-1:0] su_tx_off_v;
-	wire [NSU_V*16-1:0] su_tx_tag_v;
-	wire [NSU_V-1:0] su_tr_valid_v, su_tr_ready_v, su_tr_last_v;
-	wire [NSU_V*16-1:0] su_tr_tag_v;
-	wire [NSU_V*512-1:0] su_tr_data_v;
-
-	wire [NSU_V-1:0] su_ex_valid_v, su_ex_ready_v, su_ex_has_src1_v, su_ex_last_v;
-	wire [NSU_V*16-1:0] su_ex_seq_v, su_ex_next_v;
-	wire [NSU_V*32-1:0] su_ex_xy_v;
-	wire [NSU_V*4-1:0] su_ex_mask_v;
-	wire [NSU_V*512-1:0] su_ex_color_v, su_ex_color1_v;
-	wire [NSU_V*128-1:0] su_ex_depth_v;
-	wire [NSU_V*155-1:0] su_ex_aux_v;
-
-	genvar k, gs, gg, gl;
+	genvar k, gs, gg, gl, gt;
 	generate
+	if (NSU > 0 && !SU_NOC_ACTIVE) begin : g_su_legacy_xbar
+		/* Packed per-SU fabric vectors (flat crossbar for FPGA NSU <= 2) */
+		wire [NSU_V-1:0] su_vl_req_v, su_vl_gnt_v, su_vl_avail_v, su_vl_we_v, su_vl_go_v;
+		wire [NSU_V*8-1:0] su_vl_ptbase_v, su_vl_go_ptbase_v;
+		wire [NSU_V*6-1:0] su_vl_reg_v;
+		wire [NSU_V*5-1:0] su_vl_lane_v;
+		wire [NSU_V*32-1:0] su_vl_data_v, su_vl_mask_v;
+
+		wire [NSU_V-1:0] su_fl_req_v, su_fl_gnt_v, su_fl_avail_v, su_fl_we_v, su_fl_pw_we_v, su_fl_go_v;
+		wire [NSU_V*6-1:0] su_fl_reg_v;
+		wire [NSU_V*5-1:0] su_fl_lane_v;
+		wire [NSU_V*32-1:0] su_fl_data_v, su_fl_pw_data_v, su_fl_mask_v;
+		wire [NSU_V*12-1:0] su_fl_pw_addr_v;
+		wire [NSU_V*64-1:0] su_fl_info_v;
+
+		wire [NSU_V-1:0] su_pt_rd_v, su_pt_free_v;
+		wire [NSU_V*8-1:0] su_pt_idx_v, su_pt_free_idx_v, su_pt_done_v;
+		wire [NSU_V*7-1:0] su_pt_word_v;
+		wire [NSU_V*32-1:0] su_pt_rdata_v;
+
+		wire [NSU_V-1:0] su_pt_exp_valid_v, su_pt_exp_ready_v;
+		wire [NSU_V*SU_PT_W-1:0] su_pt_exp_data_v;
+
+		wire [NSU_V-1:0] su_tx_valid_v, su_tx_ready_v, su_tx_vs_v, su_tx_last_v;
+		wire [NSU_V*8-1:0] su_tx_op_v;
+		wire [NSU_V*4-1:0] su_tx_slot_v, su_tx_samp_slot_v, su_tx_mask_v;
+		wire [NSU_V*640-1:0] su_tx_coord_v;
+		wire [NSU_V*12-1:0] su_tx_off_v;
+		wire [NSU_V*16-1:0] su_tx_tag_v;
+		wire [NSU_V-1:0] su_tr_valid_v, su_tr_ready_v, su_tr_last_v;
+		wire [NSU_V*16-1:0] su_tr_tag_v;
+		wire [NSU_V*512-1:0] su_tr_data_v;
+
+		wire [NSU_V-1:0] su_ex_valid_v, su_ex_ready_v, su_ex_has_src1_v, su_ex_last_v;
+		wire [NSU_V*16-1:0] su_ex_seq_v, su_ex_next_v;
+		wire [NSU_V*32-1:0] su_ex_xy_v;
+		wire [NSU_V*4-1:0] su_ex_mask_v;
+		wire [NSU_V*512-1:0] su_ex_color_v, su_ex_color1_v;
+		wire [NSU_V*128-1:0] su_ex_depth_v;
+		wire [NSU_V*155-1:0] su_ex_aux_v;
+
 	for (k = 0; k < NSU; k = k + 1) begin : g_su
 		localparam CD = C_SU + 2 * k;
 		localparam CI = C_SU + 2 * k + 1;
@@ -2502,6 +2553,224 @@ module atg_top #(
 				su_ex_has_src1_v, su_ex_depth_v, su_ex_last_v, su_ex_aux_v};
 		end
 	end
+	end else if (NSU > 0 && SU_NOC_ACTIVE) begin : g_su_noc_fabric
+		/* Unified 2D Fat-Tree NoC fabrics (N = 1, 2, 4, 8, 16, 32, 64, 128) */
+		localparam FAB_SU_RW = (NSU >= 64) ? 5 :
+		                       ((NSU >= 32) ? 4 :
+		                       ((NSU >= 4) ? 3 :
+		                       ((NSU >= 2) ? 2 : 1)));
+		localparam FAB_FW = LINE_BYTES * 8;
+		localparam FAB_RFW = LINE_BYTES * 8 + 10 + FAB_SU_RW;
+
+		wire fab_vl_req, fab_vl_gnt, fab_vl_avail;
+		wire [7:0] fab_vl_ptbase, fab_vl_go_ptbase;
+		wire fab_fl_req, fab_fl_gnt, fab_fl_avail;
+		wire fab_pt_rd, fab_pt_free;
+		wire [7:0] fab_pt_idx, fab_pt_free_idx, fab_pt_done;
+		wire [6:0] fab_pt_word;
+		wire [31:0] fab_pt_rdata;
+		wire fab_pt_exp_valid, fab_pt_exp_ready;
+		wire [SU_PT_W-1:0] fab_pt_exp_packed;
+
+		wire [SU_TRUNKS-1:0] fab_trunk_req_valid, fab_trunk_req_ready, fab_trunk_req_last;
+		wire [SU_TRUNKS*FAB_FW-1:0] fab_trunk_req_data;
+		wire [SU_TRUNKS-1:0] fab_trunk_rsp_valid, fab_trunk_rsp_ready;
+		wire [SU_TRUNKS*FAB_RFW-1:0] fab_trunk_rsp_data;
+
+		if (NSU == 1) begin : g_fab_sp_1
+			assign spine_pt_scrub_busy = 1'b0;
+			assign fab_vl_req = vl_req;
+			assign vl_gnt = fab_vl_gnt;
+			assign vl_ptbase = fab_vl_ptbase;
+			assign fab_vl_go_ptbase = 8'd0;
+			assign fab_fl_req = fl_req;
+			assign fl_gnt = fab_fl_gnt;
+			assign fab_pt_rd = pt_rd;
+			assign fab_pt_idx = pt_idx;
+			assign fab_pt_word = pt_word;
+			assign pt_rdata = fab_pt_rdata;
+			assign fab_pt_free = pt_free;
+			assign fab_pt_free_idx = pt_free_idx;
+			assign pt_done = fab_pt_done;
+			assign fab_pt_exp_ready = 1'b1;
+			wire unused_fab1 = &{1'b0, fab_vl_avail, fab_fl_avail, fab_pt_exp_valid, fab_pt_exp_packed};
+		end else if (SU_HAS_GFX != 0) begin : g_fab_sp_gfx
+			wire spine_pt_ok;
+			wire [7:0] spine_pt_base;
+			wire sp_pt_exp_end;
+			wire [2:0] sp_pt_exp_blk;
+			wire [SU_GRP_W-1:0] sp_pt_exp_grp;
+			wire [6:0] sp_pt_exp_word;
+			wire [SU_NPHYS-1:0] sp_pt_exp_mask;
+			wire [DW-1:0] sp_pt_exp_wdata;
+			assign {sp_pt_exp_end, sp_pt_exp_blk, sp_pt_exp_grp, sp_pt_exp_word, sp_pt_exp_mask, sp_pt_exp_wdata} = fab_pt_exp_packed;
+
+			reg spine_vl_wait;
+			reg [7:0] vl_ptbase_hold;
+			always @(posedge clk or negedge core_rst_n) begin
+				if (!core_rst_n) begin
+					spine_vl_wait <= 1'b0;
+					vl_ptbase_hold <= 8'd0;
+				end else begin
+					if (fab_vl_gnt) begin
+						spine_vl_wait <= 1'b1;
+						vl_ptbase_hold <= spine_pt_base;
+					end else if (vl_go) begin
+						spine_vl_wait <= 1'b0;
+					end
+				end
+			end
+
+			assign vl_gnt = fab_vl_gnt;
+			assign vl_ptbase = spine_pt_base;
+			assign fab_vl_req = vl_req && spine_pt_ok && !spine_vl_wait;
+			assign fab_vl_go_ptbase = vl_ptbase_hold;
+			assign fab_fl_req = fl_req;
+			assign fl_gnt = fab_fl_gnt;
+			assign fab_pt_rd = 1'b0;
+			assign fab_pt_idx = 8'd0;
+			assign fab_pt_word = 7'd0;
+			assign fab_pt_free = 1'b0;
+			assign fab_pt_free_idx = 8'd0;
+
+			atg_su_pt #(
+				.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W),
+				.UOP_W(108), .PT_ENTRIES(SU_PT_ENTRIES), .VARY_WORDS(SU_VARY_WORDS), .SHARED_PT(1)
+			) spine_pt (
+				.clk(clk), .rst_n(core_rst_n),
+				.x_valid(1'b0), .x_warp({SU_WARP_W{1'b0}}), .x_grp({SU_GRP_W{1'b0}}),
+				.x_uop(108'd0), .x_b({DW{1'b0}}), .x_mask({(2*SU_NPHYS){1'b0}}), .x_info(32'd0),
+				.pt_exp_valid(fab_pt_exp_valid), .pt_exp_ready(fab_pt_exp_ready),
+				.pt_exp_end(sp_pt_exp_end), .pt_exp_blk(sp_pt_exp_blk),
+				.pt_exp_grp(sp_pt_exp_grp), .pt_exp_word(sp_pt_exp_word),
+				.pt_exp_mask(sp_pt_exp_mask), .pt_exp_data(sp_pt_exp_wdata),
+				.pt_rd(pt_rd), .pt_idx(pt_idx), .pt_word(pt_word), .pt_rdata(pt_rdata),
+				.pt_free(pt_free), .pt_free_idx(pt_free_idx),
+				.pt_ok(spine_pt_ok), .pt_take(fab_vl_gnt), .pt_warp({SU_WARP_W{1'b0}}),
+				.pt_base(spine_pt_base), .vl_go(vl_go), .vl_mask(vl_mask), .pt_done(pt_done),
+				.wc_end(1'b0), .wc_warp({SU_WARP_W{1'b0}}),
+				.scrub(prot_scrub), .scrub_busy(spine_pt_scrub_busy)
+			);
+			wire unused_fab_gfx = &{1'b0, fab_vl_ptbase, fab_vl_avail, fab_fl_avail, fab_pt_rdata, fab_pt_done};
+		end else begin : g_fab_sp_nogfx
+			assign spine_pt_scrub_busy = 1'b0;
+			assign vl_gnt = 1'b0;
+			assign vl_ptbase = 8'd0;
+			assign fl_gnt = 1'b0;
+			assign pt_rdata = 32'd0;
+			assign pt_done = 8'd0;
+			assign fab_vl_req = 1'b0;
+			assign fab_vl_go_ptbase = 8'd0;
+			assign fab_fl_req = 1'b0;
+			assign fab_pt_rd = 1'b0;
+			assign fab_pt_idx = 8'd0;
+			assign fab_pt_word = 7'd0;
+			assign fab_pt_free = 1'b0;
+			assign fab_pt_free_idx = 8'd0;
+			assign fab_pt_exp_ready = 1'b1;
+			wire unused_fab_ng = &{1'b0, vl_req, vl_we, vl_reg, vl_lane, vl_data, vl_go, vl_mask,
+				fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr, fl_pw_data,
+				fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
+				fab_vl_gnt, fab_vl_ptbase, fab_vl_avail, fab_fl_gnt, fab_fl_avail,
+				fab_pt_rdata, fab_pt_done, fab_pt_exp_valid, fab_pt_exp_packed};
+		end
+
+		`define ATG_FAB_CONNS \
+			.clk(clk), .rst_n(core_rst_n), .flush(1'b0), \
+			.st_we(ust_we), .st_idx(ust_idx), .st_wdata(st_wdata), \
+			.cs_kick(cs_kick), .cs_mesh(cs_mesh), .lc_kick(lc_kick), .inv(inv), \
+			.scrub(prot_scrub), .session_id(active_mmu_session), \
+			.vl_req(fab_vl_req), .vl_gnt(fab_vl_gnt), .vl_ptbase(fab_vl_ptbase), .vl_avail(fab_vl_avail), \
+			.vl_we(vl_we), .vl_reg(vl_reg), .vl_lane(vl_lane), .vl_data(vl_data), \
+			.vl_go(vl_go), .vl_mask(vl_mask), .vl_go_ptbase(fab_vl_go_ptbase), \
+			.fl_req(fab_fl_req), .fl_gnt(fab_fl_gnt), .fl_avail(fab_fl_avail), \
+			.fl_we(fl_we), .fl_reg(fl_reg), .fl_lane(fl_lane), .fl_data(fl_data), \
+			.fl_pw_we(fl_pw_we), .fl_pw_addr(fl_pw_addr), .fl_pw_data(fl_pw_data), \
+			.fl_go(fl_go), .fl_mask(fl_mask), .fl_info(fl_info), \
+			.pt_rd(fab_pt_rd), .pt_idx(fab_pt_idx), .pt_word(fab_pt_word), .pt_rdata(fab_pt_rdata), \
+			.pt_free(fab_pt_free), .pt_free_idx(fab_pt_free_idx), .pt_done(fab_pt_done), \
+			.pt_exp_valid(fab_pt_exp_valid), .pt_exp_ready(fab_pt_exp_ready), .pt_exp_packed(fab_pt_exp_packed), \
+			.tx_valid(tx_valid), .tx_ready(tx_ready), .tx_op(tx_op), \
+			.tx_slot(tx_slot), .tx_samp_slot(tx_samp_slot), .tx_vs(tx_vs), \
+			.tx_mask(tx_mask), .tx_coord(tx_coord), .tx_off(tx_off), \
+			.tx_tag(tx_tag), .tx_last(tx_last), \
+			.tr_valid(tr_valid), .tr_ready(tr_ready), .tr_tag(tr_tag), \
+			.tr_data(tr_data), .tr_last(tr_last), \
+			.ex_valid(ex_valid), .ex_ready(ex_ready), .ex_seq(ex_seq), \
+			.ex_xy(ex_xy), .ex_mask(ex_mask), .ex_color(ex_color), .ex_color1(ex_color1), \
+			.ex_has_src1(ex_has_src1), .ex_depth(ex_depth), .ex_last(ex_last), \
+			.ex_aux(ex_aux), .ex_next(ex_next), \
+			.trunk_req_valid(fab_trunk_req_valid), .trunk_req_ready(fab_trunk_req_ready), \
+			.trunk_req_data(fab_trunk_req_data), .trunk_req_last(fab_trunk_req_last), \
+			.trunk_rsp_valid(fab_trunk_rsp_valid), .trunk_rsp_ready(fab_trunk_rsp_ready), \
+			.trunk_rsp_data(fab_trunk_rsp_data), \
+			.at_valid(at_valid[0]), .at_ready(at_ready[0]), .at_op(at_op[3:0]), \
+			.at_addr(at_addr[29:0]), .at_a(at_a[31:0]), .at_b(at_b[31:0]), \
+			.at_stage(su_at_stage[1:0]), .at_rsp_valid(at_rsp_valid[0]), .at_old(at_old), .at_error(at_error), \
+			.su0_mesh_valid(su_mesh_valid), .su0_mesh_ready(su_mesh_ready), .su0_mesh_tri(su_mesh_tri), \
+			.su0_mesh_last(su_mesh_last), .su0_mesh_id(su_mesh_id), \
+			.su0_sa_push_valid(sa_push_valid), .su0_sa_push_ready(sa_push_ready), .su0_sa_push_data(sa_push_data), \
+			.su0_sa_pop_valid(sa_pop_valid), .su0_sa_pop_ready(sa_pop_ready), .su0_sa_pop_data(sa_pop_data), \
+			.su0_sa_ctl_valid(sa_ctl_valid), .su0_sa_ctl_data(sa_ctl_data), \
+			.su0_sa_qstat(sa_qstat), .su0_sa_stat(sa_stat), .su0_sa_qtag(sa_qtag), \
+			.busy(su_busy_v[0]), .scrub_busy(su_scrub_v[0]), .fault(su_fault_v[0]), \
+			.fault_addr(su_fault_addr_v[31:0]), .fault_stage(su_fault_stage_v[3:0]), .fsm0(su_fsm_v[3:0])
+
+		`define ATG_FAB_PARAMS \
+			.NPHYS(SU_NPHYS), .NWARPS(SU_NWARPS), .WARP_W(SU_WARP_W), .GRP_W(SU_GRP_W), \
+			.NREGS(SU_NREGS), .SB_ENTRIES(SU_SB_ENTRIES), .SBE_W(SU_SBE_W), \
+			.FRAG_RESERVE(SU_FRAG_RESERVE), .PACKED(SU_PACKED), \
+			.PK_SHARED(SU_PK_SHARED), .SUBGROUP(SU_SUBGROUP), .HAS_SA(0), .MS4(MS4), \
+			.HAS_MESH(HAS_MESH), .LDS_BYTES(SU_LDS_BYTES), .PT_ENTRIES(SU_PT_ENTRIES), \
+			.VARY_WORDS(SU_VARY_WORDS), .ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), \
+			.LINE_SHIFT(LINE_SHIFT), .MRT_COUNT(MRT_COUNT), .DUAL_SOURCE(ROP_DUAL_SOURCE), \
+			.SHARED_PT(SU_SHARED_PT), .HAS_GFX(SU_HAS_GFX ? 1 : 0), .HAS_TU(HAS_TU != 0 ? 1 : 0), \
+			.HAS_ROP(HAS_ROP != 0 ? 1 : 0), .SU_RW(FAB_SU_RW), .FW(FAB_FW), .RFW(FAB_RFW), .PT_W(SU_PT_W)
+
+		if (NSU == 1) begin : g_fab_n1
+			atg_su_fabric_n1 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 2) begin : g_fab_n2
+			atg_su_fabric_n2 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 4) begin : g_fab_n4
+			atg_su_fabric_n4 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 8) begin : g_fab_n8
+			atg_su_fabric_n8 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 16) begin : g_fab_n16
+			atg_su_fabric_n16 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 32) begin : g_fab_n32
+			atg_su_fabric_n32 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else if (NSU == 64) begin : g_fab_n64
+			atg_su_fabric_n64 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end else begin : g_fab_n128
+			atg_su_fabric_n128 #(`ATG_FAB_PARAMS) u_fab (`ATG_FAB_CONNS);
+		end
+		`undef ATG_FAB_CONNS
+		`undef ATG_FAB_PARAMS
+
+		for (gt = 0; gt < SU_TRUNKS; gt = gt + 1) begin : g_trunk_amb
+			am_rt_to_amb #(
+				.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT),
+				.RW(FAB_SU_RW), .FW(FAB_FW), .RFW(FAB_RFW)
+			) u_rt_to_amb (
+				.clk(clk), .rst_n(core_rst_n), .flush(1'b0),
+				.t_req_valid(fab_trunk_req_valid[gt]), .t_req_ready(fab_trunk_req_ready[gt]),
+				.t_req_data(fab_trunk_req_data[gt*FAB_FW +: FAB_FW]), .t_req_last(fab_trunk_req_last[gt]),
+				.t_rsp_valid(fab_trunk_rsp_valid[gt]), .t_rsp_ready(fab_trunk_rsp_ready[gt]),
+				.t_rsp_data(fab_trunk_rsp_data[gt*FAB_RFW +: FAB_RFW]),
+				.m_req_valid(u_req_valid[C_SU + gt]), .m_req_ready(u_req_ready[C_SU + gt]),
+				.m_req_write(u_req_write[C_SU + gt]), .m_req_exec(u_req_exec[C_SU + gt]),
+				.m_req_line(u_req_line[(C_SU + gt)*UNIT_LA_W +: UNIT_LA_W]),
+				.m_req_be(u_req_be[(C_SU + gt)*LINE_BYTES +: LINE_BYTES]),
+				.m_req_wdata(u_req_wdata[(C_SU + gt)*LINE_BITS +: LINE_BITS]),
+				.m_req_tag(u_req_tag[(C_SU + gt)*8 +: 8]),
+				.m_req_chk(), .m_req_tbl(), .m_req_slot(), .m_req_session(),
+				.m_rsp_valid(u_rsp_valid[C_SU + gt]), .m_rsp_write(u_rsp_write[C_SU + gt]),
+				.m_rsp_tag(u_rsp_tag[(C_SU + gt)*8 +: 8]),
+				.m_rsp_rdata(u_rsp_rdata[(C_SU + gt)*LINE_BITS +: LINE_BITS]),
+				.m_rsp_error(u_rsp_error[C_SU + gt])
+			);
+		end
+	end
 
 	if (NSU > 0) begin : g_atom
 		/*
@@ -2516,7 +2785,7 @@ module atg_top #(
 		always @(*) begin
 			fault_pc = 32'd0;
 			fault_stg = 4'd0;
-			for (j = NSU - 1; j >= 0; j = j - 1)
+			for (j = SU_STAT_PORTS - 1; j >= 0; j = j - 1)
 				if (su_fault_v[j]) begin
 					fault_pc = su_fault_addr_v[j*32 +: 32];
 					fault_stg = su_fault_stage_v[j*4 +: 4];
@@ -2528,8 +2797,8 @@ module atg_top #(
 		assign su_fault_stage = fault_stg;
 
 		atg_mc_atom #(
-			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(NSU),
-			.AW(NSU > 1 ? $clog2(NSU) : 1)
+			.ADDR_W(UNIT_ADDR_W), .LINE_BYTES(LINE_BYTES), .LINE_SHIFT(LINE_SHIFT), .NATOM(ATOM_PORTS),
+			.AW(ATOM_PORTS > 1 ? $clog2(ATOM_PORTS) : 1)
 		) atom (
 			.clk(clk), .rst_n(core_rst_n),
 			.at_valid(at_valid), .at_ready(at_ready), .at_op(at_op), .at_addr(at_addr),
@@ -2545,38 +2814,6 @@ module atg_top #(
 		);
 	end else begin : g_no_su
 		assign spine_pt_scrub_busy = 1'b0;
-		assign su_vl_req_v = 1'b0;
-		assign su_vl_we_v = 1'b0;
-		assign su_vl_reg_v = 6'd0;
-		assign su_vl_lane_v = 5'd0;
-		assign su_vl_data_v = 32'd0;
-		assign su_vl_go_v = 1'b0;
-		assign su_vl_mask_v = 32'd0;
-		assign su_vl_go_ptbase_v = 8'd0;
-		assign su_fl_req_v = 1'b0;
-		assign su_fl_we_v = 1'b0;
-		assign su_fl_reg_v = 6'd0;
-		assign su_fl_lane_v = 5'd0;
-		assign su_fl_data_v = 32'd0;
-		assign su_fl_pw_we_v = 1'b0;
-		assign su_fl_pw_addr_v = 12'd0;
-		assign su_fl_pw_data_v = 32'd0;
-		assign su_fl_go_v = 1'b0;
-		assign su_fl_mask_v = 32'd0;
-		assign su_fl_info_v = 64'd0;
-		assign su_pt_rd_v = 1'b0;
-		assign su_pt_idx_v = 8'd0;
-		assign su_pt_word_v = 7'd0;
-		assign su_pt_free_v = 1'b0;
-		assign su_pt_free_idx_v = 8'd0;
-		assign su_pt_exp_ready_v = 1'b0;
-		assign su_tx_ready_v = 1'b0;
-		assign su_tr_valid_v = 1'b0;
-		assign su_tr_tag_v = 16'd0;
-		assign su_tr_data_v = 512'd0;
-		assign su_tr_last_v = 1'b0;
-		assign su_ex_ready_v = 1'b0;
-		assign su_ex_next_v = 16'd0;
 		assign su_at_stage = 2'd0;
 		assign su_busy = 1'b0;
 		assign su_fault = 1'b0;
@@ -2631,54 +2868,13 @@ module atg_top #(
 		assign su_mesh_tri = 702'd0;
 		assign su_mesh_last = 1'b0;
 		assign su_mesh_id = 16'd0;
-		assign su_vl_gnt_v = 1'b0;
-		assign su_vl_ptbase_v = 8'd0;
-		assign su_vl_avail_v = 1'b0;
-		assign su_fl_gnt_v = 1'b0;
-		assign su_fl_avail_v = 1'b0;
-		assign su_pt_rdata_v = 32'd0;
-		assign su_pt_done_v = 8'd0;
-		assign su_pt_exp_valid_v = 1'b0;
-		assign su_pt_exp_data_v = {SU_PT_W{1'b0}};
-		assign su_tx_valid_v = 1'b0;
-		assign su_tx_op_v = 8'd0;
-		assign su_tx_slot_v = 4'd0;
-		assign su_tx_samp_slot_v = 4'd0;
-		assign su_tx_vs_v = 1'b0;
-		assign su_tx_mask_v = 4'd0;
-		assign su_tx_coord_v = 640'd0;
-		assign su_tx_off_v = 12'd0;
-		assign su_tx_tag_v = 16'd0;
-		assign su_tx_last_v = 1'b0;
-		assign su_tr_ready_v = 1'b0;
-		assign su_ex_valid_v = 1'b0;
-		assign su_ex_seq_v = 16'd0;
-		assign su_ex_xy_v = 32'd0;
-		assign su_ex_mask_v = 4'd0;
-		assign su_ex_color_v = 512'd0;
-		assign su_ex_color1_v = 512'd0;
-		assign su_ex_has_src1_v = 1'b0;
-		assign su_ex_depth_v = 128'd0;
-		assign su_ex_last_v = 1'b0;
-		assign su_ex_aux_v = 155'd0;
 		wire unused_su = &{1'b0, cs_kick, lc_kick, inv, vl_req, vl_we, vl_reg, vl_lane, vl_data,
 			vl_go, vl_mask, fl_req, fl_we, fl_reg, fl_lane, fl_data, fl_pw_we, fl_pw_addr,
 			fl_pw_data, fl_go, fl_mask, fl_info, pt_rd, pt_idx, pt_word, pt_free, pt_free_idx,
 			tx_ready, tr_valid, tr_tag, tr_data, tr_last, ex_ready, ex_next, sa_push_ready,
 			sa_pop_valid, sa_pop_data, sa_qstat, sa_stat, sa_qtag, at_ready, at_rsp_valid,
 			at_old, at_error, su_busy_v, su_fault_v, su_fault_addr_v, at_valid, at_op, at_addr,
-			at_a, at_b, su_mesh_ready, su_vl_req_v, su_vl_gnt_v, su_vl_ptbase_v, su_vl_avail_v,
-			su_vl_we_v, su_vl_reg_v, su_vl_lane_v, su_vl_data_v, su_vl_go_v, su_vl_mask_v,
-			su_vl_go_ptbase_v, su_fl_req_v, su_fl_gnt_v, su_fl_avail_v, su_fl_we_v, su_fl_reg_v,
-			su_fl_lane_v, su_fl_data_v, su_fl_pw_we_v, su_fl_pw_addr_v, su_fl_pw_data_v,
-			su_fl_go_v, su_fl_mask_v, su_fl_info_v, su_pt_rd_v, su_pt_idx_v, su_pt_word_v,
-			su_pt_rdata_v, su_pt_free_v, su_pt_free_idx_v, su_pt_done_v, su_pt_exp_valid_v,
-			su_pt_exp_ready_v, su_pt_exp_data_v, su_tx_valid_v, su_tx_ready_v, su_tx_op_v,
-			su_tx_slot_v, su_tx_samp_slot_v, su_tx_vs_v, su_tx_mask_v, su_tx_coord_v, su_tx_off_v,
-			su_tx_tag_v, su_tx_last_v, su_tr_valid_v, su_tr_ready_v, su_tr_tag_v, su_tr_data_v,
-			su_tr_last_v, su_ex_valid_v, su_ex_ready_v, su_ex_seq_v, su_ex_xy_v, su_ex_mask_v,
-			su_ex_color_v, su_ex_color1_v, su_ex_has_src1_v, su_ex_depth_v, su_ex_last_v,
-			su_ex_next_v, su_ex_aux_v};
+			at_a, at_b, su_mesh_ready};
 	end
 	endgenerate
 
@@ -2716,7 +2912,11 @@ module atg_top #(
 		                        (HAS_ATOM != 0 && gi == C_ATOM) ? MMU_ATOM :
 		                        (HAS_SA != 0 && gi == C_SA) ? MMU_SA :
 		                        (gi >= C_SU) ? (MMU_SU + (gi - C_SU)) : 0;
-		localparam GI_EXEC = (gi >= C_SU) && (((gi - C_SU) & 1) != 0);
+		localparam GI_EXEC = (gi >= C_SU) && !SU_NOC_ACTIVE && (((gi - C_SU) & 1) != 0);
+
+		if ((gi < C_SU) || !SU_NOC_ACTIVE) begin : g_exec_static
+			assign u_req_exec[gi] = GI_EXEC ? 1'b1 : 1'b0;
+		end
 
 		if (IS_UNIT_CLIENT) begin : g_u
 			if (HAS_HW_WALKER != 0) begin : g_brg
@@ -2738,7 +2938,7 @@ module atg_top #(
 					.u_req_valid(u_req_valid[gi]),
 					.u_req_ready(u_req_ready[gi]),
 					.u_req_write(u_req_write[gi]),
-					.u_req_exec(GI_EXEC ? 1'b1 : 1'b0),
+					.u_req_exec(u_req_exec[gi]),
 					.u_req_line(u_req_line[gi*UNIT_LA_W +: UNIT_LA_W]),
 					.u_req_be(u_req_be[gi*LINE_BYTES +: LINE_BYTES]),
 					.u_req_wdata(u_req_wdata[gi*LINE_BITS +: LINE_BITS]),
@@ -2795,7 +2995,7 @@ module atg_top #(
 				assign c_req_tbl[gi] = u_req_tbl[gi];
 				assign c_req_slot[gi*6 +: 6] = u_req_slot[gi*6 +: 6];
 				assign c_req_session[gi*4 +: 4] = active_mmu_session;
-				assign c_req_exec_type[gi*2 +: 2] = GI_EXEC ? 2'b10 : (u_req_write[gi] ? 2'b01 : 2'b00);
+				assign c_req_exec_type[gi*2 +: 2] = u_req_exec[gi] ? 2'b10 : (u_req_write[gi] ? 2'b01 : 2'b00);
 				assign u_rsp_valid[gi] = rsp_valid[gi];
 				assign u_rsp_write[gi] = rsp_write_v[gi];
 				assign u_rsp_tag[gi*8 +: 8] = rsp_tag_v[gi*8 +: 8];
@@ -2816,7 +3016,7 @@ module atg_top #(
 				assign u_req_be[gi*LINE_BYTES +: LINE_BYTES] = {LINE_BYTES{1'b0}};
 				assign u_req_wdata[gi*LINE_BITS +: LINE_BITS] = {LINE_BITS{1'b0}};
 				assign u_req_tag[gi*8 +: 8] = 8'd0;
-				wire unused_phys_u = &{1'b0, u_req_chk[gi], u_req_tbl[gi], u_req_slot[gi*6 +: 6]};
+				wire unused_phys_u = &{1'b0, u_req_chk[gi], u_req_tbl[gi], u_req_slot[gi*6 +: 6], u_req_exec[gi]};
 			end else begin : g_no_blt_sink
 				assign c_req_valid[1] = u_req_valid[1];
 				assign c_req_write[1] = u_req_write[1];
@@ -2830,7 +3030,7 @@ module atg_top #(
 				assign c_req_session[1*4 +: 4] = 4'd0;
 				assign c_req_exec_type[1*2 +: 2] = 2'd0;
 				wire unused_no_blt = &{1'b0, u_req_line[1*UNIT_LA_W +: UNIT_LA_W],
-					u_req_chk[1], u_req_tbl[1], u_req_slot[1*6 +: 6]};
+					u_req_chk[1], u_req_tbl[1], u_req_slot[1*6 +: 6], u_req_exec[1]};
 			end
 		end
 	end

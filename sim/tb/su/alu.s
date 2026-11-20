@@ -1,4 +1,10 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: the integer ALU, dependent chains (short interlock), specials.
+
 	add r1, lane, zero          # r1 = lane
 	addi r2, r1, 100            # RAW on r1 right away
 	slli r3, r2, 3

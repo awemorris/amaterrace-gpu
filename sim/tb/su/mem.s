@@ -1,7 +1,13 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: global memory (coalesced and scattered lw/sw, a warp's sw then lw
 # of the same word, masked and killed stores, atomics on private and on one
 # shared word, fence), the constant bank (lwc, c operands) and LDS with a
 # barrier between warps.  128 lanes; data image from gen_data.py.
+
 	slli r1, lidn, 2            # r1 = 4 * lidn
 	movi r2, 0x8400             # A
 	add r3, r2, r1

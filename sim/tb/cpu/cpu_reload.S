@@ -1,7 +1,14 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
+#
 # atg_cpu integration test, the image loaded through CPFW LOAD: shows its
 # .data word (from the DMEM image) in MBOX3, a sign in MBOX2, then waits
 # for MBOX0 = 1 and faults at 0x28 (the zero word after the loop).
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#
+
 	.equ MBOX0, 0x84
 	.equ MBOX2, 0x8C
 	.equ MBOX3, 0x90

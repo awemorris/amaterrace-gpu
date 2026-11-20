@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
+
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # Writes the data image of an SU test program (gen_data.py NAME OUT): 4096
 # words at 0x8000 for $readmemh, the first 256 also the constant bank.
 #   mem, sub, gfx: random integers;
 #   vadd, reduce: random integers in the first 256 words, fp32 values in
 #           [-100, 100) from word 256 (0x8400) on;
 #   others: zeros.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 import random
 import struct
 import sys

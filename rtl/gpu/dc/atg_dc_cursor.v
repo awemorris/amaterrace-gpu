@@ -142,7 +142,8 @@ module atg_dc_cursor #(
 	am_add #(.W(NL_W + 1)) a_rq (.a(rq_n), .b({(NL_W + 1){1'b0}}), .ci(1'b1), .s(rq_inc), .co(ld_co_unused[3]));
 	am_add #(.W(NL_W + 1)) a_wr (.a(wr_n), .b({(NL_W + 1){1'b0}}), .ci(1'b1), .s(wr_inc), .co(ld_co_unused[4]));
 	am_add #(.W(WS)) a_up (.a(up_w), .b({WS{1'b0}}), .ci(1'b1), .s(up_inc), .co(ld_co_unused[5]));
-	am_add #(.W(AW)) a_line (.a(pend_base[ADDR_W-1:LINE_SHIFT]), .b({{(AW - NL_W - 1){1'b0}}, rq_n}), .ci(1'b0),
+	wire [63:0] pend_base_ext = {32'd0, pend_base};
+	am_add #(.W(AW)) a_line (.a(pend_base_ext[LINE_SHIFT +: AW]), .b({{(AW - NL_W - 1){1'b0}}, rq_n}), .ci(1'b0),
 		.s(rq_line), .co(ld_co_unused[6]));
 
 	/* Clean 4-entry flip-flop line FIFO (replaces distributed RAM am_fifo) */
@@ -1519,6 +1520,7 @@ module atg_dc_cursor #(
 `endif
 
 	wire unused_ok = &{1'b0, rsp_tag, l_in_ready, st3c_r5[5], st3c_b5[5], flip_base[5:0],
+		pend_base_ext,
 		ld_co_unused, bl_co_unused, t_co_unused, u_co_unused, vm_bo_unused, nt_co_unused,
 		nu_co_unused, ff_co_unused
 `ifndef SYNTH_KINTEX7

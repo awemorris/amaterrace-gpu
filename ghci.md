@@ -1,7 +1,7 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-**Version 1.0 — Approved Authoritative Architecture Specification, 2026-10-27**
+**Version 1.0 Draft 117: Non-authoritative  Draft Architecture Specification, 2026-11-20**
 License: Zlib (the same as the rest of this repository)
 
 GHCI is the single, authoritative host interface specification for conforming
@@ -10,7 +10,7 @@ It defines one register layout, one command-ring model, and one set of rules for
 fences, interrupts, faults and reset, so that one operating-system driver can run
 every conforming GPU. Design decision traceability tags are archived separately in [`docs/design_decisions.md`](docs/design_decisions.md).
 
-Amaterrace GPU (`AMAT` / `ATG1`) serves as the reference implementation of GHCI 1.0.
+Lumiere GPU (`Vendor LUMI` / `Device ATG1`) serves as the reference implementation of GHCI 1.0.
 
 Contents
 --------
@@ -2057,7 +2057,7 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   `0x47534931`, version 1). Every GHCI GPU with a shader unit accepts GSI1
   programs: it runs them natively, or its command processor translates
   them to the GPU's native ISA, invisibly to the driver.
-- A native ISA is optional and vendor-specific; MMIO offset `0x068` is strictly reserved and reads 0. `NATIVE_ISA_ID` is queried via `CMD_QUERY_CAPS` Word 6 (reports `"GSI1"` for Amaterrace).
+- A native ISA is optional and vendor-specific; MMIO offset `0x068` is strictly reserved and reads 0. `NATIVE_ISA_ID` is queried via `CMD_QUERY_CAPS` Word 6 (reports `"GSI1"` for Lumiere).
 - GSI1 is an ISA of its own. The low 32 bits of each instruction follow
   the field layout of the RISC-V 32-bit instruction formats, and the
   instructions it shares with RISC-V keep their major opcodes,

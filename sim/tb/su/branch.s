@@ -1,4 +1,10 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: exec mask, divergence, loops and the branches.
+
 	movi r1, 0
 	add r2, lane, zero
 	andi r3, r2, 1               # odd lanes

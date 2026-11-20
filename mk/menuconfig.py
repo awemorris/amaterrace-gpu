@@ -22,8 +22,31 @@ CONFIG_FILE = "config.mk"
 
 SCHEMA = [
     {
-        "title": "Board & Target Preset",
+        "title": "0. Platform & Top Architecture",
         "items": [
+            {
+                "key": "CONFIG_TARGET_PLATFORM",
+                "label": "Target Platform (FPGA vs ASIC)",
+                "type": "choice",
+                "choices": ["fpga", "asic"],
+                "default": "fpga",
+                "help": "fpga: Flat crossbar (NSU in {1,2}, USE_NOC_FABRIC=0). asic: Fat-Tree NoC (NSU in 1..128, USE_NOC_FABRIC=1).",
+            },
+            {
+                "key": "CONFIG_NSU",
+                "label": "Shader Unit Count (NSU)",
+                "type": "choice",
+                "choices": ["1", "2", "4", "8", "16", "32", "64", "128"],
+                "default": "1",
+                "help": "Number of Shader Units (FPGA restricted to 1 or 2; ASIC supports 1..128).",
+            },
+            {
+                "key": "CONFIG_USE_NOC_FABRIC",
+                "label": "Unified 2D Fat-Tree NoC Fabric (Auto)",
+                "type": "bool",
+                "default": "0",
+                "help": "Automatically forced: 0 (Flat Crossbar) on FPGA, 1 (Fat-Tree NoC) on ASIC.",
+            },
             {
                 "key": "TARGET_PRESET",
                 "label": "Target Board Preset",
@@ -31,7 +54,42 @@ SCHEMA = [
                 "choices": ["kc705", "zcu106", "minimal_sim"],
                 "default": "kc705",
                 "help": "Target hardware board or simulation preset.",
-            }
+            },
+            {
+                "key": "CONFIG_HAS_VF",
+                "label": "Vertex Fetcher (VF)",
+                "type": "bool",
+                "default": "1",
+                "help": "Enable Vertex Fetcher (0 for Compute-Only).",
+            },
+            {
+                "key": "CONFIG_HAS_RX",
+                "label": "Rasterizer (RX)",
+                "type": "bool",
+                "default": "1",
+                "help": "Enable Rasterizer (0 for Compute-Only).",
+            },
+            {
+                "key": "CONFIG_HAS_TU",
+                "label": "Texture Unit (TU)",
+                "type": "bool",
+                "default": "1",
+                "help": "Enable Texture Unit (0 for Compute-Only).",
+            },
+            {
+                "key": "CONFIG_HAS_ROP",
+                "label": "Render Output Backend (ROP)",
+                "type": "bool",
+                "default": "1",
+                "help": "Enable ROP Backend (0 for Compute-Only).",
+            },
+            {
+                "key": "CONFIG_HAS_DISP",
+                "label": "Display Controller (DC)",
+                "type": "bool",
+                "default": "1",
+                "help": "Enable Display Controller (0 for Headless Compute-Only).",
+            },
         ],
     },
     {
@@ -86,7 +144,7 @@ SCHEMA = [
                 "key": "CONFIG_SU_LDS_KB",
                 "label": "Workgroup Local Data Share (KB)",
                 "type": "choice",
-                "choices": ["0", "1", "2", "4"],
+                "choices": ["0", "1", "2", "4", "16"],
                 "default": "4",
                 "help": "Shared scratchpad memory capacity in Kilobytes.",
             },
@@ -414,7 +472,7 @@ SCHEMA = [
                 "key": "CONFIG_MC_L2_CACHE_KB",
                 "label": "Shared L2 Cache Size (KB)",
                 "type": "choice",
-                "choices": ["0", "16", "32", "64", "128"],
+                "choices": ["0", "4", "16", "32", "64", "128", "256"],
                 "default": "64",
                 "help": "Last-Level Cache (L2) capacity in Kilobytes.",
             },
@@ -446,6 +504,40 @@ SCHEMA = [
 ]
 
 
+def enforce_platform_constraints(cfg):
+    """Enforces FPGA vs ASIC rules on USE_NOC_FABRIC and NSU."""
+    plat = cfg.get("CONFIG_TARGET_PLATFORM", "fpga")
+    if plat == "fpga":
+        cfg["CONFIG_USE_NOC_FABRIC"] = "0"
+        if cfg.get("CONFIG_NSU", "1") not in ("1", "2"):
+            cfg["CONFIG_NSU"] = "2"
+    else:
+        cfg["CONFIG_TARGET_PLATFORM"] = "asic"
+        cfg["CONFIG_USE_NOC_FABRIC"] = "1"
+        if cfg.get("CONFIG_NSU", "1") not in ("1", "2", "4", "8", "16", "32", "64", "128"):
+            cfg["CONFIG_NSU"] = "1"
+    return cfg
+
+
+def _parse_mk_file(path, cfg, root_dir):
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("include "):
+                inc = line.split(None, 1)[1].strip()
+                inc_path = inc if os.path.isabs(inc) else os.path.join(root_dir, inc)
+                _parse_mk_file(inc_path, cfg, root_dir)
+                continue
+            m = re.match(r"^([A-Za-z0-9_]+)\s*\??=\s*([^#]+)", line)
+            if m:
+                k, v = m.group(1).strip(), m.group(2).strip()
+                cfg[k] = v
+
+
 def load_config(root_dir="."):
     """Loads configuration values from config.mk or config.mk.template."""
     cfg = {}
@@ -459,17 +551,8 @@ def load_config(root_dir="."):
     if not os.path.exists(target):
         target = os.path.join(root_dir, CONFIG_TEMPLATE)
 
-    if os.path.exists(target):
-        with open(target, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                m = re.match(r"^([A-Za-z0-9_]+)\s*\??=\s*([^#]+)", line)
-                if m:
-                    k, v = m.group(1).strip(), m.group(2).strip()
-                    cfg[k] = v
-    return cfg
+    _parse_mk_file(target, cfg, root_dir)
+    return enforce_platform_constraints(cfg)
 
 
 def save_config(cfg, root_dir="."):
@@ -543,21 +626,29 @@ class MenuApp:
         k = it["key"]
         curr = self.cfg.get(k, str(it["default"]))
 
+        if k == "CONFIG_USE_NOC_FABRIC":
+            enforce_platform_constraints(self.cfg)
+            self.status_msg = "CONFIG_USE_NOC_FABRIC is auto-controlled by CONFIG_TARGET_PLATFORM"
+            return
+
         if it["type"] == "bool":
             new_val = "0" if curr == "1" else "1"
             self.cfg[k] = new_val
             self.modified = True
             self.status_msg = f"Changed {k} = {new_val}"
         elif it["type"] == "choice":
-            choices = it["choices"]
+            choices = list(it["choices"])
+            if k == "CONFIG_NSU" and self.cfg.get("CONFIG_TARGET_PLATFORM", "fpga") == "fpga":
+                choices = ["1", "2"]
             idx = choices.index(curr) if curr in choices else 0
             if forward:
                 idx = (idx + 1) % len(choices)
             else:
                 idx = (idx - 1 + len(choices)) % len(choices)
             self.cfg[k] = choices[idx]
+            enforce_platform_constraints(self.cfg)
             self.modified = True
-            self.status_msg = f"Changed {k} = {choices[idx]}"
+            self.status_msg = f"Changed {k} = {self.cfg[k]}"
 
     def run(self):
         curses.curs_set(0)
@@ -864,7 +955,7 @@ PRESETS = {
 
 def main():
     parser = argparse.ArgumentParser(description="Amaterrace GPU Build Configuration Tool (menuconfig)")
-    parser.add_argument("--preset", choices=["minimal", "balanced", "high-perf"], help="Apply standard build preset")
+    parser.add_argument("--preset", help="Apply standard build preset (any name from config/<name>.mk)")
     parser.add_argument("--show", action="store_true", help="Print current configuration and exit")
     parser.add_argument("--set", metavar="KEY=VALUE", action="append", help="Set a configuration parameter")
     parser.add_argument("--root", default=".", help="Project root directory containing config files")
@@ -873,8 +964,15 @@ def main():
     cfg = load_config(args.root)
 
     if args.preset:
-        preset_cfg = PRESETS[args.preset]
-        cfg.update(preset_cfg)
+        preset_mk = os.path.join(args.root, "config", f"{args.preset}.mk")
+        if os.path.exists(preset_mk):
+            _parse_mk_file(preset_mk, cfg, args.root)
+        elif args.preset in PRESETS:
+            cfg.update(PRESETS[args.preset])
+        else:
+            print(f"Error: Unknown preset '{args.preset}'.")
+            sys.exit(1)
+        enforce_platform_constraints(cfg)
         save_config(cfg, args.root)
         print(f"Applied preset '{args.preset}' and saved to {os.path.join(args.root, CONFIG_FILE)}.")
         return
@@ -886,6 +984,7 @@ def main():
                 sys.exit(1)
             k, v = item.split("=", 1)
             cfg[k.strip()] = v.strip()
+        enforce_platform_constraints(cfg)
         save_config(cfg, args.root)
         print(f"Updated configuration saved to {os.path.join(args.root, CONFIG_FILE)}.")
         return

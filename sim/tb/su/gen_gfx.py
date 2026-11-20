@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # Writes the warps of the SU graphics test (sim/tb/atg_su_gfx_tb.v,
 # gfx.s): gen_gfx.py WARPS INIT.
 #   WARPS: 5 words per slot 0..3 (the reference model gsi1model --warps): slot 0 a
@@ -11,7 +17,7 @@
 #     fragment r0-r5 of the quads' lanes: b0, b1, b2, z in [0, 1) and
 #     x + 0.5, y + 0.5 (lane l of a quad at (qx + l[0], qy + l[1]), qx, qy
 #     even, below 64).
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 import random
 import struct
 import sys

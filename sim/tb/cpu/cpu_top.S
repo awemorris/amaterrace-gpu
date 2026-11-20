@@ -1,10 +1,15 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # atg_cpu integration test, run by sim/tb/atg_cpu_tb.v from the bitstream
 # image (IMEM_INIT/DMEM_INIT).  It does what the CP firmware does with
 # the control window: version and state, a class V packet taken by the
 # interrupt, the packet's line read by DMA, its dwords (and a STATE word)
 # sent as µops, DONE, a line written back by DMA to the address the host
 # put in MBOX0, MBOX1 and RESULT, then the halt request parks it.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 	.equ PKT_ADDR, 0x00
 	.equ PKT_DWORDS, 0x04
 	.equ PKT_INFO, 0x08

@@ -54,7 +54,7 @@
     <text x="540" y="88" font-size="11.5" font-weight="700" fill="#f8fafc">N = 4 (2x2)</text>
     <text x="750" y="88" text-anchor="end" font-size="9.5" font-weight="600" fill="#34d399">1 trunk</text>
     <text x="540" y="118" font-size="9.5" font-weight="600" fill="#4c1d95">Routers: 1x rt4_quad</text>
-    <text x="540" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1 rep_v</text>
+    <text x="540" y="136" font-size="9.5" font-weight="600" fill="#92400e">Repeaters: 1 rep_v, 1 rep_s</text>
     <text x="540" y="154" font-size="9" fill="#475569">Tile: SU + local rt2(D$+I$)</text>
     <text x="540" y="172" font-size="9" font-weight="700" fill="#0369a1">ASIC Fat-Tree NoC Only</text>
     <text x="540" y="188" font-size="8" fill="#64748b">File: floorplan_n4.svg</text>
@@ -107,28 +107,28 @@
     <rect x="24" y="370" width="992" height="165" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
     <text class="t-sec" x="38" y="388">SPINE &amp; ROOT NOC (SOUTH DIE EDGE) — 1..8 SU TRUNK(S) TO ATG_MMU + FIXED-FUNC SUBTREE + DC ROOT</text>
     <rect x="180.0" y="396" width="680" height="32" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
-    <text x="520.0" y="410" text-anchor="middle" font-size="9.5" font-weight="700" fill="#065f46">Spine MMU Boundary: 1..8x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>
-    <text x="520.0" y="422" text-anchor="middle" font-size="8.5" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>
-    <rect x="38" y="396" width="132" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
-    <text x="104" y="412" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>
-    <text x="104" y="425" text-anchor="middle" font-size="8" fill="#1e40af">VF, TU, ROP, BLT</text>
-    <text x="104" y="437" text-anchor="middle" font-size="8" fill="#1e40af">atg_rt4_fixed -> Root</text>
-    <text x="104" y="448" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>
-    <rect x="38" y="462" width="132" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>
-    <text x="104" y="478" text-anchor="middle" font-size="9.5" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>
-    <text x="104" y="490" text-anchor="middle" font-size="8" fill="#6d28d9">atg_su_pt + warp_dist</text>
-    <text x="104" y="502" text-anchor="middle" font-size="8" fill="#6d28d9">gfx_rt (tx/ex) + atom_rt</text>
-    <text x="104" y="514" text-anchor="middle" font-size="7.5" fill="#7c3aed">All N SUs run 3D/Compute</text>
-    <rect x="870" y="396" width="132" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>
-    <text x="936" y="413" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>
-    <text x="936" y="426" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>
-    <text x="936" y="438" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>
-    <text x="936" y="449" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>
-    <rect x="870" y="462" width="132" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>
-    <text x="936" y="478" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>
-    <text x="936" y="491" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>
-    <text x="936" y="503" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>
-    <text x="936" y="515" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>
+    <text x="520.0" y="410" text-anchor="middle" font-size="9.2" font-weight="700" fill="#065f46">Spine MMU Boundary: 1..8x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>
+    <text x="520.0" y="422" text-anchor="middle" font-size="8.3" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>
+    <rect x="38" y="396" width="136" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>
+    <text x="106" y="411" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>
+    <text x="106" y="423" text-anchor="middle" font-size="7.8" fill="#1e40af">VF, TU, ROP, BLT -&gt; Root</text>
+    <text x="106" y="435" text-anchor="middle" font-size="7.8" fill="#1e40af">RX (Spine) -&gt; PT / ROP</text>
+    <text x="106" y="447" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>
+    <rect x="38" y="462" width="136" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>
+    <text x="106" y="477" text-anchor="middle" font-size="9.2" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>
+    <text x="106" y="489" text-anchor="middle" font-size="7.6" fill="#6d28d9">atg_su_pt + warp_dist</text>
+    <text x="106" y="501" text-anchor="middle" font-size="7.6" fill="#6d28d9">pt_exp_rt + tx_rt + ex_rt</text>
+    <text x="106" y="513" text-anchor="middle" font-size="7.5" fill="#7c3aed">atom_rt -&gt; mc_atom (N SUs)</text>
+    <rect x="866" y="396" width="136" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>
+    <text x="934" y="413" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>
+    <text x="934" y="426" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>
+    <text x="934" y="438" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>
+    <text x="934" y="449" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>
+    <rect x="866" y="462" width="136" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>
+    <text x="934" y="478" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>
+    <text x="934" y="491" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>
+    <text x="934" y="503" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>
+    <text x="934" y="515" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>
     <rect x="370.0" y="436" width="300" height="32" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
     <text x="520.0" y="455" text-anchor="middle" font-size="10" font-weight="700" fill="#4c1d95">Root Fat-Tree Arbiter (CP + Fixed + SU Trunks + SA)</text>
     <rect x="340.0" y="478" width="360" height="46" rx="6" fill="#1e293b" stroke="#0f172a" stroke-width="1.5"/>
@@ -136,7 +136,7 @@
     <text x="520.0" y="513" text-anchor="middle" font-size="8.5" fill="#94a3b8">External AXI4 Master (m_awaddr / m_araddr [PA_BITS]) — 0/1 ID Local/Host</text>
     <line x1="520.0" y1="428" x2="520.0" y2="436" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>
     <line x1="520.0" y1="468" x2="520.0" y2="478" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-vio)"/>
-    <line x1="170" y1="425" x2="180.0" y2="414" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>
-    <line x1="870" y1="425" x2="860.0" y2="414" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>
-    <line x1="870" y1="492" x2="670.0" y2="454" stroke="#e11d48" stroke-width="1.5" marker-end="url(#arr-vio)"/>
+    <line x1="174" y1="425" x2="180.0" y2="414" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>
+    <line x1="866" y1="425" x2="860.0" y2="414" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>
+    <line x1="866" y1="492" x2="670.0" y2="454" stroke="#e11d48" stroke-width="1.5" marker-end="url(#arr-vio)"/>
 </svg>

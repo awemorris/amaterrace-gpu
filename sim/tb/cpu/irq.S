@@ -1,9 +1,16 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
+#
 # atg_cpu_core interrupt test.  The testbench raises irq N cycles after a
 # store of N to IRQ_REQ and drops it on a store to IRQ_ACK.  The handler
 # at 0x10 counts in x27 (x26 is its scratch).  Each part compares the
 # result of code run under interrupts with the expected value, and the
 # count of handler entries.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+#
+
 	.equ TOHOST, 0
 	.equ FAILHOST, 0x10
 	.equ IRQ_REQ, 4

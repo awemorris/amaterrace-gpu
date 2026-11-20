@@ -1,6 +1,12 @@
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # SU test: vector add c[i] = a[i] + b[i] (fp32) over the dispatch, i = 128
 # wgx + lidn; a at 0x8400, b at 0x8800, c at 0x9000 (the board's program,
 # with 2 workgroups in the testbench).
+
 	movi r1, 128
 	mul r1, r1, wgx
 	add r1, r1, lidn            # i

@@ -53,39 +53,39 @@ def render_spine(x, y, w, n_trunks, n_su):
 
     # MMU Bar
     n_t = 8 if isinstance(n_trunks, str) else n_trunks
-    mmu_w = min(w - 310, max(440, n_t * 85))
+    mmu_w = min(w - 304, max(500, n_t * 85))
     mmu_x = cx - mmu_w / 2
     s.append(f'    <rect x="{mmu_x}" y="{y+26}" width="{mmu_w}" height="32" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>')
-    s.append(f'    <text x="{cx}" y="{y+40}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#065f46">Spine MMU Boundary: {n_trunks}x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>')
-    s.append(f'    <text x="{cx}" y="{y+52}" text-anchor="middle" font-size="8.5" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>')
+    s.append(f'    <text x="{cx}" y="{y+40}" text-anchor="middle" font-size="9.2" font-weight="700" fill="#065f46">Spine MMU Boundary: {n_trunks}x SU Trunks + VF/TU/ROP/BLT -&gt; atg_mmu (L1+L2 TLB+Walker)</text>')
+    s.append(f'    <text x="{cx}" y="{y+52}" text-anchor="middle" font-size="8.3" fill="#047857">UNIT_ADDR_W (VA 30..40b inside SU Fabric)  ==&gt;  MC_ADDR_W (PA 40..48b after MMU)</text>')
 
     # Shared PT (Option I) & Graphics Spine on Left
-    s.append(f'    <rect x="{x+14}" y="{y+26}" width="132" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>')
-    s.append(f'    <text x="{x+80}" y="{y+42}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>')
-    s.append(f'    <text x="{x+80}" y="{y+55}" text-anchor="middle" font-size="8" fill="#1e40af">VF, TU, ROP, BLT</text>')
-    s.append(f'    <text x="{x+80}" y="{y+67}" text-anchor="middle" font-size="8" fill="#1e40af">atg_rt4_fixed -> Root</text>')
-    s.append(f'    <text x="{x+80}" y="{y+78}" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>')
+    s.append(f'    <rect x="{x+14}" y="{y+26}" width="136" height="58" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2"/>')
+    s.append(f'    <text x="{x+82}" y="{y+41}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1d4ed8">Fixed-Func Subtree</text>')
+    s.append(f'    <text x="{x+82}" y="{y+53}" text-anchor="middle" font-size="7.8" fill="#1e40af">VF, TU, ROP, BLT -&gt; Root</text>')
+    s.append(f'    <text x="{x+82}" y="{y+65}" text-anchor="middle" font-size="7.8" fill="#1e40af">RX (Spine) -&gt; PT / ROP</text>')
+    s.append(f'    <text x="{x+82}" y="{y+77}" text-anchor="middle" font-size="7.5" fill="#2563eb">(0 in compute-only)</text>')
 
-    s.append(f'    <rect x="{x+14}" y="{y+92}" width="132" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>')
-    s.append(f'    <text x="{x+80}" y="{y+108}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>')
-    s.append(f'    <text x="{x+80}" y="{y+120}" text-anchor="middle" font-size="8" fill="#6d28d9">atg_su_pt + warp_dist</text>')
-    s.append(f'    <text x="{x+80}" y="{y+132}" text-anchor="middle" font-size="8" fill="#6d28d9">gfx_rt (tx/ex) + atom_rt</text>')
-    s.append(f'    <text x="{x+80}" y="{y+144}" text-anchor="middle" font-size="7.5" fill="#7c3aed">All {n_su} SUs run 3D/Compute</text>')
+    s.append(f'    <rect x="{x+14}" y="{y+92}" width="136" height="62" rx="6" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.2"/>')
+    s.append(f'    <text x="{x+82}" y="{y+107}" text-anchor="middle" font-size="9.2" font-weight="700" fill="#5b21b6">Shared Spine PT (Opt I)</text>')
+    s.append(f'    <text x="{x+82}" y="{y+119}" text-anchor="middle" font-size="7.6" fill="#6d28d9">atg_su_pt + warp_dist</text>')
+    s.append(f'    <text x="{x+82}" y="{y+131}" text-anchor="middle" font-size="7.6" fill="#6d28d9">pt_exp_rt + tx_rt + ex_rt</text>')
+    s.append(f'    <text x="{x+82}" y="{y+143}" text-anchor="middle" font-size="7.5" fill="#7c3aed">atom_rt -&gt; mc_atom ({n_su} SUs)</text>')
 
     # Reserved SA Node on Right
-    rx_box = x + w - 146
-    s.append(f'    <rect x="{rx_box}" y="{y+26}" width="132" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+43}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+56}" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+68}" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+79}" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>')
+    rx_box = x + w - 150
+    s.append(f'    <rect x="{rx_box}" y="{y+26}" width="136" height="58" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="4,2"/>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+43}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#854d0e">Reserved SA Slot</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+56}" text-anchor="middle" font-size="8" fill="#a16207">Future Systolic GEMM</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+68}" text-anchor="middle" font-size="8" fill="#a16207">Independent NoC Node</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+79}" text-anchor="middle" font-size="7.5" fill="#b45309">(Stub when HAS_SA=0)</text>')
 
     # CP + DC near Root on Right
-    s.append(f'    <rect x="{rx_box}" y="{y+92}" width="132" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+108}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+121}" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+133}" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>')
-    s.append(f'    <text x="{rx_box+66}" y="{y+145}" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>')
+    s.append(f'    <rect x="{rx_box}" y="{y+92}" width="136" height="62" rx="6" fill="#fff1f2" stroke="#e11d48" stroke-width="1.3"/>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+108}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239">Root Priority Nodes</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+121}" text-anchor="middle" font-size="8" fill="#be123c">CP + RV32 FW (PRIO=1)</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+133}" text-anchor="middle" font-size="8" fill="#be123c">DC Scanout (s_* direct)</text>')
+    s.append(f'    <text x="{rx_box+68}" y="{y+145}" text-anchor="middle" font-size="7.5" fill="#9f1239">Walker 0xFE -&gt; L2/AXI</text>')
 
     # Root atg_rt + atg_mc
     s.append(f'    <rect x="{cx-150}" y="{y+66}" width="300" height="32" rx="6" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>')
@@ -98,7 +98,7 @@ def render_spine(x, y, w, n_trunks, n_su):
     # Connecting arrows inside Spine
     s.append(f'    <line x1="{cx}" y1="{y+58}" x2="{cx}" y2="{y+66}" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>')
     s.append(f'    <line x1="{cx}" y1="{y+98}" x2="{cx}" y2="{y+108}" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-vio)"/>')
-    s.append(f'    <line x1="{x+146}" y1="{y+55}" x2="{mmu_x}" y2="{y+44}" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>')
+    s.append(f'    <line x1="{x+150}" y1="{y+55}" x2="{mmu_x}" y2="{y+44}" stroke="#0284c7" stroke-width="1.4" marker-end="url(#arr-sky)"/>')
     s.append(f'    <line x1="{rx_box}" y1="{y+55}" x2="{mmu_x+mmu_w}" y2="{y+44}" stroke="#ca8a04" stroke-width="1.3" stroke-dasharray="3,2"/>')
     s.append(f'    <line x1="{rx_box}" y1="{y+122}" x2="{cx+150}" y2="{y+84}" stroke="#e11d48" stroke-width="1.5" marker-end="url(#arr-vio)"/>')
     return "\n".join(s)
@@ -127,103 +127,103 @@ def rep_badge(cx, cy, label, w=48, h=16):
 
 
 def gen_n1():
-    W, H = 760, 440
+    W, H = 880, 440
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 1 SU (1x1 Tile, atg_su_fabric_n1)</text>')
     lines.append(f'    <text class="t-sub" x="24" y="48">1x1 Grid | 1 Spine Trunk | ASIC: Unified Fat-Tree (0 rep hops) | FPGA minimal: Crossbar mode (atg_mc_tree)</text>')
 
-    lines.append(f'    <rect x="24" y="64" width="712" height="175" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
-    lines.append(su_tile(140, 95, 160, 74, 0))
-    lines.append(f'    <line x1="220" y1="169" x2="220" y2="212" stroke="#059669" stroke-width="2"/>')
-    lines.append(f'    <line x1="220" y1="212" x2="380" y2="212" stroke="#059669" stroke-width="2"/>')
-    lines.append(f'    <line x1="380" y1="212" x2="380" y2="276" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
-    lines.append(f'    <text x="300" y="205" text-anchor="middle" font-size="9" font-weight="600" fill="#047857">Direct Trunk 0 (0 rep hops)</text>')
+    lines.append(f'    <rect x="24" y="64" width="832" height="175" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
+    lines.append(su_tile(160, 95, 160, 74, 0))
+    lines.append(f'    <line x1="240" y1="169" x2="240" y2="212" stroke="#059669" stroke-width="2"/>')
+    lines.append(f'    <line x1="240" y1="212" x2="440" y2="212" stroke="#059669" stroke-width="2"/>')
+    lines.append(f'    <line x1="440" y1="212" x2="440" y2="276" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
+    lines.append(f'    <text x="340" y="205" text-anchor="middle" font-size="9" font-weight="600" fill="#047857">Direct Trunk 0 (0 rep hops)</text>')
 
     # FPGA inset box
-    lines.append(f'    <rect x="420" y="88" width="290" height="90" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="1.2" stroke-dasharray="4,2"/>')
-    lines.append(f'    <text x="565" y="108" text-anchor="middle" font-size="10" font-weight="700" fill="#9a3412">Target Platform Switch (menuconfig #1)</text>')
-    lines.append(f'    <text x="565" y="126" text-anchor="middle" font-size="9" fill="#c2410c">• ASIC (compute/gfx-*-su1): USE_NOC_FABRIC = 1</text>')
-    lines.append(f'    <text x="565" y="141" text-anchor="middle" font-size="9" fill="#c2410c">  SU0 local rt2 -&gt; Unified Fat-Tree Root</text>')
-    lines.append(f'    <text x="565" y="158" text-anchor="middle" font-size="9" fill="#c2410c">• FPGA (*-fpga-test-minimal): USE_NOC_FABRIC = 0</text>')
-    lines.append(f'    <text x="565" y="172" text-anchor="middle" font-size="9" fill="#c2410c">  Flat 2-cyc Crossbar (atg_mc_tree)</text>')
+    lines.append(f'    <rect x="490" y="88" width="320" height="90" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="1.2" stroke-dasharray="4,2"/>')
+    lines.append(f'    <text x="650" y="108" text-anchor="middle" font-size="10" font-weight="700" fill="#9a3412">Target Platform Switch (menuconfig #1)</text>')
+    lines.append(f'    <text x="650" y="126" text-anchor="middle" font-size="9" fill="#c2410c">• ASIC (compute/gfx-*-su1): USE_NOC_FABRIC = 1</text>')
+    lines.append(f'    <text x="650" y="141" text-anchor="middle" font-size="9" fill="#c2410c">  SU0 local rt2 -&gt; Unified Fat-Tree Root</text>')
+    lines.append(f'    <text x="650" y="158" text-anchor="middle" font-size="9" fill="#c2410c">• FPGA (*-fpga-test-minimal): USE_NOC_FABRIC = 0</text>')
+    lines.append(f'    <text x="650" y="172" text-anchor="middle" font-size="9" fill="#c2410c">  Flat 2-cyc Crossbar (atg_mc_tree)</text>')
 
-    lines.append(render_spine(24, 252, 712, 1, 1))
+    lines.append(render_spine(24, 252, 832, 1, 1))
     lines.append('</svg>')
     return "\n".join(lines)
 
 
 def gen_n2():
-    W, H = 760, 450
+    W, H = 880, 450
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 2 SUs (2x1 West/East, atg_su_fabric_n2)</text>')
     lines.append(f'    <text class="t-sub" x="24" y="48">2x1 Symmetric | 1x atg_rt2 + rep_h(1) optional | 1 Trunk (ASIC Fat-Tree) | FPGA supports Crossbar (NSU=1,2)</text>')
 
-    lines.append(f'    <rect x="24" y="64" width="712" height="185" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
-    lines.append(su_tile(140, 88, 140, 64, 0))
-    lines.append(su_tile(480, 88, 140, 64, 1))
-    lines.append(rep_badge(318, 120, "rep_h(1)"))
-    lines.append(rep_badge(442, 120, "rep_h(1)"))
-    lines.append(f'    <line x1="280" y1="120" x2="294" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
-    lines.append(f'    <line x1="342" y1="120" x2="352" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
-    lines.append(f'    <line x1="480" y1="120" x2="466" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
-    lines.append(f'    <line x1="418" y1="120" x2="408" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
-    lines.append(rt_badge(380, 120, "rt2_top"))
-    lines.append(f'    <line x1="380" y1="130" x2="380" y2="286" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
-    lines.append(f'    <text x="430" y="212" font-size="9" font-weight="600" fill="#047857">Trunk 0 (RW: rt2=1b + local rt2=1b)</text>')
+    lines.append(f'    <rect x="24" y="64" width="832" height="185" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
+    lines.append(su_tile(180, 88, 140, 64, 0))
+    lines.append(su_tile(560, 88, 140, 64, 1))
+    lines.append(rep_badge(365, 120, "rep_h(1)"))
+    lines.append(rep_badge(515, 120, "rep_h(1)"))
+    lines.append(f'    <line x1="320" y1="120" x2="341" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
+    lines.append(f'    <line x1="389" y1="120" x2="413" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
+    lines.append(f'    <line x1="560" y1="120" x2="539" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
+    lines.append(f'    <line x1="491" y1="120" x2="467" y2="120" stroke="#0284c7" stroke-width="1.8"/>')
+    lines.append(rt_badge(440, 120, "rt2_top"))
+    lines.append(f'    <line x1="440" y1="130" x2="440" y2="286" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
+    lines.append(f'    <text x="490" y="212" font-size="9" font-weight="600" fill="#047857">Trunk 0 (RW: rt2=1b + local rt2=1b)</text>')
 
-    lines.append(render_spine(24, 262, 712, 1, 2))
+    lines.append(render_spine(24, 262, 832, 1, 2))
     lines.append('</svg>')
     return "\n".join(lines)
 
 
 def gen_n4():
-    W, H = 760, 500
+    W, H = 880, 500
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 4 SUs (2x2 Quad, atg_su_fabric_n4)</text>')
-    lines.append(f'    <text class="t-sub" x="24" y="48">1 Quad (4 SUs) -> Single 1-hop atg_rt4 | North row rep_v(1) | Spine rep_s(1) | 1 Unified Trunk to MMU</text>')
+    lines.append(f'    <text class="t-sub" x="24" y="48">1 Quad (4 SUs) -&gt; Single 1-hop atg_rt4 | North row rep_v(1) | Spine rep_s(1) | 1 Unified Trunk to MMU</text>')
 
-    lines.append(f'    <rect x="24" y="64" width="712" height="235" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
+    lines.append(f'    <rect x="24" y="64" width="832" height="235" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
     # 2x2 Quad box
-    lines.append(f'    <rect x="195" y="76" width="370" height="210" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.2" stroke-dasharray="4,2"/>')
-    lines.append(f'    <text x="206" y="91" font-size="9" font-weight="700" fill="#6b21a8">QUAD 0 (2x2)</text>')
+    lines.append(f'    <rect x="255" y="76" width="370" height="210" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.2" stroke-dasharray="4,2"/>')
+    lines.append(f'    <text x="266" y="91" font-size="9" font-weight="700" fill="#6b21a8">QUAD 0 (2x2)</text>')
 
-    lines.append(su_tile(215, 98, 120, 52, 0))
-    lines.append(su_tile(425, 98, 120, 52, 1))
-    lines.append(su_tile(215, 210, 120, 52, 2))
-    lines.append(su_tile(425, 210, 120, 52, 3))
+    lines.append(su_tile(275, 98, 120, 52, 0))
+    lines.append(su_tile(485, 98, 120, 52, 1))
+    lines.append(su_tile(275, 210, 120, 52, 2))
+    lines.append(su_tile(485, 210, 120, 52, 3))
 
-    lines.append(rep_badge(275, 165, "rep_v(1)"))
-    lines.append(rep_badge(485, 165, "rep_v(1)"))
+    lines.append(rep_badge(335, 165, "rep_v(1)"))
+    lines.append(rep_badge(545, 165, "rep_v(1)"))
 
-    lines.append(f'    <line x1="275" y1="150" x2="275" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
-    lines.append(f'    <line x1="275" y1="180" x2="352" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
-    lines.append(f'    <line x1="485" y1="150" x2="485" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
-    lines.append(f'    <line x1="485" y1="180" x2="408" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
-    lines.append(f'    <line x1="335" y1="236" x2="380" y2="190" stroke="#7c3aed" stroke-width="1.5"/>')
-    lines.append(f'    <line x1="425" y1="236" x2="380" y2="190" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="335" y1="150" x2="335" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="335" y1="180" x2="412" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="545" y1="150" x2="545" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="545" y1="180" x2="468" y2="180" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="395" y1="236" x2="440" y2="190" stroke="#7c3aed" stroke-width="1.5"/>')
+    lines.append(f'    <line x1="485" y1="236" x2="440" y2="190" stroke="#7c3aed" stroke-width="1.5"/>')
 
-    lines.append(rt_badge(380, 180, "rt4_q0"))
-    lines.append(rep_badge(380, 272, "rep_s(1)"))
-    lines.append(f'    <line x1="380" y1="190" x2="380" y2="264" stroke="#059669" stroke-width="2"/>')
-    lines.append(f'    <line x1="380" y1="280" x2="380" y2="336" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
+    lines.append(rt_badge(440, 180, "rt4_q0"))
+    lines.append(rep_badge(440, 272, "rep_s(1)"))
+    lines.append(f'    <line x1="440" y1="190" x2="440" y2="264" stroke="#059669" stroke-width="2"/>')
+    lines.append(f'    <line x1="440" y1="280" x2="440" y2="336" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
 
-    lines.append(render_spine(24, 312, 712, 1, 4))
+    lines.append(render_spine(24, 312, 832, 1, 4))
     lines.append('</svg>')
     return "\n".join(lines)
 
 
 def gen_n8():
-    W, H = 820, 510
+    W, H = 880, 510
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 8 SUs (4x2: West + East Quads, atg_su_fabric_n8)</text>')
-    lines.append(f'    <text class="t-sub" x="24" y="48">2 Quads (West 2x2 + East 2x2) -> 2x atg_rt4 + horizontal rep_h(1) per Quad -> 2 Parallel Trunks to MMU</text>')
+    lines.append(f'    <text class="t-sub" x="24" y="48">2 Quads (West 2x2 + East 2x2) -&gt; 2x atg_rt4 + horizontal rep_h(1) per Quad -&gt; 2 Parallel Trunks to MMU</text>')
 
-    lines.append(f'    <rect x="24" y="64" width="772" height="245" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
-    for qi, (qx, base_idx, side) in enumerate([(44, 0, "WEST QUAD 0"), (446, 4, "EAST QUAD 1")]):
+    lines.append(f'    <rect x="24" y="64" width="832" height="245" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
+    for qi, (qx, base_idx, side) in enumerate([(54, 0, "WEST QUAD 0"), (496, 4, "EAST QUAD 1")]):
         lines.append(f'    <rect x="{qx}" y="76" width="330" height="195" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.2" stroke-dasharray="4,2"/>')
         lines.append(f'    <text x="{qx+10}" y="91" font-size="9" font-weight="700" fill="#6b21a8">{side}</text>')
         lines.append(su_tile(qx+18, 98, 108, 48, base_idx+0))
@@ -236,15 +236,15 @@ def gen_n8():
         lines.append(f'    <line x1="{qx+72}" y1="204" x2="{rcx}" y2="{rcy}" stroke="#7c3aed" stroke-width="1.3"/>')
         lines.append(f'    <line x1="{qx+258}" y1="204" x2="{rcx}" y2="{rcy}" stroke="#7c3aed" stroke-width="1.3"/>')
         lines.append(rt_badge(rcx, rcy, f"rt4_q{qi}"))
-        tx = 340 if qi == 0 else 480
+        tx = 360 if qi == 0 else 520
         rx_rep = (rcx + tx) / 2
         lines.append(f'    <line x1="{rcx}" y1="{rcy+10}" x2="{rcx}" y2="282" stroke="#059669" stroke-width="1.8"/>')
         lines.append(f'    <line x1="{rcx}" y1="282" x2="{tx}" y2="282" stroke="#059669" stroke-width="1.8"/>')
         lines.append(rep_badge(rx_rep, 282, "rep_h(1)"))
         lines.append(f'    <line x1="{tx}" y1="282" x2="{tx}" y2="346" stroke="#059669" stroke-width="2" marker-end="url(#arr-em)"/>')
 
-    lines.append(f'    <text x="410" y="295" text-anchor="middle" font-size="9" font-weight="700" fill="#047857">Trunk 0 (W) | Trunk 1 (E)</text>')
-    lines.append(render_spine(24, 322, 772, 2, 8))
+    lines.append(f'    <text x="440" y="295" text-anchor="middle" font-size="9" font-weight="700" fill="#047857">Trunk 0 (W) | Trunk 1 (E)</text>')
+    lines.append(render_spine(24, 322, 832, 2, 8))
     lines.append('</svg>')
     return "\n".join(lines)
 
@@ -302,14 +302,14 @@ def quad_block(x, y, w, h, q_label, su_range, rt_label):
 
 
 def gen_n32():
-    W, H = 940, 560
+    W, H = 980, 560
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 32 SUs (8x4: 8 Quads, atg_su_fabric_n32)</text>')
-    lines.append(f'    <text class="t-sub" x="24" y="48">West 4x4 + East 4x4 (Each cell = 2x2 Quad w/ atg_rt4) | Outer cols rep_h(2), Inner rep_h(1) -> 4 Trunks to Spine MMU</text>')
+    lines.append(f'    <text class="t-sub" x="24" y="48">West 4x4 + East 4x4 (Each cell = 2x2 Quad w/ atg_rt4) | Outer cols rep_h(2), Inner rep_h(1) -&gt; 4 Trunks to Spine MMU</text>')
 
-    lines.append(f'    <rect x="24" y="64" width="892" height="295" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
-    cols_x = [48, 226, 540, 718]
+    lines.append(f'    <rect x="24" y="64" width="932" height="295" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
+    cols_x = [48, 214, 620, 786]
     rows_y = [84, 186]
     names = [
         ("W_NW (Q0)", "SU 0..3", "W_NE (Q1)", "SU 4..7", "E_NW (Q4)", "SU 16..19", "E_NE (Q5)", "SU 20..23"),
@@ -323,13 +323,12 @@ def gen_n32():
             lines.append(quad_block(cx_box, ry, 146, 70, ql, sr, f"rt4_q{qidx}"))
 
     # Pairwise horizontal combiners into 4 Trunks (W_N, W_S, E_N, E_S)
-    # Row 0 (North): W_N at x=395, E_N at x=545; Row 1 (South): W_S at x=420, E_S at x=520
     # Outer cols get rep_h(2), inner get rep_h(1); North row gets rep_v(2), South gets rep_v(1)
     pairs = [
-        (48+146, 119, 226, 392, 174, "rep_h(2)", "rep_h(1)", "rep_v(2)", "rt2_wn", 360),
-        (540+146, 119, 718, 548, 174, "rep_h(1)", "rep_h(2)", "rep_v(2)", "rt2_en", 580),
-        (48+146, 221, 226, 392, 276, "rep_h(2)", "rep_h(1)", "rep_v(1)", "rt2_ws", 415),
-        (540+146, 221, 718, 548, 276, "rep_h(1)", "rep_h(2)", "rep_v(1)", "rt2_es", 525),
+        (48+146, 119, 214, 420, 174, "rep_h(2)", "rep_h(1)", "rep_v(2)", "rt2_wn", 400),
+        (620+146, 119, 786, 560, 174, "rep_h(1)", "rep_h(2)", "rep_v(2)", "rt2_en", 580),
+        (48+146, 221, 214, 420, 276, "rep_h(2)", "rep_h(1)", "rep_v(1)", "rt2_ws", 445),
+        (620+146, 221, 786, 560, 276, "rep_h(1)", "rep_h(2)", "rep_v(1)", "rt2_es", 535),
     ]
     for c_idx, (x0_r, y_m, x1_l, rx, ry, rep_l, rep_r, rep_v, rtlab, tx) in enumerate(pairs):
         cx0 = x0_r - 73
@@ -338,7 +337,7 @@ def gen_n32():
         lines.append(f'    <line x1="{cx0}" y1="{ry}" x2="{rx}" y2="{ry}" stroke="#7c3aed" stroke-width="1.5"/>')
         lines.append(f'    <line x1="{cx1}" y1="{y_m+35}" x2="{cx1}" y2="{ry}" stroke="#7c3aed" stroke-width="1.5"/>')
         lines.append(f'    <line x1="{cx1}" y1="{ry}" x2="{rx}" y2="{ry}" stroke="#7c3aed" stroke-width="1.5"/>')
-        lines.append(rep_badge((cx0+rx)/2, ry, rep_l))
+        lines.append(rep_badge((cx0+rx)/2 if rx > cx1 else (cx0+rx)/2, ry, rep_l))
         lines.append(rep_badge((cx1+rx)/2, ry, rep_r))
         lines.append(rt_badge(rx, ry, rtlab, w=58))
         drop_y = 328 if "n" in rtlab else 340
@@ -347,7 +346,7 @@ def gen_n32():
         lines.append(f'    <line x1="{rx}" y1="{drop_y}" x2="{tx}" y2="{drop_y}" stroke="#059669" stroke-width="1.7"/>')
         lines.append(f'    <line x1="{tx}" y1="{drop_y}" x2="{tx}" y2="395" stroke="#059669" stroke-width="1.8" marker-end="url(#arr-em)"/>')
 
-    lines.append(render_spine(24, 372, 892, 4, 32))
+    lines.append(render_spine(24, 372, 932, 4, 32))
     lines.append('</svg>')
     return "\n".join(lines)
 
@@ -403,7 +402,7 @@ def gen_n128():
     lines = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">', HEADER_DEFS]
     lines.append(f'    <rect width="{W}" height="{H}" fill="#f8fafc" rx="10"/>')
     lines.append(f'    <text class="t-title" x="24" y="30">Amaterrace GPU 2D Floorplan — N = 128 SUs (16x8: 8x 16-SU Quadrants, atg_su_fabric_n128)</text>')
-    lines.append(f'    <text class="t-sub" x="24" y="48">16x8 Grid (32 Quads) | Manhattan-balanced atg_rep (1..6 hops) | 8 Parallel Trunks into Spine MMU (12-bit SRC_ID, RW &lt;= 12b)</text>')
+    lines.append(f'    <text class="t-sub" x="24" y="48">16x8 Grid (32 Quads) | Manhattan-balanced atg_rep (1..6 hops) | 8 Parallel Trunks -&gt; 8 MMU Bridges -&gt; Root Fat-Tree (2x rt4 + rt2)</text>')
 
     lines.append(f'    <rect x="24" y="64" width="992" height="415" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>')
     # West 8x8 and East 8x8 enclosing boundaries
@@ -429,10 +428,8 @@ def gen_n128():
         lines.append(f'    <line x1="{cxq}" y1="{cyq}" x2="{cxq}" y2="{ty}" stroke="#059669" stroke-width="1.5"/>')
         lines.append(f'    <line x1="{cxq}" y1="{ty}" x2="{tx}" y2="{ty}" stroke="#059669" stroke-width="1.5"/>')
         lines.append(f'    <line x1="{tx}" y1="{ty}" x2="{tx}" y2="514" stroke="#059669" stroke-width="1.6" marker-end="url(#arr-em)"/>')
-        lines.append(rep_badge(cxq, ty - 10 if qy > 200 else 242, rlab, w=58, h=14))
+        lines.append(rep_badge(cxq, 397 if qy > 200 else 242, rlab, w=58, h=14))
 
-    lines.append(f'    <rect x="275" y="405" width="490" height="16" rx="4" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>')
-    lines.append(f'    <text x="520" y="416" text-anchor="middle" font-size="8.8" font-weight="700" fill="#047857">8 Parallel Quadrant Trunks -&gt; 8 MMU L1 TLB Bridges -&gt; Root Fat-Tree (2x rt4 + rt2)</text>')
     lines.append(render_spine(24, 492, 992, 8, 128))
     lines.append('</svg>')
     return "\n".join(lines)
@@ -448,7 +445,7 @@ def gen_overview():
     specs = [
         (1,   "1x1",  "SU0 local rt2",             "0 rep",       "1 trunk",  "floorplan_n1.svg"),
         (2,   "2x1",  "rt2_top",                   "0/1 rep_h",   "1 trunk",  "floorplan_n2.svg"),
-        (4,   "2x2",  "1x rt4_quad",               "1 rep_v",     "1 trunk",  "floorplan_n4.svg"),
+        (4,   "2x2",  "1x rt4_quad",               "1 rep_v, 1 rep_s", "1 trunk", "floorplan_n4.svg"),
         (8,   "4x2",  "2x rt4_quad",               "1 rep_h",     "2 trunks", "floorplan_n8.svg"),
         (16,  "4x4",  "4x rt4_quad",               "1-2 rep_v",   "4 trunks", "floorplan_n16.svg"),
         (32,  "8x4",  "8x rt4 + 4x rt2",           "1-2h, 1-2v",  "4 trunks", "floorplan_n32.svg"),

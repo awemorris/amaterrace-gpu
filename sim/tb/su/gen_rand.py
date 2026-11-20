@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
+
+# Lumiere GPU
+# Copyright (C) 2026 Awe Morris
+#
+# SPDX-License-Identifier: Zlib
+
 # Writes rand.s: a seeded random integer program for the SU testbench
 # (ALU ops on r1-r24 with random sources, immediates and specials, and
 # masked sections with exec.and / exec.set).  Run by su-tests.
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
 import random
 import sys
 

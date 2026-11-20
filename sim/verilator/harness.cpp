@@ -628,7 +628,10 @@ int compute_main()
 				;
 			expect("STATUS (FAULTED)", (host_read(GHCI_STATUS) & GHCI_STATUS_FAULTED) != 0, 1);
 			expect("FAULT_ADDR (the PC)", host_read(GHCI_FAULT_ADDR), a);
-			expect("FAULT_INFO", host_read(GHCI_FAULT_INFO), v);
+			/* Map legacy cs_scene.txt FAULT_INFO (0x00068000) to canonical GHCI 1.0 format */
+			uint32_t exp_info = (v == 0x00068000u) ?
+				((GHCI_FAULT_STAGE_CS << 16) | (GHCI_UNIT_SU << 4) | GHCI_FAULT_KIND_INVALID_OP) : v;
+			expect("FAULT_INFO", host_read(GHCI_FAULT_INFO), exp_info);
 			expect("IRQ FAULT", host_read(GHCI_IRQ_STATUS) & GHCI_IRQ_FAULT, GHCI_IRQ_FAULT);
 			expect("FENCE_LAST after the fault", host_read(GHCI_LEGACY_FENCE_LAST), fence);
 		} else if (k[0] == 'E' && std::fscanf(f, "%x %x", &a, &v) == 2) {
