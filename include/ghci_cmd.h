@@ -35,6 +35,9 @@ extern "C" {
 #define GHCI_CMD_SESSION_CLOSE          0x13u
 #define GHCI_CMD_BIND_SESSION           0x14u
 #define GHCI_CMD_QUERY_CAPS             0x15u
+#define GHCI_CMD_FAULT_LOG_SETUP        0x16u
+#define GHCI_CMD_VM_QUERY_PT_MEM        0x17u
+#define GHCI_CMD_MMU_ENABLE             0x18u
 
 /*
  * Capability block dword layout (CMD_QUERY_CAPS, 192 dwords / 768 bytes)
@@ -60,6 +63,7 @@ extern "C" {
 #define GHCI_CAPS_EXTCAP_PRESENT        18u
 #define GHCI_CAPS_SHADER_STAGES         19u
 #define GHCI_CAPS_STAGE_LIMITS          20u
+#define GHCI_CAPS_TIMESTAMP_HZ          30u
 #define GHCI_CAPS_FMT_BASE              32u
 #define GHCI_CAPS_TOTAL_DWORDS          192u
 #define GHCI_CAPS_TOTAL_BYTES           768u
@@ -86,6 +90,7 @@ extern "C" {
 #define GHCI_CAPS_WORD_EXTCAP_PRESENT   18u
 #define GHCI_CAPS_WORD_SHADER_STAGES    19u
 #define GHCI_CAPS_WORD_STAGE_LIMITS     20u
+#define GHCI_CAPS_WORD_TIMESTAMP_HZ     30u
 #define GHCI_CAPS_WORD_FMT_BASE         32u
 
 /* Pipeline State & Execution Commands (0x20..0x2F) */
@@ -617,7 +622,7 @@ typedef struct GhciCmdQuery {
 
 /*
  * ============================================================================
- * Autonomous Virtual Memory Management (VM_MAP / VM_UNMAP)
+ * Virtual Memory, MMU Bringup & Fault Log Commands (0x10..0x18)
  * ============================================================================
  */
 #define GHCI_VM_FLAG_READ       (1u << 0)
@@ -627,51 +632,156 @@ typedef struct GhciCmdQuery {
 #define GHCI_VM_FLAG_WC         (1u << 4)
 #define GHCI_VM_FLAG_LOCAL      (1u << 5) /* 1 = Local VRAM, 0 = Host PCIe / IOVA */
 
-/* CMD_VM_MAP (0x10): 10 dwords (40 bytes) */
+/* GhciVmPtMemInfo (64 bytes, 64-byte aligned, output of CMD_VM_QUERY_PT_MEM) */
+typedef struct GhciVmPtMemInfo {
+	uint32_t struct_bytes;          /* 0x00: 64 */
+	uint32_t reserved0;             /* 0x04: 0 */
+	uint32_t init_pt_bytes;         /* 0x08: Required bytes for initial session page table */
+	uint32_t init_pt_align;         /* 0x0C: Required alignment (power of 2) for initial page table */
+	uint32_t table_page_bytes;      /* 0x10: Bytes per intermediate page table unit */
+	uint32_t table_page_align;      /* 0x14: Required alignment (power of 2) per intermediate unit */
+	uint32_t reserved1;             /* 0x18: 0 */
+	uint32_t reserved2;             /* 0x1C: 0 */
+	uint32_t reserved[8];           /* 0x20..0x3F: 0 */
+} GhciVmPtMemInfo;
+
+/* CMD_VM_QUERY_PT_MEM (0x17): 5 dwords (20 bytes, primary ring only) */
+typedef struct GhciCmdVmQueryPtMem {
+	uint32_t header;                /* opcode: GHCI_CMD_VM_QUERY_PT_MEM, dwords: 5, flags: 0 */
+	uint32_t dst_pa_lo;             /* Destination GhciVmPtMemInfo PA / IOVA [31:0] (64B aligned) */
+	uint32_t dst_pa_hi;             /* Destination GhciVmPtMemInfo PA / IOVA [63:32] */
+	uint32_t dst_bytes;             /* Buffer length (>= 64 and multiple of 64) */
+	uint32_t reserved;              /* 0 */
+} GhciCmdVmQueryPtMem;
+
+/* CMD_MMU_ENABLE (0x18): 6 dwords (24 bytes, primary ring only) */
+typedef struct GhciCmdMmuEnable {
+	uint32_t header;                /* opcode: GHCI_CMD_MMU_ENABLE, dwords: 6, flags: 0 */
+	uint32_t flags;                 /* Reserved (0) */
+	uint32_t init_pt_pa_lo;         /* Session 0 initial PT PA [31:0] (init_pt_align aligned) */
+	uint32_t init_pt_pa_hi;         /* Session 0 initial PT PA [63:32] */
+	uint32_t init_pt_bytes;         /* Allocated bytes (>= info.init_pt_bytes) */
+	uint32_t reserved;              /* 0 */
+} GhciCmdMmuEnable;
+
+/* GhciVmMapComp.status values */
+#define GHCI_VM_MAP_OK              0u
+#define GHCI_VM_MAP_NEED_PT_MEM     1u
+#define GHCI_VM_MAP_COLLISION       2u
+#define GHCI_VM_MAP_INVALID_SESSION 3u
+
+/* GhciVmMapComp (32 bytes, 32-byte aligned, written by CMD_VM_MAP) */
+typedef struct GhciVmMapComp {
+	uint32_t status;                /* 0=OK, 1=NEED_PT_MEM, 2=COLLISION, 3=INVALID_SESSION */
+	uint32_t used_bytes;            /* Bytes consumed from pt_mem (0 if none needed or error) */
+	uint32_t required_bytes;        /* Minimum bytes needed when status == NEED_PT_MEM, else 0 */
+	uint32_t required_align;        /* Required alignment when status == NEED_PT_MEM, else 0 */
+	uint32_t reserved[4];           /* 0 */
+} GhciVmMapComp;
+
+/* CMD_VM_MAP (0x10): 16 dwords (64 bytes, primary ring only) */
 typedef struct GhciCmdVmMap {
-	uint32_t header;                /* opcode: GHCI_CMD_VM_MAP, dwords: 10 */
-	uint32_t session_id;            /* client session identifier */
-	uint32_t flags;                 /* GHCI_VM_FLAG_* */
-	uint32_t reserved;              /* alignment padding */
-	uint32_t gpu_va_lo;             /* GPU virtual address (4KB aligned) [31:0] */
+	uint32_t header;                /* opcode: GHCI_CMD_VM_MAP, dwords: 16, flags: 0 */
+	uint32_t session_id;            /* Target session identifier (0..15) */
+	uint32_t flags;                 /* [5:0] GHCI_VM_FLAG_*, [31:6] reserved (0) */
+	uint32_t reserved0;             /* 0 */
+	uint32_t gpu_va_lo;             /* GPU virtual address (4 KiB aligned) [31:0] */
 	uint32_t gpu_va_hi;             /* GPU virtual address [63:32] */
-	uint32_t phys_lo;               /* IOVA / host physical address [31:0] */
-	uint32_t phys_hi;               /* IOVA / host physical address [63:32] */
-	uint32_t size_lo;               /* mapping size in bytes [31:0] */
-	uint32_t size_hi;               /* mapping size in bytes [63:32] */
+	uint32_t phys_lo;               /* Backing PA / IOVA [31:0] */
+	uint32_t phys_hi;               /* Backing PA / IOVA [63:32] */
+	uint32_t size_lo;               /* Mapping size in bytes (4 KiB multiple, > 0) [31:0] */
+	uint32_t size_hi;               /* Mapping size in bytes [63:32] */
+	uint32_t pt_mem_pa_lo;          /* Intermediate PT memory PA [31:0] (ignored if pt_mem_bytes == 0) */
+	uint32_t pt_mem_pa_hi;          /* Intermediate PT memory PA [63:32] */
+	uint32_t pt_mem_bytes;          /* 0 or integer multiple of table_page_bytes */
+	uint32_t reserved1;             /* 0 */
+	uint32_t comp_pa_lo;            /* 32-byte GhciVmMapComp host PA / IOVA [31:0] (32B aligned) */
+	uint32_t comp_pa_hi;            /* 32-byte GhciVmMapComp host PA / IOVA [63:32] */
 } GhciCmdVmMap;
 
-/* CMD_VM_UNMAP (0x11): 8 dwords (32 bytes) */
+/* GhciVmUnmapComp.status values */
+#define GHCI_VM_UNMAP_OK              0u
+#define GHCI_VM_UNMAP_NEED_BUF        1u
+#define GHCI_VM_UNMAP_INVALID_SESSION 2u
+
+/* GhciVmUnmapEntry (16 bytes) */
+typedef struct GhciVmUnmapEntry {
+	uint64_t pa;                    /* Physical address of freed intermediate PT page */
+	uint32_t bytes;                 /* Size in bytes (typically table_page_bytes) */
+	uint32_t reserved;              /* 0 */
+} GhciVmUnmapEntry;
+
+/* GhciVmUnmapComp (16-byte header + entries[], minimum 64 bytes, 64-byte aligned) */
+typedef struct GhciVmUnmapComp {
+	uint32_t status;                /* 0=OK, 1=NEED_BUF, 2=INVALID_SESSION */
+	uint32_t freed_count;           /* Total freed intermediate pages */
+	uint32_t written_count;         /* Number of entries written into entries[] */
+	uint32_t required_bytes;        /* Required comp_bytes when status == NEED_BUF */
+	GhciVmUnmapEntry entries[];     /* Up to (comp_bytes - 16) / 16 entries */
+} GhciVmUnmapComp;
+
+/* CMD_VM_UNMAP (0x11): 12 dwords (48 bytes, primary ring only) */
 typedef struct GhciCmdVmUnmap {
-	uint32_t header;                /* opcode: GHCI_CMD_VM_UNMAP, dwords: 8 */
-	uint32_t session_id;            /* client session identifier */
-	uint32_t flags;                 /* unmap flags / options */
-	uint32_t reserved;              /* alignment padding */
-	uint32_t gpu_va_lo;             /* GPU virtual address (4KB aligned) [31:0] */
+	uint32_t header;                /* opcode: GHCI_CMD_VM_UNMAP, dwords: 12, flags: 0 */
+	uint32_t session_id;            /* Target session identifier (0..15) */
+	uint32_t flags;                 /* Reserved (0) */
+	uint32_t reserved0;             /* 0 */
+	uint32_t gpu_va_lo;             /* GPU virtual address (4 KiB aligned) [31:0] */
 	uint32_t gpu_va_hi;             /* GPU virtual address [63:32] */
-	uint32_t size_lo;               /* unmap size in bytes [31:0] */
-	uint32_t size_hi;               /* unmap size in bytes [63:32] */
+	uint32_t size_lo;               /* Unmap size in bytes (4 KiB multiple, > 0) [31:0] */
+	uint32_t size_hi;               /* Unmap size in bytes [63:32] */
+	uint32_t comp_pa_lo;            /* GhciVmUnmapComp host PA / IOVA [31:0] (64B aligned) */
+	uint32_t comp_pa_hi;            /* GhciVmUnmapComp host PA / IOVA [63:32] */
+	uint32_t comp_bytes;            /* Buffer size (>= 64 and multiple of 64) */
+	uint32_t reserved1;             /* 0 */
 } GhciCmdVmUnmap;
 
-/* CMD_SESSION_OPEN (0x12): 4 dwords (16 bytes, root page directory allocated autonomously by CP) */
+#define GHCI_SESSION_FLAG_PROTECTED (1u << 0)
+
+/* CMD_SESSION_OPEN (0x12): 6 dwords (24 bytes, primary ring only) */
 typedef struct GhciCmdSessionOpen {
-	uint32_t header;                /* opcode: GHCI_CMD_SESSION_OPEN, dwords: 4 */
-	uint32_t session_id;            /* client session identifier (0..15) */
-	uint32_t flags;                 /* session flags (e.g. protected, priority) */
-	uint32_t reserved;              /* reserved (must be zero) */
+	uint32_t header;                /* opcode: GHCI_CMD_SESSION_OPEN, dwords: 6, flags: 0 */
+	uint32_t session_id;            /* Client session identifier (1..15) */
+	uint32_t flags;                 /* [0] PROTECTED, [31:1] reserved (0) */
+	uint32_t init_pt_pa_lo;         /* Session initial PT PA [31:0] (ignored if CAP_BOOT_PROT == 0) */
+	uint32_t init_pt_pa_hi;         /* Session initial PT PA [63:32] */
+	uint32_t init_pt_bytes;         /* Allocated bytes (>= info.init_pt_bytes when CAP_BOOT_PROT == 1) */
 } GhciCmdSessionOpen;
 
 /* CMD_SESSION_CLOSE (0x13): 2 dwords (8 bytes) */
 typedef struct GhciCmdSessionClose {
 	uint32_t header;                /* opcode: GHCI_CMD_SESSION_CLOSE, dwords: 2 */
-	uint32_t session_id;            /* client session identifier to destroy and flush */
+	uint32_t session_id;            /* Client session identifier to destroy and flush */
 } GhciCmdSessionClose;
 
 /* CMD_BIND_SESSION (0x14): 2 dwords (8 bytes) */
 typedef struct GhciCmdBindSession {
 	uint32_t header;                /* opcode: GHCI_CMD_BIND_SESSION, dwords: 2 */
-	uint32_t session_id;            /* client session identifier for subsequent draws/dispatches */
+	uint32_t session_id;            /* Session identifier (0..15) for subsequent commands */
 } GhciCmdBindSession;
+
+/* CMD_FAULT_LOG_SETUP (0x16): 7 dwords (28 bytes, primary ring only) */
+#define GHCI_FAULT_LOG_FLAG_ENABLE     (1u << 0)
+#define GHCI_FAULT_LOG_FLAG_COMP_WRITE (1u << 8)
+
+typedef struct GhciCmdFaultLogSetup {
+	uint32_t header;                /* opcode: GHCI_CMD_FAULT_LOG_SETUP, dwords: 7, flags: [0] ENABLE, [8] COMP_WRITE */
+	uint32_t ring_pa_lo;            /* 32B-aligned fault ring host PA / IOVA [31:0] */
+	uint32_t ring_pa_hi;            /* 32B-aligned fault ring host PA / IOVA [63:32] */
+	uint32_t capacity_entries;      /* Power of 2 >= 2 when ENABLE == 1; 0 when ENABLE == 0 */
+	uint32_t reserved;              /* 0 */
+	uint32_t comp_pa_lo;            /* 8B-aligned next_seq writeback host PA [31:0] */
+	uint32_t comp_pa_hi;            /* 8B-aligned next_seq writeback host PA [63:32] */
+} GhciCmdFaultLogSetup;
+
+/* GhciFaultRecord (32 bytes, 32-byte aligned) */
+typedef struct GhciFaultRecord {
+	uint64_t seq;                   /* 0x00: 1-based monotonic fault sequence number */
+	uint64_t fault_addr;            /* 0x08: 64-bit faulting GPU VA, bus PA, or shader PC */
+	uint64_t timestamp;             /* 0x10: Constant-rate TIMESTAMP value */
+	uint32_t session_id;            /* 0x18: Client session ID (1..15) */
+	uint32_t fault_info_word;       /* 0x1C: Same bit layout as MMIO FAULT_INFO */
+} GhciFaultRecord;
 
 /* CMD_QUERY_CAPS (0x15): 5 dwords (20 bytes, primary ring only) */
 typedef struct GhciCmdQueryCaps {
@@ -791,11 +901,16 @@ typedef struct GhciCmdWaitFence {
 } GhciCmdWaitFence;
 
 /* CMD_WRITE_TIMESTAMP (0x35): 4 dwords */
+#define GHCI_TIMESTAMP_FLAG_HOST_PA    (1u << 0) /* 1 = host PA (primary ring only), 0 = session GPU VA */
+#define GHCI_TIMESTAMP_STAGE_TOP       0u
+#define GHCI_TIMESTAMP_STAGE_POST_RASTER 1u
+#define GHCI_TIMESTAMP_STAGE_BOTTOM    2u
+
 typedef struct GhciCmdWriteTimestamp {
-	uint32_t header;                /* opcode: GHCI_CMD_WRITE_TIMESTAMP, dwords: 4 */
-	uint32_t dst_addr_lo;           /* 64-bit GPU VA or host memory address [31:0] */
+	uint32_t header;                /* opcode: GHCI_CMD_WRITE_TIMESTAMP, dwords: 4, flags: [0] HOST_PA */
+	uint32_t dst_addr_lo;           /* 64-bit GPU VA or host PA [31:0] (8-byte aligned) */
 	uint32_t dst_addr_hi;           /* 64-bit address [63:32] */
-	uint32_t pipeline_stage;        /* Stage at which timestamp is latched (Top, Bottom, etc.) */
+	uint32_t pipeline_stage;        /* 0=TOP, 1=POST_RASTER, 2=BOTTOM */
 } GhciCmdWriteTimestamp;
 
 /* CMD_COPY_BUFFER (0x40): 8 dwords (N13) */
