@@ -119,9 +119,12 @@ localparam [8:0] GHCI_CAP_WORD_DISP_PCLK_MAX_KHZ = 9'd22;
 localparam [8:0] GHCI_CAP_WORD_DISP_PCLK_INFO    = 9'd23;
 localparam [8:0] GHCI_CAP_WORD_DISP_LIMITS_H     = 9'd24;
 localparam [8:0] GHCI_CAP_WORD_DISP_LIMITS_V     = 9'd25;
+localparam [8:0] GHCI_CAP_WORD_DESC_LIMITS       = 9'd26;
+localparam [8:0] GHCI_CAP_WORD_TEX_LIMITS        = 9'd27;
 localparam [8:0] GHCI_CAP_WORD_DISP_MIN_H_BLANK  = 9'd28;
 localparam [8:0] GHCI_CAP_WORD_DISP_MIN_V_BLANK  = 9'd29;
 localparam [8:0] GHCI_CAP_WORD_TIMESTAMP_HZ      = 9'd30;
+localparam [8:0] GHCI_CAP_WORD_TEX_LIMITS_3D     = 9'd31;
 localparam [8:0] GHCI_CAP_WORD_FMT_BASE          = 9'd32;
 
 /* Capability word alias */
@@ -547,5 +550,15 @@ localparam GHCI_DISP_INFO_HAS_SENSE_BIT       = 19;
 localparam GHCI_DISP_INFO_HAS_I2C_BIT         = 20;
 localparam GHCI_DISP_INFO_DISPLAY_COUNT_SHIFT = 21;
 localparam GHCI_DISP_INFO_FIXED_MODE_SHIFT    = 24;
+
+/* Descriptor & Texture Capability Block Words 26, 27, 31 shifts/masks */
+localparam [7:0] GHCI_DESC_MAX_SETS_DEFAULT      = 8'd8;
+localparam GHCI_DESC_LIMIT_CACHE_ENTRIES_SHIFT   = 8;
+localparam GHCI_DESC_LIMIT_INDEX_BITS_SHIFT      = 16;
+localparam GHCI_DESC_LIMIT_NON_UNIFORM_TEX_BIT   = 20;
+localparam GHCI_TEX_LIMIT_MAX_MIP_LEVELS_SHIFT   = 0;
+localparam GHCI_TEX_LIMIT_MAX_ARRAY_M1_SHIFT     = 4;
+localparam GHCI_TEX_LIMIT_MAX_EXTENT_SHIFT       = 16;
+localparam GHCI_TEX_LIMIT_MAX_DEPTH_3D_SHIFT     = 0;
 
 /* verilator lint_on UNUSEDPARAM */

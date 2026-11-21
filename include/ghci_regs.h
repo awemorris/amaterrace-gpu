@@ -68,9 +68,12 @@ extern "C" {
 #define GHCI_CAP_WORD_DISP_PCLK_INFO  23u /* Display flags, DISPLAY_COUNT [23:21], FIXED_MODE_COUNT [31:24] */
 #define GHCI_CAP_WORD_DISP_LIMITS_H   24u /* [15:0] max_hactive, [31:16] max_htotal */
 #define GHCI_CAP_WORD_DISP_LIMITS_V   25u /* [15:0] max_vactive, [31:16] max_vtotal */
+#define GHCI_CAP_WORD_DESC_LIMITS     26u /* Descriptor table limits */
+#define GHCI_CAP_WORD_TEX_LIMITS      27u /* Texture & mip limits ([3:0] MAX_MIP_LEVELS) */
 #define GHCI_CAP_WORD_DISP_MIN_H_BLANK 28u /* [7:0] min_hfp, [15:8] min_hsync, [23:16] min_hbp */
 #define GHCI_CAP_WORD_DISP_MIN_V_BLANK 29u /* [7:0] min_vfp, [15:8] min_vsync, [23:16] min_vbp */
 #define GHCI_CAP_WORD_TIMESTAMP_HZ    30u /* Constant-rate TIMESTAMP counter frequency (Hz) */
+#define GHCI_CAP_WORD_TEX_LIMITS_3D   31u /* [15:0] MAX_TEX_DEPTH_3D, [31:16] reserved (0) */
 #define GHCI_CAP_WORD_FMT_BASE        32u
 
 #define GHCI_CAP_DEVICE_CAPS          GHCI_CAP_WORD_DEVICE_CAPS
@@ -406,6 +409,16 @@ extern "C" {
 #define GHCI_DISP_BLANK_SYNC(w)        (((w) >> 8) & 0xFFu)
 #define GHCI_DISP_BLANK_BP(w)          (((w) >> 16) & 0xFFu)
 #define GHCI_DISP_CURSOR_SIZE          64u /* Plane 1: 64 x 64 BGRA8, 256 bytes per row */
+
+/* Descriptor & Texture Capability Block Words 26, 27, 31 Decoders */
+#define GHCI_DESC_LIMIT_MAX_SETS(w)          ((w) & 0xFFu)          /* Word 26[7:0]: MAX_DESCRIPTOR_SETS (8) */
+#define GHCI_DESC_LIMIT_CACHE_ENTRIES(w)     (((w) >> 8) & 0xFFu)   /* Word 26[15:8]: DESC_CACHE_ENTRIES */
+#define GHCI_DESC_LIMIT_INDEX_BITS(w)        (((w) >> 16) & 0x0Fu)  /* Word 26[19:16]: INDEX_BITS (13) */
+#define GHCI_DESC_LIMIT_NON_UNIFORM_TEX_IDX  (1u << 20)             /* Word 26[20]: 0 in GHCI 1.0 */
+#define GHCI_TEX_LIMIT_MAX_MIP_LEVELS(w)     ((w) & 0x0Fu)          /* Word 27[3:0]: MAX_MIP_LEVELS (1..15) */
+#define GHCI_TEX_LIMIT_MAX_ARRAY_LAYERS_M1(w)(((w) >> 4) & 0x0FFFu) /* Word 27[15:4]: MAX_ARRAY_LAYERS - 1 */
+#define GHCI_TEX_LIMIT_MAX_EXTENT(w)         (((w) >> 16) & 0xFFFFu)/* Word 27[31:16]: MAX_TEX_EXTENT */
+#define GHCI_TEX_LIMIT_MAX_DEPTH_3D(w)       ((w) & 0xFFFFu)        /* Word 31[15:0]: MAX_TEX_DEPTH_3D */
 
 #ifdef __cplusplus
 }

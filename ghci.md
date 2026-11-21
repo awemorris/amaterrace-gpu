@@ -403,11 +403,12 @@ In GHCI 1.0, pipeline stage capabilities and physical limits are queried authori
 | `23` | `GHCI_CAP_WORD_DISP_PCLK_INFO` | `[15:0]` max pixel clock tolerance (ppm); `[16]` `ARBITRARY_PCLK`; `[17]` `TMDS_SCRAMBLE` (`1` if hardware supports HDMI 2.0 scrambling for pixel clocks `> 340000` kHz); `[18]` `HAS_CURSOR`; `[19]` `HAS_SENSE`; `[20]` `HAS_I2C`; `[23:21]` `DISPLAY_COUNT` (`1..7` if `CAP_DISP==1`); `[31:24]` `FIXED_MODE_COUNT` (`>= 1` if `ARBITRARY_PCLK == 0`) |
 | `24` | `GHCI_CAP_WORD_DISP_LIMITS_H` | `[15:0]` `max_hactive`, `[31:16]` `max_htotal` (pixels) |
 | `25` | `GHCI_CAP_WORD_DISP_LIMITS_V` | `[15:0]` `max_vactive`, `[31:16]` `max_vtotal` (lines) |
-| `26..27` | — | Reserved in Commit #2 (descriptor/tex limits in #3) |
+| `26` | `GHCI_CAP_WORD_DESC_LIMITS` | Descriptor limits: `[7:0]` `MAX_DESCRIPTOR_SETS` (`8`), `[15:8]` `DESC_CACHE_ENTRIES` (informational, e.g. `32`), `[19:16]` `INDEX_BITS` (`13`), `[20]` `CAP_NON_UNIFORM_TEX_IDX` (`0` in GHCI 1.0), `[31:21]` reserved (`0`) |
+| `27` | `GHCI_CAP_WORD_TEX_LIMITS` | Texture & mip limits: `[3:0]` `MAX_MIP_LEVELS` (`1..15`, authoritative single field), `[15:4]` `MAX_ARRAY_LAYERS_M1` (e.g. `2047` -> `2048` layers), `[31:16]` `MAX_TEX_EXTENT` (max 1D/2D/Cube width/height) |
 | `28` | `GHCI_CAP_WORD_DISP_MIN_H_BLANK` | `[7:0]` `min_hfp`, `[15:8]` `min_hsync`, `[23:16]` `min_hbp`, `[31:24]` `0` |
 | `29` | `GHCI_CAP_WORD_DISP_MIN_V_BLANK` | `[7:0]` `min_vfp`, `[15:8]` `min_vsync`, `[23:16]` `min_vbp`, `[31:24]` `0` |
 | `30` | `GHCI_CAP_WORD_TIMESTAMP_HZ` | Constant-rate 64-bit `TIMESTAMP` counter frequency in Hz (independent of `GCLK_HZ` DVFS/gating) |
-| `31` | — | Reserved (reads 0) |
+| `31` | `GHCI_CAP_WORD_TEX_LIMITS_3D` | `[15:0]` `MAX_TEX_DEPTH_3D` (`0` if `TEX_3D == 0` or `NUM_SU == 0`), `[31:16]` reserved (`0`) |
 | `32..188` | `GHCI_CAP_WORD_FMT_BASE + v` | 1 dword per `VkFormat` $v \in [0, 156]$ (`FMT[v]` packed layout below) |
 | `189..191` | — | Trailing alignment padding (reads 0) |
 
@@ -738,7 +739,7 @@ The canonical GHCI 1.0 structured command set is defined authoritatively by this
 | `0x20` | `CMD_BIND_PIPELINE` | 3 | `NUM_SU > 0` | Binds immutable 128-byte PSO via 64-bit GPU virtual address |
 | `0x21` | `CMD_BIND_VERTEX_BUFFERS` | 2+4N | `NUM_SU > 0` | Binds $N$ vertex buffer arrays (`buffer_va`, `size`, `stride`) |
 | `0x22` | `CMD_BIND_INDEX_BUFFER` | 4 | `NUM_SU > 0` | Binds index buffer (`buffer_va`, `index_type`) |
-| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | `NUM_SU > 0` | Binds descriptor table slot $0..3$ (`table_va`, `count`) |
+| `0x23` | `CMD_BIND_DESCRIPTOR_TABLE` | 4 | `NUM_SU > 0` | Binds texture (`32B`) or sampler (`16B`) descriptor table to set `0..7` (`TABLE_KIND`, `INVAL_CACHE`, `table_size_16b`) |
 | `0x24` | `CMD_SET_VIEWPORT` | 7 | Mandatory (Raster) | Dynamic viewport rectangle ($X, Y, W, H, \min Z, \max Z$) |
 | `0x25` | `CMD_SET_SCISSOR` | 5 | Mandatory (Raster) | Dynamic scissor rectangle ($X, Y, W, H$) |
 | `0x26` | `CMD_SET_DYNAMIC_STATE` | 6 | Mandatory (Raster) | Dynamic pipeline state override by `state_id` (depth bias, blend, stencil, line width, border table) |
@@ -822,12 +823,16 @@ Binds the index buffer for indexed draw calls.
 - `dword 3`: `[15:0] index_type` (`0` = UINT16, `1` = UINT32), `[31:16] reserved`
 
 #### `CMD_BIND_DESCRIPTOR_TABLE` (0x23)
-Binds a descriptor table for textures, samplers, and buffers (section 8.4).
+Binds a texture (`32`-byte entries) or sampler (`16`-byte entries) descriptor table for graphics or compute draws/dispatches (4 dwords, 16 bytes) (§8.4, [`include/ghci_cmd.h`](include/ghci_cmd.h)):
 
-- `dword 0`: Header (`opcode = 0x23`, `dwords = 4`)
-- `dword 1`: `table_va[31:0]`
+- `dword 0`: Header (`opcode = 0x23`, `dwords = 4`, `flags`: `[0]` `BIND_POINT` (`0 = Graphics`, `1 = Compute`), `[1]` `INVAL_CACHE` (`1` = invalidate TU descriptor cache before subsequent draws/dispatches), `[2]` `TABLE_KIND` (`0` = Texture descriptor table with 32B elements, `1` = Sampler descriptor table with 16B elements), `[15:3]` reserved `0`)
+- `dword 1`: `table_va[31:0]` (64-bit session GPU VA; 32B aligned when `TABLE_KIND == 0`, 16B aligned when `TABLE_KIND == 1`; `0` unbinds)
 - `dword 2`: `table_va[63:32]`
-- `dword 3`: `[15:0] set_index` (Descriptor set slot 0..3), `[31:16] descriptor_count` (number of descriptor structures in the table for bounds checking)
+- `dword 3`: `[15:0] set_index` (`0..7`; `>= 8` raises `GHCI_FAULT_KIND_INVALID_OP`), `[31:16] table_size_16b` (table size in 16-byte units; `0` when unbinding)
+- **Bounds, Null Descriptors & Cache Invalidation**:
+  - Texture index `i` resolves to `tex_table_va[set] + i * 32`; if `tex_table_va[set] == 0` or `(i * 2 + 2) > tex_table_size_16b[set]`, it is treated as a null descriptor without faulting (`texl`/`texb`/`texf`/`texg` return `(0, 0, 0, 1)`, `texsz` returns `0`).
+  - Sampler index `j` resolves to `samp_table_va[set] + j * 16`; if `samp_table_va[set] == 0` or `(j + 1) > samp_table_size_16b[set]`, it is treated as a null descriptor without faulting.
+  - Descriptor cache invalidation after modifying descriptor memory MUST use `CMD_BARRIER` with `GHCI_BARRIER_FLAG_INVAL_DESCRIPTOR` (`flags[5] == 1`) or `CMD_BIND_DESCRIPTOR_TABLE` with `flags[1] INVAL_CACHE == 1` (`CMD_FENCE` has no cache-invalidation flag). `CMD_SESSION_CLOSE(s)` invalidates entries for session `s`, and `CTRL.RESET` invalidates all entries.
 
 #### `CMD_SET_VIEWPORT` (0x24) & `CMD_SET_SCISSOR` (0x25)
 Dynamic state updates without pipeline recompilation, exactly matching `GhciCmdSetViewport` and `GhciCmdSetScissor` ([`include/ghci_cmd.h`](include/ghci_cmd.h)):
@@ -1443,16 +1448,16 @@ A compact 32-byte structure describing a texture resource:
 | Byte Offset | Field Name | Type | Description |
 | --- | --- | --- | --- |
 | `0x00` | `base_address` | uint64_t | 64-bit GPU virtual address of level 0 texel data |
-| `0x08` | `width` | uint16_t | Width in texels (1..16384) |
-| `0x0A` | `height` | uint16_t | Height in texels (1..16384) |
-| `0x0C` | `depth` | uint16_t | 3D depth or 2D array layer count |
-| `0x0E` | `format` | uint8_t | Format code directly using standard `VkFormat` enum (e.g. `VK_FORMAT_R8G8B8A8_UNORM = 37`, `VK_FORMAT_B8G8R8A8_UNORM = 44`, `VK_FORMAT_R5G6B5_UNORM_PACK16 = 84`, `VK_FORMAT_D24_UNORM_S8_UINT = 129`, `VK_FORMAT_D32_SFLOAT = 126`, BC1..7 = 131..146, ETC2 = 147..156) |
-| `0x0F` | `mip_levels` | uint8_t | Number of mipmap levels (1..15) |
-| `0x10` | `row_pitch_bytes` | uint32_t | Level 0 texel row pitch in bytes. For linear textures, subsequent mip pitches are computed by hardware as $\max(64, \lceil \text{width}_l \times \text{bpp} \rceil)$ aligned to 64 bytes. For tiled textures, specifies level 0 tile row pitch ($\text{tile\_row\_pitch\_bytes} = \lceil \text{width} / 8 \rceil \times \text{tile\_size\_bytes}$ aligned to 256 bytes) |
-| `0x14` | `slice_pitch_bytes`| uint32_t | Pitch in bytes between 2D slices or array layers |
+| `0x08` | `width` | uint16_t | Width in texels (`1..MAX_TEX_EXTENT`) |
+| `0x0A` | `height` | uint16_t | Height in texels (`1..MAX_TEX_EXTENT`; `1` for 1D) |
+| `0x0C` | `depth` | uint16_t | 1D/2D `ARRAY==0`: `1`; 1D/2D `ARRAY==1`: layer count (`1..MAX_ARRAY_LAYERS`); 3D: depth (`1..MAX_TEX_DEPTH_3D`, `ARRAY==1` is `INVALID_OP`); Cube `ARRAY==0`: `6` (else `INVALID_OP`); Cube `ARRAY==1`: `6 * cube_count` (`depth == 0`, `depth % 6 != 0`, or `depth > MAX_ARRAY_LAYERS` is `INVALID_OP`) |
+| `0x0E` | `format` | uint8_t | `GhciFormat` code (encodes sRGB, UNORM/SNORM/INT/FLOAT directly; e.g. `R8G8B8A8_UNORM = 0x20`, `B8G8R8A8_UNORM = 0x28`, `R5G6B5_UNORM_PACK16 = 0x02`, `D24_UNORM_S8_UINT = 0x74`, `D32_SFLOAT = 0x72`, BC1..7 = `0x80..0x8F`, ETC2 = `0x90..0x99`) |
+| `0x0F` | `mip_levels` | uint8_t | Number of mipmap levels (`1..MAX_MIP_LEVELS` reported in `CMD_QUERY_CAPS` Word 27`[3:0]`; `0` or `> MAX_MIP_LEVELS` raises `INVALID_OP`) |
+| `0x10` | `row_pitch_bytes` | uint32_t | Level 0 texel row pitch in bytes. For linear textures, subsequent mip pitches are computed by hardware as $\max(64, \lceil \text{width}_l \times \text{bpp} \rceil)$ aligned to 64 bytes (or `2^ROW_ALIGN_LOG2` alignment). For tiled textures, specifies level 0 tile row pitch ($\text{tile\_row\_pitch\_bytes} = \lceil \text{width} / 8 \rceil \times \text{tile\_size\_bytes}$ aligned to 256 bytes) |
+| `0x14` | `slice_pitch_bytes`| uint32_t | Pitch in bytes between 2D/Cube array layers or 3D slices |
 | `0x18` | `sample_count` | uint8_t | MSAA sample count (1, 2, 4) |
 | `0x19` | `dimension` | uint8_t | 0=1D, 1=2D, 2=3D, 3=CubeMap |
-| `0x1A` | `flags` | uint16_t | `[0]` 0=Linear, 1=Tiled; `[1]` sRGB format |
+| `0x1A` | `flags` | uint16_t | `[0]` `TILED` (`0`=Linear, `1`=Tiled); `[1]` reserved (`0`, sRGB comes solely from `format`); `[2]` `STENCIL_ASPECT` (`1`=sample stencil aspect of depth-stencil format); `[4:3]` `ROW_ALIGN_LOG2`; `[5]` `ARRAY` (`1`=arrayed 1D/2D/Cube); `[15:6]` reserved (`0`) |
 | `0x1C` | `component_swizzle` | uint32_t | Component swizzle mappings: `[2:0]` R swizzle, `[5:3]` G swizzle, `[8:6]` B swizzle, `[11:9]` A swizzle (0: ZERO, 1: ONE, 2: R, 3: G, 4: B, 5: A; `VkComponentSwizzle`), `[31:12]` reserved |
 
 #### Sampler Descriptor (`GhciSamplerDescriptor`, 16 Bytes)
@@ -1489,30 +1494,17 @@ A compact 16-byte structure describing raw, uniform, storage, or texel buffers:
 
 ### 8.4 Descriptor Tables, Push Constants & Shader Resource Binding
 
-Resource binding follows a flat, table-based descriptor architecture:
-- The driver allocates arrays of `GhciTextureDescriptor`, `GhciSamplerDescriptor`,
-  or `GhciBufferDescriptor` structures in shared memory.
-- The `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` packet binds a
-  table to one of 4 hardware descriptor set slots (`set 0` .. `set 3`).
-- Inside each descriptor set table, descriptors are indexed using unified table-base + layout-offset scaling:
-  $$\text{desc\_va} = \text{set\_base\_va} + \text{binding\_offset\_bytes} + (\text{element\_idx} \times \text{descriptor\_size\_bytes})$$
-  - `set_base_va`: 64-bit GPU virtual address of the descriptor set bound to slot $0..3$.
-  - `binding_offset_bytes`: Statically calculated at pipeline layout creation by the User-Mode Driver (UMD) according to the `VkDescriptorSetLayout` and embedded as an immediate offset into compiled GSI1 shader instructions (or passed via push constants).
-  - `element_idx`: 0 for scalar descriptors, or array index $0..N-1$ for descriptor arrays (`descriptorCount > 1`).
-  - `descriptor_size_bytes`: 32 bytes for texture descriptors, 16 bytes for buffer and sampler descriptors.
-- Shaders access descriptor table base addresses:
-  - When `CMD_BIND_DESCRIPTOR_TABLE(set_index, table_va, count)` executes, the Command Processor mirrors the 64-bit `table_va` into Shader Unit constant bank registers:
-    - Set 0: `c[24..25]`
-    - Set 1: `c[26..27]`
-    - Set 2: `c[28..29]`
-    - Set 3: `c[30..31]`
-    This provides direct 1-cycle operand access to descriptor set base addresses without memory traffic.
-  - Shaders load buffer base GPU VAs via `ld.64` and read/write buffer data via `ld.64`, `lw`, `sw`.
-  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The **shader adds the dynamic offset** to the buffer base address loaded from the descriptor; dynamic offsets are supplied via push constants ($c0..c23$).
-  - **Decoupled Combined Image / Sampler Indexing**:
-    In GSI1 texture instructions (`texl`, `texb`, `texf`, §12.9, §12.10), the texture slot index $k_{\text{tex}} = \text{sub}[3:0] \in [0, 15]$ (`w1[20:17]`) indexes Descriptor Set 0 (texture descriptor at $\text{set0\_va} + k_{\text{tex}} \times 32$), while the sampler slot index $k_{\text{samp}} = w1[9:6] \in [0, 15]$ independently indexes Descriptor Set 1 (sampler descriptor at $\text{set1\_va} + k_{\text{samp}} \times 16$).
-    This enables up to $16 \times 16 = 256$ distinct combinations of textures and samplers, directly satisfying Vulkan 1.0 decoupled `VkSampler` and `VkImageView` binding requirements. If a combined image-sampler is used, shaders encode $w1[9:6] = k_{\text{tex}}$.
-    *Pipeline Slot Capacity*: In GHCI 1.0, Descriptor Set 0 (textures 0..15) and Set 1 (samplers 0..15) are configured per draw/dispatch pipeline. The total number of unique texture descriptors across all active shader stages in a single pipeline (Vertex + Fragment combined) is at most 16, and unique samplers at most 16. Drivers report `maxPerStageDescriptorSamplers = 16` and `maxPerStageDescriptorSampledImages = 16` (subject to the total pipeline limit of 16); pipelines whose combined stages exceed 16 unique textures or samplers are rejected with diagnostic logging during pipeline creation. `binding_offset_bytes` is NOT used by hardware texture units; it is applied exclusively by shaders for buffer descriptors.
+Resource binding follows a flat, table-based descriptor architecture with separate Graphics and Compute binding points across `8` descriptor sets (`set 0..7`, `GHCI_MAX_DESCRIPTOR_SETS = 8` reported in `CMD_QUERY_CAPS` Word 26`[7:0]`):
+- The driver allocates arrays of `GhciTextureDescriptor` (32 bytes), `GhciSamplerDescriptor` (16 bytes), or `GhciBufferDescriptor` (16 bytes) structures in session GPU VA space.
+- `CMD_BIND_DESCRIPTOR_TABLE` (`0x23`) binds a **texture** (`TABLE_KIND = 0`, 32-byte entries) or **sampler** (`TABLE_KIND = 1`, 16-byte entries) descriptor table independently to set `0..7` for Graphics (`BIND_POINT = 0`) or Compute (`BIND_POINT = 1`), along with its bounds `table_size_16b` (table size in 16-byte units).
+- **Texture & Sampler Lookup (6-bit `.idx` Single Encoding, §12.9)**:
+  In all GSI1 texture instructions (`texl`, `texg`, `texb`, `texqlod`, `texf`, `texsz`), `w1[21]` (`I/R`) selects immediate vs. GPR register indexing (`w1[31]` must be `0`):
+  - **Immediate mode (`w1[21] == 0`)**: `tex_field[5:0]` (`{w1[15:14], w1[20:17]}`) indexes Set `0`'s texture table (`0..63`) at `tex_table_va[0] + tex_idx * 32`, and `samp_field[5:0]` (`{w1[30], w1[16], w1[9:6]}`) indexes Set `0`'s sampler table (`0..63`) at `samp_table_va[0] + samp_idx * 16`.
+  - **Register mode (`w1[21] == 1`)**: `tex_field[5:0]` and `samp_field[5:0]` name general-purpose registers (`r0..r62` only; constant words `c` and system operands are invalid). The low 16 bits of each GPR hold `{set_id[2:0] (bits [15:13]), index[12:0] (bits [12:0], 0..8191)}`, indexing `tex_table_va[set_id] + index * 32` and `samp_table_va[set_id] + index * 16`.
+  - **Bounds & Null Descriptors**: Out-of-bounds indices (`(i * 2 + 2) > tex_table_size_16b[set]` for textures, `(j + 1) > samp_table_size_16b[set]` for samplers) or unbound tables (`table_va == 0`) resolve to a null descriptor without faulting: `texl`/`texb`/`texf`/`texg` return `(0, 0, 0, 1)` and `texsz` returns `0`.
+  - **Cache Invalidation**: Modifying descriptor memory in place requires issuing `CMD_BARRIER` with `GHCI_BARRIER_FLAG_INVAL_DESCRIPTOR` (`flags[5] == 1`) or `CMD_BIND_DESCRIPTOR_TABLE` with `flags[1] INVAL_CACHE == 1` before subsequent draws/dispatches (`CMD_FENCE` does not invalidate descriptor caches). `CMD_SESSION_CLOSE(s)` invalidates entries for session `s`, and `CTRL.RESET` invalidates all entries.
+- **Buffer Descriptors**:
+  Buffer descriptor table base addresses (or buffer addresses themselves) are loaded into the Shader Unit constant bank (`c[0..511]`) via `CMD_LOAD_CONST`, and shaders fetch buffer bases via `lw` / `ld.64` / `.a64` (`base + binding_offset_bytes + element_idx * 16` + dynamic offset). Because texture/sampler tables are latched internally per `(BIND_POINT, TABLE_KIND, set)`, `CMD_BIND_DESCRIPTOR_TABLE` does NOT write to `c[24..31]`, leaving the entire `c[0..31]` window (`128` bytes) freely available for push constants without any register conflict.
 
 #### In-Memory Render Pass Descriptor (`GhciRenderPassDesc`, 192 Bytes)
 
@@ -1586,29 +1578,19 @@ typedef struct GhciRenderPassDesc {
 - **Multisample Resolve**: `GhciRenderPassDesc.resolve` specifies the fast automatic hardware resolve destination for color attachment 0 (`COLOR_ATTACHMENT_0`, standard display swapchain target) executed at render pass end. For multi-target MRT resolve (attachments 1..7), the driver issues explicit `CMD_RESOLVE_IMAGE` (0x44) commands.
 
 #### Descriptor Table Persistence & Dynamic Binding
-- Descriptor tables bound to slots 0..3 via `CMD_BIND_DESCRIPTOR_TABLE` remain active and persist across multiple draw and compute dispatch commands until explicitly rebound.
-- Graphics and compute pipelines share descriptor table slots 0..3.
+- Texture and sampler descriptor tables bound to sets `0..7` via `CMD_BIND_DESCRIPTOR_TABLE` remain active per bind point (`Graphics` vs. `Compute`) and persist across draws/dispatches until explicitly rebound or invalidated (`CMD_SESSION_CLOSE` / `CTRL.RESET`).
 - Shaders access descriptor entries directly:
-  - Textures and samplers: Sampled via GSI1 `texl`, `texb`, `texf` instructions (§12.9) with texture and sampler slot numbers resolved through bound descriptor tables.
-  - Uniform / storage buffers: Read using `lw rd, imm(rs1)` with 64-bit base GPU VA loaded from descriptor table, or constant buffers read using `lwc rd, imm(rs1)` from the constant bank.
-  - Array descriptors (`descriptorCount > 1`): Indexed by multiplying array index by descriptor structure size (`16` or `32` bytes).
-  - Dynamic offsets: In Vulkan dynamic uniform/storage buffers, the dynamic offset is added by the shader to the descriptor base GPU VA before memory instructions.
+  - Textures and samplers: Sampled via GSI1 `texl`, `texg`, `texb`, `texqlod`, `texf`, `texsz` instructions (§12.9) using the single 6-bit `.idx` encoding (`w1[21] I/R`: Set 0 static immediate `0..63`, or GPR `{set_id[2:0], index[12:0]}` across sets `0..7`).
+  - Uniform / storage buffers: Descriptor table addresses are placed in the constant bank (`CMD_LOAD_CONST`) and read via `lw`, `ld.64`, or `.a64` instructions, or constants read directly via `lwc rd, imm(rs1)`.
+  - Array descriptors: Indexed by multiplying element index by descriptor structure size (`16` or `32` bytes), or via dynamic register `.idx` for texture/sampler descriptors.
+  - Dynamic offsets: Added by shader code to the buffer base GPU VA loaded from the buffer descriptor before memory instructions.
 
 #### Push Constants & Constant Register Bank (`CMD_LOAD_CONST`)
 The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
 - **Direct Operand Access ($c0..c31$)**: The first 32 words map directly to GSI1 7-bit operand numbers 64..95 ($c0..c31$), providing immediate 1-cycle latency operands for arithmetic without register pressure or cache lookups.
 - **Extended Constant Access ($c[32..511]$)**: Constant words beyond $c31$ are loaded using the GSI1 `lwc rd, imm(rs1)` instruction.
-- **Push Constant Allocation & Register Overlap Semantics**:
-  - Standard Vulkan convention: Push constants (up to 96 bytes / 24 dwords) are loaded at offset 0 ($c[0..23]$), leaving $c[24..31]$ intact for CP-mirrored Set 0..3 base addresses.
-  - Descriptor Table Latch vs. Constant Bank Mirroring: When `CMD_BIND_DESCRIPTOR_TABLE` executes, hardware latches the descriptor table base addresses internally for texture and sampler lookups (Set 0 for textures, Set 1 for samplers) and mirrors the Set 0..3 base addresses into `c[24..31]` for Shader Unit ALU operand convenience. Overwriting `c[24..31]` with 128-byte push constants does not affect hardware texture or sampler descriptor fetching; if shader ALU access to buffer descriptor sets is also needed, the driver places Set 0..3 base addresses into extended constants (`c[32..]`) via `CMD_LOAD_CONST`, and the compiler reads them using `lwc`.
-  - Extended Constant Loading: Any region of $c[0..511]$ can be loaded via `CMD_LOAD_CONST(offset_dwords, count_dwords, data...)` prior to draw/dispatch; shaders read $c[32..511]$ via `lwc rd, imm(rs1)`.
-- **Descriptor Sets Mapping**:
-  - Buffer descriptors (uniform/storage) map directly 1:1 to hardware descriptor slots 0..3.
-  - For texture and sampler operations (`texl`, `texb`, `texf`), the hardware Texture Unit fetches texture descriptors from Set 0 and samplers from Set 1. The UMD organizes texture descriptors into Set 0 and sampler descriptors into Set 1 (e.g. for combined image samplers), while buffer descriptors can reside in any set $0..3$.
-- **Decoupled Image & Sampler Slot Mapping**:
-  - In GSI1 1.0, texture instructions (`texl`, `texb`, `texf`) statically encode the texture slot index in instruction immediate `sub[3:0]` ($k_{\text{tex}} \in [0, 15]$) and the sampler slot index in $w1[9:6]$ ($k_{\text{samp}} \in [0, 15]$).
-  - The hardware Texture Unit fetches texture metadata from Descriptor Set 0 ($\text{set0\_base\_va} + k_{\text{tex}} \times 32$) and sampler parameters from Descriptor Set 1 ($\text{set1\_base\_va} + k_{\text{samp}} \times 16$) in parallel.
-  - 16 static slots ($0..15$) are shared across the active pipeline stages (VS + FS sum of unique textures $\le 16$, sum of unique samplers $\le 16$). Vulkan 1.0 drivers advertise `maxPerStageDescriptorSamplers = 16` and `maxPerStageDescriptorSampledImages = 16`; pipelines whose combined stages exceed 16 unique textures or samplers are rejected at pipeline creation time.
+- **Full 128-Byte Push Constant Availability**: All 32 direct words ($c[0..31]$, 128 bytes) are available for push constants loaded via `CMD_LOAD_CONST`. Texture and sampler descriptor tables bound by `CMD_BIND_DESCRIPTOR_TABLE` are latched internally in the Texture Unit (`Graphics` and `Compute` bind points, sets `0..7`) and never overwrite `c[0..31]`. Buffer descriptor set addresses (if needed by shaders) are placed in `$c[0..511]$` via `CMD_LOAD_CONST` alongside push constants.
+- **Extended Constant Loading**: Any region of $c[0..511]$ can be loaded via `CMD_LOAD_CONST(offset_dwords, count_dwords, data...)` prior to draw/dispatch; shaders read $c[32..511]$ via `lwc rd, imm(rs1)`.
 
 #### Dual-Source Blending & State Encodings
 - **Dual-Source Blending Export**: In dual-source blending pipelines (`CAP_DUAL_SOURCE = 1`), the fragment shader exports primary color (`SRC0`) to export targets `0x100..0x103` (`GHCI_EXP_COLOR(0, c)`) and secondary blend color (`SRC1`) to export targets `0x108..0x10B` (`GHCI_EXP_COLOR0_SRC1(c)`) using the `exp` instruction (§12.5, §12.10.3). When `CAP_DUAL_SOURCE == 0`, exports to `0x108..0x10B` are silently discarded by hardware (no fault).
@@ -1702,15 +1684,14 @@ GHCI 1.0 defines optional hardware texture, buffer, and render target format cap
 #### 8.5.2 Texture Dimensions and Image Layouts
 Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and layout parameters:
 
-| Dimension Code | Vulkan Image Type | Description & Dimensions |
+| Dimension Code | View / Image Type | Description & `depth` Rules |
 | :---: | :--- | :--- |
-| `0` | `VK_IMAGE_TYPE_1D` | 1D texture (`width`, `height = 1`, `depth = 1`) |
-| `1` | `VK_IMAGE_TYPE_2D` | 2D planar texture (`width`, `height`, `depth = 1`) |
-| `2` | `VK_IMAGE_TYPE_3D` | 3D volumetric texture (`width`, `height`, `depth`) |
-| `3` | `VK_IMAGE_VIEW_TYPE_CUBE` | CubeMap texture (6 faces of `width × width`, `depth = 6`, seamless cube filtering) |
-| Array | `VK_IMAGE_VIEW_TYPE_*_ARRAY` | 1D / 2D array texture (`depth` = array layer count, `slice_pitch_bytes` = layer stride) |
+| `0` | 1D / 1D Array | `width`, `height = 1`; `ARRAY == 0` -> `depth = 1`; `ARRAY == 1` -> `depth` = layers (`1..MAX_ARRAY_LAYERS`) |
+| `1` | 2D / 2D Array | `width`, `height`; `ARRAY == 0` -> `depth = 1`; `ARRAY == 1` -> `depth` = layers (`1..MAX_ARRAY_LAYERS`) |
+| `2` | 3D Volumetric | `width`, `height`, `depth` (`1..MAX_TEX_DEPTH_3D`, Word 31`[15:0]`); `ARRAY == 1` raises `GHCI_FAULT_KIND_INVALID_OP` |
+| `3` | Cube / Cube Array | 6 faces per cube (`width == height`); `ARRAY == 0` -> `depth = 6` (other values raise `INVALID_OP`); `ARRAY == 1` -> `depth = 6 * cube_count` (`depth == 0`, `depth % 6 != 0`, or `depth > MAX_ARRAY_LAYERS` raises `INVALID_OP`) |
 
-- **Mipmaps:** Supports 1 to 15 mip levels (`mip_levels`). Each level $l$ extent is $\max(1, \text{size} \gg l)$.
+- **Mipmaps:** Supports `1` to `MAX_MIP_LEVELS` (`CMD_QUERY_CAPS` Word 27`[3:0]`; `0` or `> MAX_MIP_LEVELS` raises `GHCI_FAULT_KIND_INVALID_OP`). Each level $l$ extent is $\max(1, \text{size} \gg l)$.
 - **Multisampling (MSAA):** Supports 1, 2, and 4 samples per texel (`sample_count`).
 - **Tiling Layouts:**
   - `flags[0] = 0` is Linear (standard row-major).
@@ -1730,25 +1711,25 @@ to the following architectural parameters:
 
 | Vulkan Limit Property | Value | Hardware Source / Explanation |
 | :--- | :---: | :--- |
-| `maxImageDimension1D` | 16,384 | 14-bit texel coordinate addressing |
-| `maxImageDimension2D` | 16,384 | 14-bit texel coordinate addressing |
-| `maxImageDimension3D` | 2,048 | 11-bit volumetric coordinate addressing |
-| `maxImageDimensionCube` | 16,384 | Cube face extent limit |
-| `maxImageArrayLayers` | 2,048 | 11-bit array layer addressing |
+| `maxImageDimension1D` | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
+| `maxImageDimension2D` | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
+| `maxImageDimension3D` | Word 31`[15:0]` (e.g. `2,048`) | `MAX_TEX_DEPTH_3D` in `CMD_QUERY_CAPS` Word 31`[15:0]` (`0` if `TEX_3D == 0`) |
+| `maxImageDimensionCube` | Word 27`[31:16]` (e.g. `16,384`) | Cube face extent limit from Word 27`[31:16]` |
+| `maxImageArrayLayers` | Word 27`[15:4] + 1` (e.g. `2,048`) | `MAX_ARRAY_LAYERS_M1 + 1` in `CMD_QUERY_CAPS` Word 27`[15:4]` |
 | `maxTexelBufferElements` | 67,108,864 | 256 MiB maximum texel buffer size |
 | `maxUniformBufferRange` | 65,536 | 64 KiB uniform buffer window (8 KiB on-chip constant cache) |
 | `maxStorageBufferRange` | 4,294,967,295 | 4 GiB max buffer range per descriptor in 64-bit GPU VA space |
-| `maxPushConstantsSize` | 128 bytes | Loaded via `CMD_LOAD_CONST` into on-chip constant bank |
+| `maxPushConstantsSize` | 128 bytes | Full `c[0..31]` loaded via `CMD_LOAD_CONST` into on-chip constant bank |
 | `maxMemoryAllocationCount` | 4,096 | Supported concurrent OS DMA mappings |
 | `maxSamplerAllocationCount` | 4,000 | In-memory descriptor limit |
-| `maxBoundDescriptorSets` | 4 | 4 hardware descriptor set pointer registers |
-| `maxPerStageDescriptorSamplers` | 16 | 16 sampler slots per pipeline stage (pipeline sum limit $\le 16$) |
-| `maxPerStageDescriptorUniformBuffers` | 16 | 16 uniform buffer descriptor slots |
-| `maxPerStageDescriptorStorageBuffers` | 16 | 16 storage buffer descriptor slots |
-| `maxPerStageDescriptorSampledImages` | 16 | 16 texture descriptor slots (pipeline sum limit $\le 16$) |
-| `maxPerStageDescriptorStorageImages` | 8 | 8 storage image slots |
-| `maxDescriptorSetSamplers` | 96 | 96 per descriptor set (pipeline sum limit $\le 16$ checked at pipeline creation) |
-| `maxDescriptorSetSampledImages` | 96 | 96 per descriptor set (pipeline sum limit $\le 16$ checked at pipeline creation) |
+| `maxBoundDescriptorSets` | `8` (`Word 26[7:0]`) | `MAX_DESCRIPTOR_SETS` (`set 0..7` in `CMD_BIND_DESCRIPTOR_TABLE`) |
+| `maxPerStageDescriptorSamplers` | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
+| `maxPerStageDescriptorUniformBuffers` | `>= 16` | Software/constant-bank backed buffer descriptors |
+| `maxPerStageDescriptorStorageBuffers` | `>= 16` | Software/constant-bank backed buffer descriptors |
+| `maxPerStageDescriptorSampledImages` | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
+| `maxPerStageDescriptorStorageImages` | `8` | Storage image descriptors |
+| `maxDescriptorSetSamplers` | `8,192` | `13`-bit per-set index range (`0..8191`) |
+| `maxDescriptorSetSampledImages` | `8,192` | `13`-bit per-set index range (`0..8191`) |
 | `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15) |
 | `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
 | `maxVertexInputAttributeOffset` | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range) |
@@ -2203,12 +2184,15 @@ word0 (bits 31:0), the RISC-V 32-bit layouts:
 word1 (bits 63:32):
   [1:0] rd[6:5]  [3:2] rs1[6:5]  [5:4] rs2[6:5]  [7:6] rs3[6:5]
   [8] n1 [9] a1 [10] n2 [11] a2 [12] n3 [13] a3   (float sources: negate, absolute;
-                 texture R forms: [9:6] samp_slot, [13:10] tex_dw)
-  [14] sat      (float results clamped to [0, 1])
-  [16:15] hsel  (packed: 00 both halves, 01 low only, 10 high only, 11 rs2 swapped)
-  [21:17] sub   (sub-operation; texture R forms: [20:17] tex_slot)
+                 texture instructions: [9:6] samp_field[3:0], [13:10] tex_dw)
+  [14] sat      (float results clamped to [0, 1];
+                 texture instructions: part of tex_field[5:4] = w1[15:14])
+  [16:15] hsel  (packed: 00 both halves, 01 low only, 10 high only, 11 rs2 swapped;
+                 texture instructions: w1[15:14] = tex_field[5:4], w1[16] = samp_field[4])
+  [21:17] sub   (sub-operation;
+                 texture instructions: w1[20:17] = tex_field[3:0], w1[21] = I/R mode)
   [31:22] imm_hi (I/S/B: the offset is sext(imm12) + (sext(imm_hi) << 12);
-                 texture R forms: [25:22] tex_du, [29:26] tex_dv, section 12.9)
+                 texture instructions: [25:22] tex_du, [29:26] tex_dv, [30] samp_field[5], [31] reserved 0, §12.9)
   U form only: [1:0] rd[6:5] [13:2] imm[11:0] (movi) [31:14] 0
 ```
 
@@ -2233,7 +2217,7 @@ word1 (bits 63:32):
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
 | 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4; with sub[4] `atoms.<op>`, the same on shared memory), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
-| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; tex_slot = sub[3:0], samp_slot = word1[9:6]; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22] du, [29:26] dv, [13:10] dw texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`), 100 `exp rs2, target` (S), 101 `lda rd, imm(rs1)` (I; sub[0] dynamic index flag, imm layout §12.10.3), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
+| 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; single 6-bit `.idx` encoding §12.9: `w1[21] I/R`, `tex_field = {w1[15:14], w1[20:17]}`, `samp_field = {w1[30], w1[16], w1[9:6]}`, `w1[31] = 0`; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22] du, [29:26] dv, [13:10] dw texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`; uses `tex_field` with single 6-bit `.idx` encoding), 100 `exp rs2, target` (S), 101 `lda rd, imm(rs1)` (I; sub[0] dynamic index flag, imm layout §12.10.3), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
 | 0000111 0100111 0001111 1110011 1010111 1110111 | Vendor extensions (not GSI1) |
@@ -2282,7 +2266,7 @@ The warp stops, and the GPU reports an ISA execution fault:
 
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
-funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); `texsz` with imm[11:0] other than 0, 1, 2 or (with `DEVICE_CAPS[31]` `CAP_MSAA`) 3; a texture slot with sub[4] set; a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
+funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); in `texl`/`texg`/`texb`/`texqlod`/`texf` (`custom-1, f3 = 0..2`), an undefined `funct7`, `w1[31] != 0`, a non-zero `samp_field` on `texf`, or when `w1[21] == 1` (Register mode) `tex_field >= min(NREGS, 63)` or (for sampler-using forms) `samp_field >= min(NREGS, 63)` raises `GHCI_FAULT_KIND_INVALID_OP`; in `texsz` (`custom-1, f3 = 3`), `w0[31:25] != 0`, `w0[24:20]` other than `0, 1, 2` or (with `DEVICE_CAPS[31]` `CAP_MSAA`) `3`, `w1[31:22] != 0` (including `w1[30]`), `w1[16] != 0`, `w1[9:6] != 0`, or when `w1[21] == 1` `tex_field >= min(NREGS, 63)` raises `INVALID_OP` (Register-mode index operands accept GPRs `r0..r62` only, never constant bank `c` or special operands); a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
 `sw` sub above 1; `atom` sub[3:0] above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
 sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 1; `nop` sub other than 0.
@@ -2359,8 +2343,14 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 ### 12.9 Texture instructions (Approved Architecture)
 
 - `texl`, `texb` and `texf` write R, G, B, A of the texel to rd..rd+3
-  (fp32 for float/unorm/snorm formats, raw 32-bit uint/sint bit patterns for integer formats). The coordinates are rs1 (u or x) and rs1+1 (v or y); the texture
-  slot is `sub[3:0]` (`w1[20:17]`, indexing Set 0), and the sampler slot is `w1[9:6]` (indexing Set 1).
+  (fp32 for float/unorm/snorm formats, raw 32-bit uint/sint bit patterns for integer formats). The coordinates are rs1 (u or x) and rs1+1 (v or y).
+- **Single 6-bit `.idx` Descriptor Indexing (Immediate & Dynamic Register Mode)**:
+  All six texture instruction families (`texl`, `texg`, `texb`, `texqlod`, `texf`, `texsz`) share one unified 6-bit descriptor index encoding with `w1[31] == 0` (`w1[31] != 0` raises `GHCI_FAULT_KIND_INVALID_OP`):
+  - `tex_field[5:0] = {w1[15:14], w1[20:17]}` (`0..63`)
+  - `samp_field[5:0] = {w1[30], w1[16], w1[9:6]}` (`0..63`; must be `0` for `texf` and `texsz`)
+  - **`w1[21] == 0` (Immediate Mode)**: `tex_field[5:0]` is a static immediate index (`0..63`) into Set `0`'s texture table (`tex_table_va[0] + tex_field * 32`), and `samp_field[5:0]` is a static immediate index (`0..63`) into Set `0`'s sampler table (`samp_table_va[0] + samp_field * 16`). Indices `0..15` keep `w1[15:14]=0`, `w1[30]=0`, `w1[16]=0`.
+  - **`w1[21] == 1` (Register Mode, `.idx`)**: `tex_field[5:0]` and `samp_field[5:0]` name general-purpose registers (`r0..r62` only; `>= min(NREGS, 63)` raises `INVALID_OP`; constant bank `c` and system operands cannot be used directly). Hardware reads the low 16 bits of each GPR as `{set_id[2:0] = [15:13], index[12:0] = [12:0]}` (`set_id 0..7`, `index 0..8191`) to address `tex_table_va[set_id] + index * 32` and `samp_table_va[set_id] + index * 16`.
+  - **Out-of-Bounds / Unbound Null Descriptor**: An index beyond `table_size_16b` or targeting an unbound table (`table_va == 0`) reads as a null descriptor without faulting: `texl`/`texb`/`texf`/`texg` return `(0, 0, 0, 1)` and `texsz` returns `0`.
 - **The .3 forms** (funct7 [5]): `texl.3`, `texb.3`,
   `texf.3`, `texg.3.*` and `texqlod.3` take a third coordinate in rs1+2:
   the layer of a 2D array, w (or z) of a 3D image, z of a cube map's
@@ -2468,21 +2458,14 @@ In GHCI 1.0, shader programs are submitted as **pure, raw executable machine cod
 GHCI 1.0 standardizes on a direct hardware descriptor indexing architecture:
 - **Direct Descriptor Table Indexing**:
   - The legacy interface table (kinds 1–14) is completely deprecated and removed.
-  - Shaders access buffers, textures, and samplers directly through hardware descriptor tables bound to slots 0..3 via `CMD_BIND_DESCRIPTOR_TABLE` (0x23).
-  - Shaders resolve descriptor virtual addresses using standard table base + layout offset scaling:
-    $$\text{Descriptor VA} = \text{set\_table\_va} + \text{binding\_offset\_bytes} + (\text{element\_idx} \times \text{descriptor\_size\_bytes})$$
-  - `set_table_va`: 64-bit base address of the descriptor set. CP mirrors Set 0..3 base VAs into Shader Unit constant bank words `c[24..25]`, `c[26..27]`, `c[28..29]`, `c[30..31]` upon `CMD_BIND_DESCRIPTOR_TABLE`, enabling 1-cycle operand access.
-  - `binding_offset_bytes`: Statically determined at pipeline layout creation by UMD according to `VkDescriptorSetLayout` and embedded as immediate instruction offsets in the GSI1 binary.
-  - Texture descriptors are 32 bytes; sampler and buffer descriptors are 16 bytes.
-  - Shaders fetch 64-bit buffer base GPU VA using `ld.64` and read data via `lw` / `ld.64`.
-  - Dynamic offsets (`VK_DESCRIPTOR_TYPE_*_DYNAMIC`): The driver injects dynamic offsets via push constants (`c0..c23`), and the **shader adds the dynamic offset** to the descriptor base GPU VA before memory instructions.
-  - Texture instructions use GSI1 native `texl rd, rCoord, slot` where texture slot $k_{\text{tex}} = \text{sub}[3:0]$ (`w1[20:17]`, indexing Set 0 at $\text{set0\_va} + k_{\text{tex}} \times 32$) and sampler slot $k_{\text{samp}} = w1[9:6]$ (indexing Set 1 at $\text{set1\_va} + k_{\text{samp}} \times 16$).
+  - Texture (`32`-byte entries, `TABLE_KIND = 0`) and sampler (`16`-byte entries, `TABLE_KIND = 1`) descriptor tables are bound per bind point (`Graphics` vs. `Compute`) to sets `0..7` (`GHCI_MAX_DESCRIPTOR_SETS = 8`) via `CMD_BIND_DESCRIPTOR_TABLE` (`0x23`), specifying `table_va` and `table_size_16b`.
+  - Buffer descriptor tables are referenced directly by shaders via addresses loaded into the constant bank (`CMD_LOAD_CONST`) using `lw` / `ld.64` / `.a64` instructions (`base + binding_offset_bytes + element_idx * 16` + dynamic offset).
+  - Texture and sampler instructions (`texl`, `texg`, `texb`, `texqlod`, `texf`, `texsz`) use the unified 6-bit `.idx` encoding (`w1[21] I/R`, §12.9) to index Set `0` (`0..63` immediate) or any bound set `0..7` (`0..8191` via GPR `{set_id[2:0], index[12:0]}`).
 - **Constant Bank & Push Constants (`c0..c31`, `CMD_LOAD_CONST`)**:
   - The Shader Unit constant register bank provides immediate 1-cycle access to uniforms:
-    - Operands 64–95 map directly to constant words $c0..c31$ as source operands in any GSI1 instruction (128 bytes total push constants).
+    - Operands 64–95 map directly to constant words $c0..c31$ as source operands in any GSI1 instruction (full 128 bytes total push constants, with no conflict or shadowing from `CMD_BIND_DESCRIPTOR_TABLE`).
     - Extended constant bank words ($c[0..511]$) are readable using the `lwc rd, imm(rs1)` instruction.
   - Constant data is loaded directly into the constant bank by the command processor using `CMD_LOAD_CONST` (0x2D, `offset_dwords`, `count_dwords`, `data...`) prior to draw or dispatch.
-  - Standard push constants (up to 96 bytes / 24 dwords) are loaded via `CMD_LOAD_CONST` at `offset = 0` ($c[0..23]$), preserving $c[24..31]$ for CP-mirrored Set 0..3 base addresses. When full 128-byte push constants are used, words $24..31$ overwrite the mirrored values; when buffer descriptor set addresses are needed in ALU code, the driver places them in extended constants ($c[32..511]$) via `CMD_LOAD_CONST`, and the shader compiler reads them via `lwc` (or uniform buffers).
 - **Scratch Memory Allocation**:
   - For shaders requiring register spilling, scratch memory base address is mapped into session GPU VA via `CMD_VM_MAP`. Shaders calculate per-warp scratch offsets using the `warp` operand ($w \times \text{bytes\_per\_warp}$) and access spill storage via `sw.x` and `lw`.
 
@@ -2648,7 +2631,7 @@ With `DEVICE_CAPS[31]` (`CAP_MSAA`), the GPU rasterizes with 1, 2, or 4 samples 
 - **Sample Shading**: When `GhciPipelineState.flags[11]` (`sample_shading`) is 1, the rasterizer runs fragment shader invocations per covered sample location (with `FragCoord` and barycentrics computed at each sample). When `sample_shading` is 0, the fragment program executes once per pixel at pixel center (or centroid if `compute_lds_and_flags[16]` `fs_centroid` (PSO dw15 [16]) is set).
 - **Autonomous State Programming**: In GHCI 1.0, the immutable Pipeline State Object (`GhciPipelineState`, §8.2) and Render Pass Descriptor (`GhciRenderPassDesc`, §8.4) are authoritative; sample count, centroid interpolation, alpha-to-coverage, and sample mask states are configured autonomously by the Command Processor upon `CMD_BEGIN_RENDER_PASS` and `CMD_BIND_PIPELINE`.
 - **Resource Descriptor Mapping**: Legacy ISA references to `TEX_IMAGE` and `TEX_SAMPLER` map directly to standard GHCI 1.0 descriptor structures (§8.3):
-  - `TEX_IMAGE[3:0]` (mip levels) maps to `GhciTextureDescriptor.mip_levels` (1..15).
+  - `TEX_IMAGE[3:0]` (mip levels) maps to `GhciTextureDescriptor.mip_levels` (`1..MAX_MIP_LEVELS`).
   - `TEX_IMAGE[15:12]` (samples) maps to `GhciTextureDescriptor.sample_count` (1, 2, 4).
   - `TEX_IMAGE format 4` maps to `GhciTextureDescriptor.format = VK_FORMAT_B5G6R5_UNORM_PACK16` (or `R5G6B5_UNORM_PACK16`).
   - `TEX_SAMPLER[9]` (compare enable) maps to `GhciSamplerDescriptor.compare_enable`.

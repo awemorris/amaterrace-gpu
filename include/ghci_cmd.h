@@ -68,9 +68,12 @@ extern "C" {
 #define GHCI_CAPS_DISP_PCLK_INFO        23u
 #define GHCI_CAPS_DISP_LIMITS_H         24u
 #define GHCI_CAPS_DISP_LIMITS_V         25u
+#define GHCI_CAPS_DESC_LIMITS           26u
+#define GHCI_CAPS_TEX_LIMITS            27u
 #define GHCI_CAPS_DISP_MIN_H_BLANK      28u
 #define GHCI_CAPS_DISP_MIN_V_BLANK      29u
 #define GHCI_CAPS_TIMESTAMP_HZ          30u
+#define GHCI_CAPS_TEX_LIMITS_3D         31u
 #define GHCI_CAPS_FMT_BASE              32u
 #define GHCI_CAPS_TOTAL_DWORDS          192u
 #define GHCI_CAPS_TOTAL_BYTES           768u
@@ -102,9 +105,12 @@ extern "C" {
 #define GHCI_CAPS_WORD_DISP_PCLK_INFO   23u
 #define GHCI_CAPS_WORD_DISP_LIMITS_H    24u
 #define GHCI_CAPS_WORD_DISP_LIMITS_V    25u
+#define GHCI_CAPS_WORD_DESC_LIMITS      26u
+#define GHCI_CAPS_WORD_TEX_LIMITS       27u
 #define GHCI_CAPS_WORD_DISP_MIN_H_BLANK 28u
 #define GHCI_CAPS_WORD_DISP_MIN_V_BLANK 29u
 #define GHCI_CAPS_WORD_TIMESTAMP_HZ     30u
+#define GHCI_CAPS_WORD_TEX_LIMITS_3D    31u
 #define GHCI_CAPS_WORD_FMT_BASE         32u
 
 /* Pipeline State & Execution Commands (0x20..0x2F) */
@@ -396,20 +402,33 @@ typedef struct GhciPipelineStateExt {
  * ============================================================================
  */
 
+/* Texture Descriptor Dimensions and Flags (§8.3) */
+#define GHCI_TEX_DIM_1D                 0u
+#define GHCI_TEX_DIM_2D                 1u
+#define GHCI_TEX_DIM_3D                 2u
+#define GHCI_TEX_DIM_CUBE               3u
+
+#define GHCI_TEX_FLAG_TILED             (1u << 0) /* 1 = Optimal tiled, 0 = Linear */
+#define GHCI_TEX_FLAG_STENCIL_ASPECT    (1u << 2) /* 1 = Sample stencil aspect of depth-stencil format */
+#define GHCI_TEX_FLAG_ROW_ALIGN_SHIFT   3u        /* [4:3] Linear row alignment log2 (0=packed/64B rule) */
+#define GHCI_TEX_FLAG_ROW_ALIGN_MASK    (0x3u << 3)
+#define GHCI_TEX_FLAG_ROW_ALIGN_LOG2(x) (((uint16_t)(x) & 0x3u) << 3)
+#define GHCI_TEX_FLAG_ARRAY             (1u << 5) /* 1 = Arrayed (1D/2D/Cube); 3D with ARRAY=1 is INVALID_OP */
+
 /* Texture Descriptor (32 Bytes) */
 typedef struct GhciTextureDescriptor {
-	uint64_t base_address;          /* 0x00: GPU virtual address of texels (64-bit GPU VA) */
-	uint16_t width;                 /* 0x08: Texel width (1..16384) */
-	uint16_t height;                /* 0x0A: Texel height (1..16384) */
-	uint16_t depth;                 /* 0x0C: 3D depth or array layers */
-	uint8_t  format;                /* 0x0E: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37, N23) */
-	uint8_t  mip_levels;            /* 0x0F: Number of mip levels (1..15) */
-	uint32_t row_pitch_bytes;       /* 0x10: Row pitch in bytes */
-	uint32_t slice_pitch_bytes;     /* 0x14: 2D array / 3D slice pitch */
+	uint64_t base_address;          /* 0x00: GPU virtual address of level 0 texels (64-bit GPU VA) */
+	uint16_t width;                 /* 0x08: Texel width (1..MAX_TEX_EXTENT) */
+	uint16_t height;                /* 0x0A: Texel height (1..MAX_TEX_EXTENT; 1 for 1D) */
+	uint16_t depth;                 /* 0x0C: 1D/2D ARRAY=0: 1; ARRAY=1: layers; 3D: depth; Cube: 6 (ARRAY=0) or 6*cubes (ARRAY=1) */
+	uint8_t  format;                /* 0x0E: GhciFormat ID (encoding sRGB/UNORM/INT/FLOAT directly) */
+	uint8_t  mip_levels;            /* 0x0F: Number of mip levels (1..Word27[3:0] MAX_MIP_LEVELS) */
+	uint32_t row_pitch_bytes;       /* 0x10: Level 0 row pitch in bytes */
+	uint32_t slice_pitch_bytes;     /* 0x14: 2D/Cube array layer or 3D slice pitch in bytes */
 	uint8_t  sample_count;          /* 0x18: MSAA sample count (1, 2, 4) */
-	uint8_t  dimension;             /* 0x19: 0=1D, 1=2D, 2=3D, 3=Cube */
-	uint16_t flags;                 /* 0x1A: [0]=Tiled, [1]=sRGB */
-	uint32_t component_swizzle;     /* 0x1C: [2:0] R, [5:3] G, [8:6] B, [11:9] A (VkComponentSwizzle), [31:12] reserved (N61) */
+	uint8_t  dimension;             /* 0x19: 0=1D, 1=2D, 2=3D, 3=Cube (GHCI_TEX_DIM_*) */
+	uint16_t flags;                 /* 0x1A: [0]=TILED, [2]=STENCIL_ASPECT, [4:3]=ROW_ALIGN_LOG2, [5]=ARRAY (no SRGB bit) */
+	uint32_t component_swizzle;     /* 0x1C: [2:0] R, [5:3] G, [8:6] B, [11:9] A, [31:12] reserved (0) */
 } GhciTextureDescriptor;
 
 /* Sampler Descriptor (16 Bytes, N23, N61) */
@@ -454,12 +473,17 @@ typedef struct GhciCmdBindIndexBuffer {
 } GhciCmdBindIndexBuffer;
 
 /* CMD_BIND_DESCRIPTOR_TABLE (0x23): 4 dwords */
+#define GHCI_MAX_DESCRIPTOR_SETS        8u
+#define GHCI_BIND_DESC_FLAG_BIND_POINT  (1u << 0) /* 0 = Graphics, 1 = Compute */
+#define GHCI_BIND_DESC_FLAG_INVAL_CACHE (1u << 1) /* 1 = Invalidate TU descriptor cache before subsequent draws/dispatches */
+#define GHCI_BIND_DESC_FLAG_TABLE_KIND  (1u << 2) /* 0 = Texture table (32B entries), 1 = Sampler table (16B entries) */
+
 typedef struct GhciCmdBindDescriptorTable {
-	uint32_t header;                /* GHCI_CMD_BIND_DESCRIPTOR_TABLE, size = 4 */
-	uint32_t table_va_lo;
-	uint32_t table_va_hi;
-	uint16_t set_index;             /* Descriptor set binding slot (0..3) */
-	uint16_t descriptor_count;      /* Number of descriptors in table */
+	uint32_t header;                /* GHCI_CMD_BIND_DESCRIPTOR_TABLE, dwords = 4, flags = GHCI_BIND_DESC_FLAG_* */
+	uint32_t table_va_lo;           /* 64-bit session GPU VA [31:0] (32B aligned if TABLE_KIND==0, 16B if 1; 0 unbinds) */
+	uint32_t table_va_hi;           /* 64-bit session GPU VA [63:32] */
+	uint16_t set_index;             /* Descriptor set binding slot (0..7) */
+	uint16_t table_size_16b;        /* Table byte length divided by 16 (0 when unbinding) */
 } GhciCmdBindDescriptorTable;
 
 /* CMD_SET_VIEWPORT (0x24): 7 dwords */
