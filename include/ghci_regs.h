@@ -63,6 +63,13 @@ extern "C" {
 #define GHCI_CAP_WORD_EXTCAP_PRESENT  18u
 #define GHCI_CAP_WORD_SHADER_STAGES   19u /* Pipeline shader stage capabilities (Geometry, Tess, Mesh, Task) */
 #define GHCI_CAP_WORD_STAGE_LIMITS    20u /* Stage limits */
+#define GHCI_CAP_WORD_DISP_PCLK_MIN_KHZ 21u /* Minimum pixel clock (kHz), 0 if ARBITRARY_PCLK == 0 */
+#define GHCI_CAP_WORD_DISP_PCLK_MAX_KHZ 22u /* Maximum pixel clock (kHz), 0 if ARBITRARY_PCLK == 0 */
+#define GHCI_CAP_WORD_DISP_PCLK_INFO  23u /* Display flags, DISPLAY_COUNT [23:21], FIXED_MODE_COUNT [31:24] */
+#define GHCI_CAP_WORD_DISP_LIMITS_H   24u /* [15:0] max_hactive, [31:16] max_htotal */
+#define GHCI_CAP_WORD_DISP_LIMITS_V   25u /* [15:0] max_vactive, [31:16] max_vtotal */
+#define GHCI_CAP_WORD_DISP_MIN_H_BLANK 28u /* [7:0] min_hfp, [15:8] min_hsync, [23:16] min_hbp */
+#define GHCI_CAP_WORD_DISP_MIN_V_BLANK 29u /* [7:0] min_vfp, [15:8] min_vsync, [23:16] min_vbp */
 #define GHCI_CAP_WORD_TIMESTAMP_HZ    30u /* Constant-rate TIMESTAMP counter frequency (Hz) */
 #define GHCI_CAP_WORD_FMT_BASE        32u
 
@@ -384,86 +391,21 @@ extern "C" {
 #define GHCI_PERF_SRC_MEM 8u
 #define GHCI_PERF_SRC_NONE 0xFFu
 
-/* ATG1 internal state register file and PCI IDs live in include/atg1_regs.h. */
-
-/* The display controller's registers (DISP2 capability, ghci.md
- * section 13.2): offsets from the capability's register offset. */
-#define GHCI_DC_ID_VALUE 0x41544443u /* "ATDC" */
-#define GHCI_DC_ID 0x00u
-#define GHCI_DC_VERSION 0x04u
-#define GHCI_DC_CAPS 0x08u
-#define GHCI_DC_CTRL 0x10u
-#define GHCI_DC_STATUS 0x14u
-#define GHCI_DC_IRQ_STATUS 0x18u
-#define GHCI_DC_IRQ_ENABLE 0x1Cu
-#define GHCI_DC_FB_BASE 0x20u
-#define GHCI_DC_FB_NEXT 0x24u
-#define GHCI_DC_FB_STRIDE 0x28u
-#define GHCI_DC_FB_SIZE 0x2Cu
-#define GHCI_DC_H_ACTIVE 0x30u
-#define GHCI_DC_H_FP 0x34u
-#define GHCI_DC_H_SYNC 0x38u
-#define GHCI_DC_H_BP 0x3Cu
-#define GHCI_DC_V_ACTIVE 0x40u
-#define GHCI_DC_V_FP 0x44u
-#define GHCI_DC_V_SYNC 0x48u
-#define GHCI_DC_V_BP 0x4Cu
-#define GHCI_DC_SYNC_POL 0x50u
-#define GHCI_DC_FRAME_COUNT 0x54u
-#define GHCI_DC_PCLK_SEL 0x58u
-#define GHCI_DC_I2C_CTRL 0x60u
-#define GHCI_DC_I2C_DATA 0x64u
-#define GHCI_DC_I2C_STATUS 0x68u
-#define GHCI_DC_SCAN_SUM 0x70u /* Amaterrace: sum of the last frame's pixel words */
-#define GHCI_DC_SCAN_WORDS 0x74u /* Amaterrace: pixel words of the last frame */
-#define GHCI_DC_CTRL_ENABLE (1u << 0)
-#define GHCI_DC_CTRL_RESET (1u << 1)
-#define GHCI_DC_CTRL_TEST_PATTERN (1u << 2)
-#define GHCI_DC_CTRL_FORMAT(f) (((unsigned)(f) & 3u) << 4)
-#define GHCI_DC_CTRL_OUTPUT_HDMI (1u << 6)
-#define GHCI_DC_FMT_BGRA8 0u
-#define GHCI_DC_FMT_RGBA8 1u
-#define GHCI_DC_FMT_RGB565 2u
-#define GHCI_DC_IRQ_VSYNC (1u << 0)
-#define GHCI_DC_IRQ_FLIP_DONE (1u << 1)
-#define GHCI_DC_IRQ_CURSOR_FLIP (1u << 2)
-#define GHCI_DC_IRQ_HOTPLUG (1u << 3)
-#define GHCI_DC_IRQ_UNDERFLOW (1u << 4)
-#define GHCI_DC_IRQ_DISP_ERROR (1u << 5)
-
-/* DISP2 (ghci.md section 13.2), continued; 0x18/0x1C above are
- * DISP_IRQ_STATUS/DISP_IRQ_ENABLE. */
-#define GHCI_DC2_WINDOW 0x100u /* bytes */
-#define GHCI_DC_CONNECTED 0x6Cu
-#define GHCI_DC_MODE_INDEX 0x80u
-#define GHCI_DC_MODE_H0 0x84u /* [15:0] active, [31:16] sync */
-#define GHCI_DC_MODE_H1 0x88u /* [15:0] front porch, [31:16] back porch */
-#define GHCI_DC_MODE_V0 0x8Cu
-#define GHCI_DC_MODE_V1 0x90u
-#define GHCI_DC_MODE_CLOCK 0x94u /* kHz */
-#define GHCI_DC_MODE_FLAGS 0x98u /* [0] hsync, [1] vsync high, [7:4] PCLK_SEL */
-#define GHCI_DC_CURSOR_BASE 0xA0u
-#define GHCI_DC_CURSOR_POS 0xA4u /* [15:0] x, [31:16] y, signed */
-#define GHCI_DC_CURSOR_CTRL 0xA8u /* [0] shown */
-#define GHCI_DC_TAKEN0 0xB0u
-#define GHCI_DC_TAKEN1 0xB4u
-#define GHCI_DC_CAPS_CURSOR (1u << 8)
-#define GHCI_DC_CAPS_MODES(c) (((c) >> 9) & 7u)
-#define GHCI_DC_CAPS_SENSE (1u << 12)
-#define GHCI_DC_ST_RUNNING (1u << 0)
-#define GHCI_DC_ST_UNDERFLOW (1u << 1)
-#define GHCI_DC_ST_IDLE (1u << 2)
-#define GHCI_DC_ST_READ_ERROR (1u << 3)
-#define GHCI_DC_ST_RECORD_ERROR (1u << 4)
-#define GHCI_DC_ST_BAD_WRITE (1u << 5)
-#define GHCI_DC_ST_LINE(s) (((s) >> 16) & 0xFFFu)
-#define GHCI_DC_ST_CONNECTED (1u << 28)
-#define GHCI_DC_ST_PENDING0 (1u << 29)
-#define GHCI_DC_ST_PENDING1 (1u << 30)
-#define GHCI_DC_ST_RECORD (1u << 31)
-#define GHCI_DC_MODE_PCLK_SEL(f) (((f) >> 4) & 0xFu)
-#define GHCI_DC_CURSOR_SIZE 64u /* plane 1: 64 x 64 BGRA8, rows 256 bytes apart */
-
+/* Display Capability Block Word 23..25, 28..29 Decoders */
+#define GHCI_DISP_INFO_TOL_PPM(w)      ((w) & 0xFFFFu)
+#define GHCI_DISP_INFO_ARBITRARY_PCLK  (1u << 16)
+#define GHCI_DISP_INFO_TMDS_SCRAMBLE   (1u << 17)
+#define GHCI_DISP_INFO_HAS_CURSOR      (1u << 18)
+#define GHCI_DISP_INFO_HAS_SENSE       (1u << 19)
+#define GHCI_DISP_INFO_HAS_I2C         (1u << 20)
+#define GHCI_DISP_INFO_DISPLAY_COUNT(w) (((w) >> 21) & 0x7u)
+#define GHCI_DISP_INFO_FIXED_MODE_COUNT(w) (((w) >> 24) & 0xFFu)
+#define GHCI_DISP_LIMIT_ACTIVE(w)      ((w) & 0xFFFFu)
+#define GHCI_DISP_LIMIT_TOTAL(w)       (((w) >> 16) & 0xFFFFu)
+#define GHCI_DISP_BLANK_FP(w)          ((w) & 0xFFu)
+#define GHCI_DISP_BLANK_SYNC(w)        (((w) >> 8) & 0xFFu)
+#define GHCI_DISP_BLANK_BP(w)          (((w) >> 16) & 0xFFu)
+#define GHCI_DISP_CURSOR_SIZE          64u /* Plane 1: 64 x 64 BGRA8, 256 bytes per row */
 
 #ifdef __cplusplus
 }

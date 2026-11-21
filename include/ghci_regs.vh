@@ -112,10 +112,17 @@ localparam [8:0] GHCI_CAP_WORD_FMT_LIMITS      = 9'd15;
 localparam [8:0] GHCI_CAP_WORD_FMT_FIRST_REG   = 9'd16;
 localparam [8:0] GHCI_CAP_WORD_FMT_COUNT       = 9'd17;
 localparam [8:0] GHCI_CAP_WORD_EXTCAP_PRESENT  = 9'd18;
-localparam [8:0] GHCI_CAP_WORD_SHADER_STAGES   = 9'd19;
-localparam [8:0] GHCI_CAP_WORD_STAGE_LIMITS    = 9'd20;
-localparam [8:0] GHCI_CAP_WORD_TIMESTAMP_HZ    = 9'd30;
-localparam [8:0] GHCI_CAP_WORD_FMT_BASE        = 9'd32;
+localparam [8:0] GHCI_CAP_WORD_SHADER_STAGES     = 9'd19;
+localparam [8:0] GHCI_CAP_WORD_STAGE_LIMITS      = 9'd20;
+localparam [8:0] GHCI_CAP_WORD_DISP_PCLK_MIN_KHZ = 9'd21;
+localparam [8:0] GHCI_CAP_WORD_DISP_PCLK_MAX_KHZ = 9'd22;
+localparam [8:0] GHCI_CAP_WORD_DISP_PCLK_INFO    = 9'd23;
+localparam [8:0] GHCI_CAP_WORD_DISP_LIMITS_H     = 9'd24;
+localparam [8:0] GHCI_CAP_WORD_DISP_LIMITS_V     = 9'd25;
+localparam [8:0] GHCI_CAP_WORD_DISP_MIN_H_BLANK  = 9'd28;
+localparam [8:0] GHCI_CAP_WORD_DISP_MIN_V_BLANK  = 9'd29;
+localparam [8:0] GHCI_CAP_WORD_TIMESTAMP_HZ      = 9'd30;
+localparam [8:0] GHCI_CAP_WORD_FMT_BASE          = 9'd32;
 
 /* Capability word alias */
 localparam [8:0] GHCI_CAP_DEVICE_CAPS          = 9'd2;
@@ -532,78 +539,13 @@ localparam [3:0] GHCI_RSV_SFLOAT32 = 4'd5;
 localparam [3:0] GHCI_RSV_UNORM2_10_10_10 = 4'd6;	/* CAPS[30] */
 localparam [3:0] GHCI_RSV_UNORM1555 = 4'd7;	/* CAPS[30] */
 
-/* Extended capability blocks replaced by fixed-offset control-path windows (BOOT_CAPS[5:1]) */
-
-/* The display controller's registers (DISP2 capability, ghci.md
- * section 13.2): offsets from the capability's register offset. */
-localparam [31:0] GHCI_DC_ID_VALUE = 32'h41544443;	/* "ATDC" */
-localparam [16:0] GHCI_DC_ID = 17'h00;
-localparam [16:0] GHCI_DC_VERSION = 17'h04;
-localparam [16:0] GHCI_DC_CAPS = 17'h08;
-localparam [16:0] GHCI_DC_CTRL = 17'h10;
-localparam [16:0] GHCI_DC_STATUS = 17'h14;
-localparam [16:0] GHCI_DC_IRQ_STATUS = 17'h18;
-localparam [16:0] GHCI_DC_IRQ_ENABLE = 17'h1C;
-localparam [16:0] GHCI_DC_FB_BASE = 17'h20;
-localparam [16:0] GHCI_DC_FB_NEXT = 17'h24;
-localparam [16:0] GHCI_DC_FB_STRIDE = 17'h28;
-localparam [16:0] GHCI_DC_FB_SIZE = 17'h2C;
-localparam [16:0] GHCI_DC_TIMING = 17'h30;	/* 0x30..0x50: H_ACTIVE..V_BP, SYNC_POL */
-localparam [16:0] GHCI_DC_SYNC_POL = 17'h50;
-localparam [16:0] GHCI_DC_FRAME_COUNT = 17'h54;
-localparam [16:0] GHCI_DC_PCLK_SEL = 17'h58;
-localparam [16:0] GHCI_DC_I2C = 17'h60;	/* 0x60 CTRL, 0x64 DATA, 0x68 STATUS */
-localparam [16:0] GHCI_DC_SCAN_SUM = 17'h70;	/* Amaterrace: sum of the last frame's pixel words */
-localparam [16:0] GHCI_DC_SCAN_WORDS = 17'h74;	/* Amaterrace: pixel words of the last frame */
-localparam GHCI_DC_CTRL_ENABLE = 0;
-localparam GHCI_DC_CTRL_RESET = 1;
-localparam GHCI_DC_CTRL_TEST_PATTERN = 2;
-localparam GHCI_DC_CTRL_FORMAT = 4;	/* [5:4] */
-localparam GHCI_DC_CTRL_OUTPUT = 6;
-localparam [1:0] GHCI_DC_FMT_BGRA8 = 2'd0;
-localparam [1:0] GHCI_DC_FMT_RGBA8 = 2'd1;
-localparam [1:0] GHCI_DC_FMT_RGB565 = 2'd2;
-localparam GHCI_DC_IRQ_VSYNC = 0;
-localparam GHCI_DC_IRQ_FLIP_DONE = 1;
-localparam GHCI_DC_IRQ_CURSOR_FLIP = 2;
-localparam GHCI_DC_IRQ_HOTPLUG = 3;
-localparam GHCI_DC_IRQ_UNDERFLOW = 4;
-localparam GHCI_DC_IRQ_DISP_ERROR = 5;
-
-/* DISP2 (ghci.md section 13.2), continued; 0x18/0x1C above are
- * DISP_IRQ_STATUS/DISP_IRQ_ENABLE. The window is 256 bytes; Amaterrace puts
- * it at 0x200 of the host registers. */
-localparam [16:0] GHCI_DISP2_BASE = 17'h00200;	/* Amaterrace */
-localparam [16:0] GHCI_DC_CONNECTED = 17'h6C;
-localparam [16:0] GHCI_DC_MODE_INDEX = 17'h80;
-localparam [16:0] GHCI_DC_MODE_H0 = 17'h84;
-localparam [16:0] GHCI_DC_MODE_H1 = 17'h88;
-localparam [16:0] GHCI_DC_MODE_V0 = 17'h8C;
-localparam [16:0] GHCI_DC_MODE_V1 = 17'h90;
-localparam [16:0] GHCI_DC_MODE_CLOCK = 17'h94;
-localparam [16:0] GHCI_DC_MODE_FLAGS = 17'h98;
-localparam [16:0] GHCI_DC_CURSOR_BASE = 17'hA0;
-localparam [16:0] GHCI_DC_CURSOR_POS = 17'hA4;
-localparam [16:0] GHCI_DC_CURSOR_CTRL = 17'hA8;
-localparam [16:0] GHCI_DC_TAKEN0 = 17'hB0;
-localparam [16:0] GHCI_DC_TAKEN1 = 17'hB4;
-/* Note: ATG1 DC vendor extensions (0xC0..0xE0) live in rtl/gpu/dc/atg_dc_regs.v */
-localparam GHCI_DC_CAPS_CURSOR = 8;
-localparam GHCI_DC_CAPS_MODES = 9;	/* [11:9] */
-localparam GHCI_DC_CAPS_SENSE = 12;
-localparam GHCI_DC_ST_RUNNING = 0;
-localparam GHCI_DC_ST_UNDERFLOW = 1;
-localparam GHCI_DC_ST_IDLE = 2;
-localparam GHCI_DC_ST_READ_ERROR = 3;
-localparam GHCI_DC_ST_RECORD_ERROR = 4;
-localparam GHCI_DC_ST_BAD_WRITE = 5;
-localparam GHCI_DC_ST_LINE = 16;	/* [27:16] */
-localparam GHCI_DC_ST_CONNECTED = 28;
-localparam GHCI_DC_ST_PENDING0 = 29;
-localparam GHCI_DC_ST_PENDING1 = 30;
-localparam GHCI_DC_ST_RECORD = 31;
-/* µops 15 and 16 (docs/ghci.md section 7.3, draft). */
-localparam [5:0] GHCI_OP_DISP_SET = 6'd15;
-localparam [5:0] GHCI_OP_FLIP = 6'd16;
+/* Display Capability Block Word 23 bit indices */
+localparam GHCI_DISP_INFO_ARBITRARY_PCLK_BIT  = 16;
+localparam GHCI_DISP_INFO_TMDS_SCRAMBLE_BIT   = 17;
+localparam GHCI_DISP_INFO_HAS_CURSOR_BIT      = 18;
+localparam GHCI_DISP_INFO_HAS_SENSE_BIT       = 19;
+localparam GHCI_DISP_INFO_HAS_I2C_BIT         = 20;
+localparam GHCI_DISP_INFO_DISPLAY_COUNT_SHIFT = 21;
+localparam GHCI_DISP_INFO_FIXED_MODE_SHIFT    = 24;
 
 /* verilator lint_on UNUSEDPARAM */

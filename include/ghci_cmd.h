@@ -63,6 +63,13 @@ extern "C" {
 #define GHCI_CAPS_EXTCAP_PRESENT        18u
 #define GHCI_CAPS_SHADER_STAGES         19u
 #define GHCI_CAPS_STAGE_LIMITS          20u
+#define GHCI_CAPS_DISP_PCLK_MIN_KHZ     21u
+#define GHCI_CAPS_DISP_PCLK_MAX_KHZ     22u
+#define GHCI_CAPS_DISP_PCLK_INFO        23u
+#define GHCI_CAPS_DISP_LIMITS_H         24u
+#define GHCI_CAPS_DISP_LIMITS_V         25u
+#define GHCI_CAPS_DISP_MIN_H_BLANK      28u
+#define GHCI_CAPS_DISP_MIN_V_BLANK      29u
 #define GHCI_CAPS_TIMESTAMP_HZ          30u
 #define GHCI_CAPS_FMT_BASE              32u
 #define GHCI_CAPS_TOTAL_DWORDS          192u
@@ -90,6 +97,13 @@ extern "C" {
 #define GHCI_CAPS_WORD_EXTCAP_PRESENT   18u
 #define GHCI_CAPS_WORD_SHADER_STAGES    19u
 #define GHCI_CAPS_WORD_STAGE_LIMITS     20u
+#define GHCI_CAPS_WORD_DISP_PCLK_MIN_KHZ 21u
+#define GHCI_CAPS_WORD_DISP_PCLK_MAX_KHZ 22u
+#define GHCI_CAPS_WORD_DISP_PCLK_INFO   23u
+#define GHCI_CAPS_WORD_DISP_LIMITS_H    24u
+#define GHCI_CAPS_WORD_DISP_LIMITS_V    25u
+#define GHCI_CAPS_WORD_DISP_MIN_H_BLANK 28u
+#define GHCI_CAPS_WORD_DISP_MIN_V_BLANK 29u
 #define GHCI_CAPS_WORD_TIMESTAMP_HZ     30u
 #define GHCI_CAPS_WORD_FMT_BASE         32u
 
@@ -129,9 +143,15 @@ extern "C" {
 #define GHCI_CMD_COPY_BUFFER_TO_IMAGE   0x45u
 #define GHCI_CMD_COPY_IMAGE_TO_BUFFER   0x46u
 
-/* Display Controller Commands (0x50..0x5F, Guarded by CAP_DISP) */
+/* Display Controller Commands (0x50..0x57, Guarded by CAP_DISP, Primary Ring Only) */
 #define GHCI_CMD_DISP_SET               0x50u
 #define GHCI_CMD_FLIP                   0x51u
+#define GHCI_CMD_DISP_SET_MODE          0x52u
+#define GHCI_CMD_DISP_QUERY_STATE       0x53u
+#define GHCI_CMD_DISP_SET_CURSOR        0x54u
+#define GHCI_CMD_DISP_QUERY_MODES       0x55u
+#define GHCI_CMD_DISP_EVENT_SETUP       0x56u
+#define GHCI_CMD_DISP_I2C_XFER          0x57u
 
 /* Packet header helper */
 #define GHCI_MAKE_HEADER(opcode, dwords, flags) \
@@ -1013,30 +1033,263 @@ typedef struct GhciCmdCopyImageToBuffer {
 	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] tiled */
 } GhciCmdCopyImageToBuffer;
 
-/* DISP2 Interrupt Status / Enable Flags (0x218 / 0x21C, N21) */
-#define GHCI_DISP_IRQ_BIT_VSYNC         (1u << 0)
-#define GHCI_DISP_IRQ_BIT_FLIP_DONE     (1u << 1)
-#define GHCI_DISP_IRQ_BIT_CURSOR_DONE   (1u << 2)
-#define GHCI_DISP_IRQ_BIT_HOTPLUG       (1u << 3)
-#define GHCI_DISP_IRQ_BIT_UNDERFLOW     (1u << 4)
-#define GHCI_DISP_IRQ_BIT_ERROR         (1u << 5) /* Controller error: read error, record error, bad write */
+/*
+ * ============================================================================
+ * Display Service Queue (DSQ), Packets & Structures (0x50..0x57, §13.2)
+ * ============================================================================
+ */
+#define GHCI_DSQ_MIN_DEPTH                  8u
+#define GHCI_DISP_MAX_I2C_TIMEOUT_MS        25u
 
-/* CMD_FLIP (0x51): 8 dwords (N25) */
+/* Common header.flags for non-flip display commands (0x50, 0x52, 0x53, 0x55, 0x56, 0x57) */
+#define GHCI_DISP_FLAG_COMP_WRITE           (1u << 8)
+#define GHCI_DISP_FLAG_COMP_IRQ             (1u << 9)
+
+/* 64-bit completion writeback encoding: comp_val | (cancel << 63) | (status << 56) */
+#define GHCI_DISP_COMP_CANCEL_BIT           (1ULL << 63)
+#define GHCI_DISP_COMP_STATUS_SHIFT         56u
+#define GHCI_DISP_COMP_STATUS_MASK          0x7Fu
+#define GHCI_DISP_COMP_STATUS_OK            0u
+#define GHCI_DISP_COMP_STATUS_INVALID_STATE 1u
+
+/* CMD_DISP_SET (0x50) header.flags[2:0] */
+#define GHCI_DISP_SET_FLAG_ENABLE           (1u << 0)
+#define GHCI_DISP_SET_FLAG_RESET            (1u << 1)
+#define GHCI_DISP_SET_FLAG_TEST_PATTERN     (1u << 2)
+
+/* CMD_DISP_SET_MODE (0x52) header.flags[0] */
+#define GHCI_DISP_SET_MODE_FLAG_CHECK_ONLY  (1u << 0)
+
+/* GhciDisplayModeDesc.flags */
+#define GHCI_DISP_MODE_FLAG_HSYNC_POS       (1u << 0)
+#define GHCI_DISP_MODE_FLAG_VSYNC_POS       (1u << 1)
+#define GHCI_DISP_MODE_ID_ARBITRARY         0xFFFFFFFFu
+
+/* GhciDisplayModeDesc.status */
+#define GHCI_DISP_MODE_STATUS_OK            0u
+#define GHCI_DISP_MODE_STATUS_UNSUPPORTED   1u
+#define GHCI_DISP_MODE_STATUS_ENABLED       2u
+#define GHCI_DISP_MODE_STATUS_INVALID_DESC  3u
+#define GHCI_DISP_MODE_STATUS_CANCELLED     4u
+
+/* Unified 64-byte Display Mode Descriptor (64-byte aligned) */
+typedef struct GhciDisplayModeDesc {
+	uint32_t struct_bytes;          /* 0x00: 64 */
+	uint32_t pixel_clock_khz;       /* 0x04: Pixel clock (kHz, > 0) */
+	uint16_t hactive;               /* 0x08: Horizontal active pixels */
+	uint16_t hsync_start;           /* 0x0A: Horizontal sync start */
+	uint16_t hsync_end;             /* 0x0C: Horizontal sync end */
+	uint16_t htotal;                /* 0x0E: Horizontal total pixels */
+	uint16_t vactive;               /* 0x10: Vertical active lines */
+	uint16_t vsync_start;           /* 0x12: Vertical sync start */
+	uint16_t vsync_end;             /* 0x14: Vertical sync end */
+	uint16_t vtotal;                /* 0x16: Vertical total lines */
+	uint32_t flags;                 /* 0x18: [0] HSYNC_POS, [1] VSYNC_POS, [31:2] reserved (0) */
+	uint32_t status;                /* 0x1C: 0=OK, 1=UNSUPPORTED, 2=ENABLED, 3=INVALID_DESC, 4=CANCELLED */
+	uint32_t actual_pclk_khz;       /* 0x20: Actual generated pixel clock (kHz) */
+	uint32_t mode_id;               /* 0x24: Fixed mode index or 0xFFFFFFFF */
+	uint32_t reserved[6];           /* 0x28..0x3F: 0 */
+} GhciDisplayModeDesc;
+
+/* GhciDisplayState.state_flags */
+#define GHCI_DISP_STATE_ENABLE                  (1u << 0)
+#define GHCI_DISP_STATE_TEST_PATTERN            (1u << 1)
+#define GHCI_DISP_STATE_SCANOUT_ACTIVE          (1u << 2)
+#define GHCI_DISP_STATE_CURSOR_VISIBLE          (1u << 3)
+#define GHCI_DISP_STATE_CONNECTED               (1u << 4)
+#define GHCI_DISP_STATE_UNDERFLOW               (1u << 5)
+#define GHCI_DISP_STATE_PRIMARY_FLIP_PENDING    (1u << 6)
+#define GHCI_DISP_STATE_CURSOR_FLIP_PENDING     (1u << 7)
+#define GHCI_DISP_STATE_FLIP_RECORD_PENDING     (1u << 8)
+#define GHCI_DISP_STATE_FLIP_RECORD_WRITE_ERROR (1u << 9)
+#define GHCI_DISP_STATE_HAS_IMAGE               (1u << 10)
+#define GHCI_DISP_STATE_HAS_CURSOR_IMAGE        (1u << 11)
+
+/* GhciDisplayState.event_status */
+#define GHCI_DISP_EVENT_RING_ENABLED            (1u << 0)
+
+/* Unified 128-byte Display State Snapshot (64-byte aligned) */
+typedef struct GhciDisplayState {
+	uint32_t struct_bytes;          /* 0x00: 128 */
+	uint16_t reserved0;             /* 0x04: 0 */
+	uint16_t state_flags;           /* 0x06: GHCI_DISP_STATE_* */
+	uint32_t display_id;            /* 0x08: Target display identifier */
+	uint8_t  scanout_format;        /* 0x0C: Active / last-taken Plane 0 GhciFormat ID */
+	uint8_t  dc_id;                 /* 0x0D: Non-normative diagnostic controller ID */
+	uint16_t event_status;          /* 0x0E: [0] EVENT_RING_ENABLED */
+	uint32_t frame_count;           /* 0x10: VSYNC frame counter */
+	uint16_t current_line;          /* 0x14: Vertical scan line at snapshot_timestamp */
+	uint16_t reserved1;             /* 0x16: 0 */
+	uint32_t last_flip_cookie_primary; /* 0x18: Last completed/cancelled Primary flip value */
+	uint32_t last_flip_cookie_cursor;  /* 0x1C: Last completed/cancelled Cursor flip value */
+	uint64_t active_fb_base;        /* 0x20: 64-bit physical scanout base (0 if !HAS_IMAGE) */
+	uint32_t active_fb_stride_bytes;/* 0x28: Line stride in bytes (0 if !HAS_IMAGE) */
+	uint32_t cursor_pos;            /* 0x2C: [15:0] int16_t x, [31:16] int16_t y */
+	uint64_t last_event_seq;        /* 0x30: Sequence number of last written event record */
+	uint64_t snapshot_timestamp;    /* 0x38: Constant-rate TIMESTAMP when snapshot was taken */
+	GhciDisplayModeDesc active_mode;/* 0x40..0x7F: Embedded 64-byte GhciDisplayModeDesc */
+} GhciDisplayState;
+
+/* CMD_DISP_QUERY_MODES (0x55) output header (16 bytes, followed by GhciDisplayModeDesc[]) */
+typedef struct GhciDisplayModesHeader {
+	uint32_t total_modes;           /* Total fixed modes supported by display */
+	uint32_t returned_modes;        /* Number of GhciDisplayModeDesc records written */
+	uint32_t reserved[2];           /* 0 */
+} GhciDisplayModesHeader;
+
+/* Display Event Ring Record (32 bytes, 32-byte aligned) */
+#define GHCI_DISP_EVENT_VSYNC           1u
+#define GHCI_DISP_EVENT_HOTPLUG         2u
+#define GHCI_DISP_EVENT_UNDERFLOW       3u
+#define GHCI_DISP_EVENT_DISP_ERROR      4u
+
+#define GHCI_DISP_EVENT_MASK_VSYNC      (1u << 0)
+#define GHCI_DISP_EVENT_MASK_HOTPLUG    (1u << 1)
+#define GHCI_DISP_EVENT_MASK_UNDERFLOW  (1u << 2)
+#define GHCI_DISP_EVENT_MASK_DISP_ERROR (1u << 3)
+
+#define GHCI_DISP_ERR_SCANOUT_READ      1u
+#define GHCI_DISP_ERR_FLIP_RECORD_WRITE 2u
+#define GHCI_DISP_ERR_COMP_WRITE        3u
+
+typedef struct GhciDisplayEventRecord {
+	uint64_t seq;                   /* 0x00: 1-based monotonic event sequence number */
+	uint64_t timestamp;             /* 0x08: Constant-rate TIMESTAMP value */
+	uint32_t event_type;            /* 0x10: GHCI_DISP_EVENT_* */
+	uint32_t display_id;            /* 0x14: Target display identifier */
+	uint32_t frame_count;           /* 0x18: Frame count at event occurrence */
+	uint32_t payload;               /* 0x1C: Event payload (HOTPLUG[0]=connected, DISP_ERROR=code) */
+} GhciDisplayEventRecord;
+
+/* CMD_DISP_I2C_XFER (0x57) flags and buffer header (4 bytes + payload) */
+#define GHCI_DISP_I2C_FLAG_WRITE        (1u << 0)
+#define GHCI_DISP_I2C_FLAG_HAS_OFFSET   (1u << 1)
+#define GHCI_DISP_I2C_FLAG_HAS_SEG      (1u << 2)
+
+#define GHCI_DISP_I2C_STATUS_OK         0u
+#define GHCI_DISP_I2C_STATUS_NACK       1u
+#define GHCI_DISP_I2C_STATUS_BUS_ERROR  2u
+#define GHCI_DISP_I2C_STATUS_TIMEOUT    3u
+#define GHCI_DISP_I2C_STATUS_CANCELLED  4u
+
+typedef struct GhciDisplayI2cBufHeader {
+	uint16_t status;                /* 0x00: GHCI_DISP_I2C_STATUS_* */
+	uint16_t bytes_done;            /* 0x02: Payload bytes transferred */
+} GhciDisplayI2cBufHeader;
+
+/* 16-byte Flip Completion Record */
+typedef struct GhciFlipRecord {
+	uint32_t value;                 /* 0x00: [30:0] flip_cookie, [31] 1 = CANCELLED */
+	uint32_t frame_count;           /* 0x04: Frame count at take / cancellation */
+	uint32_t timestamp_lo;          /* 0x08: Constant-rate TIMESTAMP [31:0] */
+	uint32_t timestamp_hi;          /* 0x0C: Constant-rate TIMESTAMP [63:32] */
+} GhciFlipRecord;
+
+/* CMD_DISP_SET (0x50): 6 dwords (24 bytes) */
+typedef struct GhciCmdDispSet {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_SET, dwords: 6, flags */
+	uint32_t display_id;
+	uint32_t comp_pa_lo;
+	uint32_t comp_pa_hi;
+	uint32_t comp_val_lo;
+	uint32_t comp_val_hi;
+} GhciCmdDispSet;
+
+/* CMD_FLIP (0x51): 10 dwords (40 bytes) */
 #define GHCI_FLIP_FLAG_VSYNC_WAIT       (1u << 0)
 #define GHCI_FLIP_FLAG_IMMEDIATE        (1u << 1)
-#define GHCI_FLIP_FLAG_PLANE_CURSOR     (1u << 2) /* 0 = Plane 0 (FB), 1 = Plane 1 (Cursor) */
+#define GHCI_FLIP_FLAG_PLANE_CURSOR     (1u << 2) /* 0 = Plane 0 (Primary), 1 = Plane 1 (Cursor) */
 #define GHCI_FLIP_FLAG_RECORD_ENABLE    (1u << 3)
+#define GHCI_FLIP_FLAG_WAIT_GPU_IDLE    (1u << 4)
+#define GHCI_FLIP_FLAG_RECORD_IRQ       (1u << 5)
 
 typedef struct GhciCmdFlip {
-	uint32_t header;                /* opcode: GHCI_CMD_FLIP, dwords: 8 */
-	uint32_t display_id;            /* 0 = primary display, 1 = secondary display */
-	uint32_t base_lo;               /* 32-bit GPU physical scanout address (< HOST_LIMIT or >= LOCAL_BASE) (N12, N25) */
-	uint32_t base_hi;               /* Must be 0 (N12, N25) */
+	uint32_t header;                /* opcode: GHCI_CMD_FLIP, dwords: 10, flags: 0 */
+	uint32_t display_id;
+	uint32_t base_lo;               /* 64-bit physical scanout address [31:0] (64B aligned) */
+	uint32_t base_hi;               /* 64-bit physical scanout address [63:32] */
+	uint32_t stride_bytes;          /* Primary: > 0 & 64B aligned; Cursor: must be 0 */
+	uint32_t scanout_format;        /* [7:0] GhciFormat ID (Primary, FMT_SCANOUT==1); Cursor: 0 */
 	uint32_t flags;                 /* GHCI_FLIP_FLAG_* */
-	uint32_t value;                 /* Presentation sequence tag (latched to TAKEN0/TAKEN1) */
-	uint32_t record_pa_lo;          /* 32-bit GPU physical address of 16-byte flip completion record (N12, N25) */
-	uint32_t record_pa_hi;          /* Must be 0 (N12, N25) */
+	uint32_t value;                 /* [30:0] flip_cookie; [31] reserved (0 on input) */
+	uint32_t record_pa_lo;          /* 16-byte GhciFlipRecord physical address [31:0] (8B aligned) */
+	uint32_t record_pa_hi;          /* 64-bit physical address [63:32] */
 } GhciCmdFlip;
+
+/* CMD_DISP_SET_MODE (0x52): 8 dwords (32 bytes) */
+typedef struct GhciCmdDispSetMode {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_SET_MODE, dwords: 8, flags */
+	uint32_t display_id;
+	uint32_t mode_pa_lo;            /* 64B-aligned PA of GhciDisplayModeDesc [31:0] */
+	uint32_t mode_pa_hi;            /* [63:32] */
+	uint32_t comp_pa_lo;
+	uint32_t comp_pa_hi;
+	uint32_t comp_val_lo;
+	uint32_t comp_val_hi;
+} GhciCmdDispSetMode;
+
+/* CMD_DISP_QUERY_STATE (0x53): 9 dwords (36 bytes) */
+typedef struct GhciCmdDispQueryState {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_QUERY_STATE, dwords: 9, flags */
+	uint32_t display_id;
+	uint32_t dst_pa_lo;             /* 64B-aligned PA for GhciDisplayState [31:0] */
+	uint32_t dst_pa_hi;             /* [63:32] */
+	uint32_t dst_bytes;             /* >= 128 and multiple of 64 */
+	uint32_t comp_pa_lo;
+	uint32_t comp_pa_hi;
+	uint32_t comp_val_lo;
+	uint32_t comp_val_hi;
+} GhciCmdDispQueryState;
+
+/* CMD_DISP_SET_CURSOR (0x54): 4 dwords (16 bytes) */
+#define GHCI_DISP_CURSOR_SHOW           (1u << 0)
+
+typedef struct GhciCmdDispSetCursor {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_SET_CURSOR, dwords: 4, flags: 0 */
+	uint32_t display_id;
+	uint32_t pos_xy;                /* [15:0] int16_t x, [31:16] int16_t y */
+	uint32_t ctrl;                  /* [0] CURSOR_SHOW, [31:1] reserved (0) */
+} GhciCmdDispSetCursor;
+
+/* CMD_DISP_QUERY_MODES (0x55): 9 dwords (36 bytes) */
+typedef struct GhciCmdDispQueryModes {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_QUERY_MODES, dwords: 9, flags */
+	uint32_t display_id;
+	uint32_t dst_pa_lo;             /* 64B-aligned PA for header + GhciDisplayModeDesc[] */
+	uint32_t dst_pa_hi;
+	uint32_t max_modes;             /* Max mode descriptors that fit after 16B header */
+	uint32_t comp_pa_lo;
+	uint32_t comp_pa_hi;
+	uint32_t comp_val_lo;
+	uint32_t comp_val_hi;
+} GhciCmdDispQueryModes;
+
+/* CMD_DISP_EVENT_SETUP (0x56): 7 dwords (28 bytes) */
+#define GHCI_DISP_EVENT_FLAG_ENABLE     (1u << 0)
+
+typedef struct GhciCmdDispEventSetup {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_EVENT_SETUP, dwords: 7, flags */
+	uint32_t display_id;
+	uint32_t event_ring_pa_lo;      /* 64B-aligned PA when ENABLE == 1 */
+	uint32_t event_ring_pa_hi;
+	uint32_t ring_cfg;              /* [15:0] capacity_entries, [19:16] event_enable_mask, [31:20] 0 */
+	uint32_t comp_pa_lo;            /* 8B-aligned PA for 64-bit setup_next_seq */
+	uint32_t comp_pa_hi;
+} GhciCmdDispEventSetup;
+
+/* CMD_DISP_I2C_XFER (0x57): 10 dwords (40 bytes) */
+typedef struct GhciCmdDispI2cXfer {
+	uint32_t header;                /* opcode: GHCI_CMD_DISP_I2C_XFER, dwords: 10, flags */
+	uint32_t display_id;
+	uint32_t addr_cfg;              /* [6:0] slave_addr_7b, [15:8] reg_offset, [23:16] segment */
+	uint32_t xfer_bytes;            /* 1..256 */
+	uint32_t buf_pa_lo;             /* 4B-aligned PA of GhciDisplayI2cBufHeader + payload */
+	uint32_t buf_pa_hi;
+	uint32_t comp_pa_lo;
+	uint32_t comp_pa_hi;
+	uint32_t comp_val_lo;
+	uint32_t comp_val_hi;
+} GhciCmdDispI2cXfer;
 
 
 #ifdef __cplusplus
