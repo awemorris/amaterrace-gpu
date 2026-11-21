@@ -75,8 +75,106 @@ extern "C" {
 #define GHCI_CAPS_TIMESTAMP_HZ          30u
 #define GHCI_CAPS_TEX_LIMITS_3D         31u
 #define GHCI_CAPS_FMT_BASE              32u
-#define GHCI_CAPS_TOTAL_DWORDS          192u
-#define GHCI_CAPS_TOTAL_BYTES           768u
+#define GHCI_CAPS_MIN_QUERY_BYTES       64u
+#define GHCI_CAPS_STD_FMT_COUNT         160u
+#define GHCI_CAPS_MAX_FMT_COUNT         255u /* 0x00..0xFE; 0xFF (GHCI_FMT_INVALID) excluded */
+#define GHCI_CAPS_STD_DWORDS            (32u + GHCI_CAPS_STD_FMT_COUNT) /* 192 */
+#define GHCI_CAPS_STD_BYTES             (GHCI_CAPS_STD_DWORDS * 4u)     /* 768 */
+
+/*
+ * GHCI 1.0 Format Identifiers (GhciFormat, 8-bit: 0x00..0xFF)
+ */
+#define GHCI_FMT_NONE                   0x00u
+/* Packed 16/32-bit color formats (0x01..0x0F) */
+#define GHCI_FMT_B4G4R4A4_UNORM_P16     0x01u
+#define GHCI_FMT_R5G6B5_UNORM_P16       0x02u
+#define GHCI_FMT_A1R5G5B5_UNORM_P16     0x03u
+#define GHCI_FMT_A2B10G10R10_UNORM_P32  0x04u
+#define GHCI_FMT_A2B10G10R10_UINT_P32   0x05u
+#define GHCI_FMT_B10G11R11_UFLOAT_P32   0x06u
+#define GHCI_FMT_E5B9G9R9_UFLOAT_P32    0x07u
+/* 8-bit/channel formats (0x10..0x2F, 8-slot group stride) */
+#define GHCI_FMT_R8_UNORM               0x10u
+#define GHCI_FMT_R8_SNORM               0x11u
+#define GHCI_FMT_R8_UINT                0x12u
+#define GHCI_FMT_R8_SINT                0x13u
+#define GHCI_FMT_R8G8_UNORM             0x18u
+#define GHCI_FMT_R8G8_SNORM             0x19u
+#define GHCI_FMT_R8G8_UINT              0x1Au
+#define GHCI_FMT_R8G8_SINT              0x1Bu
+#define GHCI_FMT_R8G8B8A8_UNORM         0x20u
+#define GHCI_FMT_R8G8B8A8_SNORM         0x21u
+#define GHCI_FMT_R8G8B8A8_UINT          0x22u
+#define GHCI_FMT_R8G8B8A8_SINT          0x23u
+#define GHCI_FMT_R8G8B8A8_SRGB          0x24u
+#define GHCI_FMT_B8G8R8A8_UNORM         0x28u
+#define GHCI_FMT_B8G8R8A8_SRGB          0x2Cu
+/* 16-bit/channel formats (0x30..0x4F, 8-slot group stride) */
+#define GHCI_FMT_R16_UNORM              0x30u
+#define GHCI_FMT_R16_SNORM              0x31u
+#define GHCI_FMT_R16_UINT               0x32u
+#define GHCI_FMT_R16_SINT               0x33u
+#define GHCI_FMT_R16_SFLOAT             0x34u
+#define GHCI_FMT_R16G16_UNORM           0x38u
+#define GHCI_FMT_R16G16_SNORM           0x39u
+#define GHCI_FMT_R16G16_UINT            0x3Au
+#define GHCI_FMT_R16G16_SINT            0x3Bu
+#define GHCI_FMT_R16G16_SFLOAT          0x3Cu
+#define GHCI_FMT_R16G16B16A16_UNORM     0x40u
+#define GHCI_FMT_R16G16B16A16_SNORM     0x41u
+#define GHCI_FMT_R16G16B16A16_UINT      0x42u
+#define GHCI_FMT_R16G16B16A16_SINT      0x43u
+#define GHCI_FMT_R16G16B16A16_SFLOAT    0x44u
+/* 32-bit/channel formats (0x50..0x6F, 8-slot group stride) */
+#define GHCI_FMT_R32_UINT               0x52u
+#define GHCI_FMT_R32_SINT               0x53u
+#define GHCI_FMT_R32_SFLOAT             0x54u
+#define GHCI_FMT_R32G32_UINT            0x5Au
+#define GHCI_FMT_R32G32_SINT            0x5Bu
+#define GHCI_FMT_R32G32_SFLOAT          0x5Cu
+#define GHCI_FMT_R32G32B32_UINT         0x62u
+#define GHCI_FMT_R32G32B32_SINT         0x63u
+#define GHCI_FMT_R32G32B32_SFLOAT       0x64u
+#define GHCI_FMT_R32G32B32A32_UINT      0x6Au
+#define GHCI_FMT_R32G32B32A32_SINT      0x6Bu
+#define GHCI_FMT_R32G32B32A32_SFLOAT    0x6Cu
+/* Depth & Stencil formats (0x70..0x7F) */
+#define GHCI_FMT_D16_UNORM              0x70u
+#define GHCI_FMT_X8D24_UNORM_P32        0x71u
+#define GHCI_FMT_D32_SFLOAT             0x72u
+#define GHCI_FMT_S8_UINT                0x73u
+#define GHCI_FMT_D24_UNORM_S8_UINT      0x74u
+#define GHCI_FMT_D32_SFLOAT_S8_UINT     0x75u
+/* Block-compressed formats BC1..BC7 (0x80..0x8F) */
+#define GHCI_FMT_BC1_RGB_UNORM_BLK      0x80u
+#define GHCI_FMT_BC1_RGB_SRGB_BLK       0x81u
+#define GHCI_FMT_BC1_RGBA_UNORM_BLK     0x82u
+#define GHCI_FMT_BC1_RGBA_SRGB_BLK      0x83u
+#define GHCI_FMT_BC2_UNORM_BLK          0x84u
+#define GHCI_FMT_BC2_SRGB_BLK           0x85u
+#define GHCI_FMT_BC3_UNORM_BLK          0x86u
+#define GHCI_FMT_BC3_SRGB_BLK           0x87u
+#define GHCI_FMT_BC4_UNORM_BLK          0x88u
+#define GHCI_FMT_BC4_SNORM_BLK          0x89u
+#define GHCI_FMT_BC5_UNORM_BLK          0x8Au
+#define GHCI_FMT_BC5_SNORM_BLK          0x8Bu
+#define GHCI_FMT_BC6H_UFLOAT_BLK        0x8Cu
+#define GHCI_FMT_BC6H_SFLOAT_BLK        0x8Du
+#define GHCI_FMT_BC7_UNORM_BLK          0x8Eu
+#define GHCI_FMT_BC7_SRGB_BLK           0x8Fu
+/* Block-compressed formats ETC2/EAC (0x90..0x99) */
+#define GHCI_FMT_ETC2_R8G8B8_UNORM_BLK  0x90u
+#define GHCI_FMT_ETC2_R8G8B8_SRGB_BLK   0x91u
+#define GHCI_FMT_ETC2_R8G8B8A1_UNORM_BLK 0x92u
+#define GHCI_FMT_ETC2_R8G8B8A1_SRGB_BLK 0x93u
+#define GHCI_FMT_ETC2_R8G8B8A8_UNORM_BLK 0x94u
+#define GHCI_FMT_ETC2_R8G8B8A8_SRGB_BLK 0x95u
+#define GHCI_FMT_EAC_R11_UNORM_BLK      0x96u
+#define GHCI_FMT_EAC_R11_SNORM_BLK      0x97u
+#define GHCI_FMT_EAC_R11G11_UNORM_BLK   0x98u
+#define GHCI_FMT_EAC_R11G11_SNORM_BLK   0x99u
+/* Invalid sentinel (excluded from CMD_QUERY_CAPS per-format table) */
+#define GHCI_FMT_INVALID                0xFFu
 
 /* Word-prefixed aliases */
 #define GHCI_CAPS_WORD_BLOCK_ID         0u
@@ -832,7 +930,7 @@ typedef struct GhciCmdQueryCaps {
 	uint32_t header;                /* opcode: GHCI_CMD_QUERY_CAPS, dwords: 5, flags: 0 */
 	uint32_t dst_pa_lo;             /* host physical / IOVA destination [31:0], 64B-aligned */
 	uint32_t dst_pa_hi;             /* host physical / IOVA destination [63:32] */
-	uint32_t dst_bytes;             /* destination buffer size in bytes (multiple of 64, <= 768) */
+	uint32_t dst_bytes;             /* destination buffer size in bytes (>= 64 and multiple of 64) */
 	uint32_t reserved;              /* must be 0 */
 } GhciCmdQueryCaps;
 
@@ -846,7 +944,7 @@ typedef struct GhciBufferDescriptor {
 	uint32_t base_address_hi;       /* 64-bit GPU VA base [63:32] */
 	uint32_t size_bytes;            /* Buffer size in bytes */
 	uint16_t stride_bytes;          /* Element stride for texel buffer; 0 for raw/uniform */
-	uint8_t  format;                /* VkFormat for texel buffer; 0 for storage/uniform */
+	uint8_t  format;                /* GhciFormat ID for texel buffer; 0 for storage/uniform */
 	uint8_t  flags;                 /* [0] ReadOnly, [1] Coherent */
 } GhciBufferDescriptor;
 
@@ -866,28 +964,28 @@ typedef struct GhciBufferDescriptor {
 typedef struct GhciColorAttachmentDesc {
 	uint64_t image_va;              /* 0x00: Color attachment GPU virtual address of subresource slice (64-bit GPU VA) */
 	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
-	uint8_t  format;                /* 0x0C: VkFormat enum (e.g. VK_FORMAT_R8G8B8A8_UNORM = 37) */
+	uint8_t  format;                /* 0x0C: GhciFormat ID (e.g. GHCI_FMT_R8G8B8A8_UNORM = 0x20) */
 	uint8_t  ops;                   /* 0x0D: [1:0] LoadOp (0: Load, 1: Clear, 2: DontCare), [3:2] StoreOp (0: Store, 1: DontCare) */
-	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
-	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0) */
 } GhciColorAttachmentDesc;
 
 typedef struct GhciDepthStencilAttachmentDesc {
 	uint64_t depth_stencil_va;      /* 0x00: Depth/stencil GPU virtual address of subresource slice */
 	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
-	uint8_t  format;                /* 0x0C: Depth/stencil VkFormat (D16_UNORM, D32_SFLOAT, D24S8) */
+	uint8_t  format;                /* 0x0C: Depth/stencil GhciFormat (D16=0x70, D32F=0x72, D24S8=0x74) */
 	uint8_t  ops;                   /* 0x0D: [1:0] DepthLoad, [3:2] DepthStore, [5:4] StencilLoad, [7:6] StencilStore */
-	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
-	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0) */
 } GhciDepthStencilAttachmentDesc;
 
 typedef struct GhciResolveAttachmentDesc {
 	uint64_t resolve_va;            /* 0x00: Multisample resolve target GPU virtual address of subresource slice */
 	uint32_t row_pitch_bytes;       /* 0x08: Row pitch in bytes (64-byte aligned, linear layout) */
-	uint8_t  format;                /* 0x0C: Resolve destination format (VkFormat) */
+	uint8_t  format;                /* 0x0C: Resolve destination GhciFormat */
 	uint8_t  mode;                  /* 0x0D: [1:0] ResolveMode (0: Average, 1: Min, 2: Max, 3: Sample Zero) */
-	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0, N47) */
-	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0, N47) */
+	uint8_t  mip_level;             /* 0x0E: Reserved (must be 0) */
+	uint8_t  base_array_layer;      /* 0x0F: Reserved (must be 0) */
 } GhciResolveAttachmentDesc;
 
 typedef struct GhciRenderPassDesc {
@@ -986,7 +1084,7 @@ typedef struct GhciCmdCopyImage {
 	uint32_t src_xy;                /* [15:0] src_x, [31:16] src_y */
 	uint32_t dst_xy;                /* [15:0] dst_x, [31:16] dst_y */
 	uint32_t extent;                /* [15:0] width, [31:16] height */
-	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] src_tiled, [9] dst_tiled */
+	uint32_t format_and_flags;      /* [7:0] format (GhciFormat), [8] src_tiled, [9] dst_tiled */
 } GhciCmdCopyImage;
 
 /* CMD_BLIT (0x42): 12 dwords (J18, N13) */
@@ -1040,10 +1138,10 @@ typedef struct GhciCmdCopyBufferToImage {
 	uint32_t image_row_pitch;       /* Destination image row pitch in bytes */
 	uint32_t image_offset_xy;       /* [15:0] dst_x, [31:16] dst_y */
 	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
-	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] tiled */
+	uint32_t format_and_flags;      /* [7:0] format (GhciFormat), [8] tiled */
 } GhciCmdCopyBufferToImage;
 
-/* CMD_COPY_IMAGE_TO_BUFFER (0x46): 10 dwords (N13) */
+/* CMD_COPY_IMAGE_TO_BUFFER (0x46): 10 dwords */
 typedef struct GhciCmdCopyImageToBuffer {
 	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE_TO_BUFFER, dwords: 10 */
 	uint32_t src_image_va_lo;       /* Source tiled image slice GPU VA [31:0] */
@@ -1054,7 +1152,7 @@ typedef struct GhciCmdCopyImageToBuffer {
 	uint32_t buffer_row_pitch;      /* Buffer row pitch in bytes */
 	uint32_t image_offset_xy;       /* [15:0] src_x, [31:16] src_y */
 	uint32_t image_extent_xy;       /* [15:0] width, [31:16] height */
-	uint32_t format_and_flags;      /* [7:0] format (VkFormat), [8] tiled */
+	uint32_t format_and_flags;      /* [7:0] format (GhciFormat), [8] tiled */
 } GhciCmdCopyImageToBuffer;
 
 /*

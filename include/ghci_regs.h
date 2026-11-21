@@ -16,6 +16,32 @@
 
 #include <stdint.h>
 
+/* Per-Format Capability Word Bitfields (Words 32 + id) */
+#define GHCI_FMT_FEAT_OPTIMAL_SAMPLED          (1u << 0)
+#define GHCI_FMT_FEAT_OPTIMAL_FILTER_LINEAR    (1u << 1)
+#define GHCI_FMT_FEAT_OPTIMAL_COLOR_ATTACHMENT (1u << 2)
+#define GHCI_FMT_FEAT_OPTIMAL_BLEND            (1u << 3)
+#define GHCI_FMT_FEAT_OPTIMAL_DEPTH_STENCIL    (1u << 4)
+#define GHCI_FMT_FEAT_OPTIMAL_STORAGE_ATOMIC   (1u << 5)
+#define GHCI_FMT_FEAT_OPTIMAL_BLIT_SRC         (1u << 6)
+#define GHCI_FMT_FEAT_OPTIMAL_BLIT_DST         (1u << 7)
+#define GHCI_FMT_FEAT_OPTIMAL_STORAGE_IMAGE    (1u << 8)
+#define GHCI_FMT_FEAT_LINEAR_SHIFT             9u
+#define GHCI_FMT_FEAT_LINEAR_SAMPLED           (1u << 9)
+#define GHCI_FMT_FEAT_LINEAR_FILTER_LINEAR     (1u << 10)
+#define GHCI_FMT_FEAT_LINEAR_COLOR_ATTACHMENT  (1u << 11)
+#define GHCI_FMT_FEAT_LINEAR_BLEND             (1u << 12)
+#define GHCI_FMT_FEAT_LINEAR_DEPTH_STENCIL     (1u << 13)
+#define GHCI_FMT_FEAT_LINEAR_STORAGE_ATOMIC    (1u << 14)
+#define GHCI_FMT_FEAT_LINEAR_BLIT_SRC          (1u << 15)
+#define GHCI_FMT_FEAT_LINEAR_BLIT_DST          (1u << 16)
+#define GHCI_FMT_FEAT_LINEAR_STORAGE_IMAGE     (1u << 17)
+#define GHCI_FMT_FEAT_BUFFER_UNIFORM_TEXEL     (1u << 18) /* 0 in GHCI 1.0 */
+#define GHCI_FMT_FEAT_BUFFER_STORAGE_TEXEL     (1u << 19)
+#define GHCI_FMT_FEAT_BUFFER_STORAGE_ATOMIC    (1u << 20)
+#define GHCI_FMT_FEAT_BUFFER_VERTEX            (1u << 21)
+#define GHCI_FMT_FEAT_SCANOUT                  (1u << 22)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -419,6 +445,32 @@ extern "C" {
 #define GHCI_TEX_LIMIT_MAX_ARRAY_LAYERS_M1(w)(((w) >> 4) & 0x0FFFu) /* Word 27[15:4]: MAX_ARRAY_LAYERS - 1 */
 #define GHCI_TEX_LIMIT_MAX_EXTENT(w)         (((w) >> 16) & 0xFFFFu)/* Word 27[31:16]: MAX_TEX_EXTENT */
 #define GHCI_TEX_LIMIT_MAX_DEPTH_3D(w)       ((w) & 0xFFFFu)        /* Word 31[15:0]: MAX_TEX_DEPTH_3D */
+
+/* Per-Format Capability Word Bitfields (Words 32 + id) */
+#define GHCI_FMT_FEAT_OPTIMAL_SAMPLED          (1u << 0)
+#define GHCI_FMT_FEAT_OPTIMAL_FILTER_LINEAR    (1u << 1)
+#define GHCI_FMT_FEAT_OPTIMAL_COLOR_ATTACHMENT (1u << 2)
+#define GHCI_FMT_FEAT_OPTIMAL_BLEND            (1u << 3)
+#define GHCI_FMT_FEAT_OPTIMAL_DEPTH_STENCIL    (1u << 4)
+#define GHCI_FMT_FEAT_OPTIMAL_STORAGE_ATOMIC   (1u << 5)
+#define GHCI_FMT_FEAT_OPTIMAL_BLIT_SRC         (1u << 6)
+#define GHCI_FMT_FEAT_OPTIMAL_BLIT_DST         (1u << 7)
+#define GHCI_FMT_FEAT_OPTIMAL_STORAGE_IMAGE    (1u << 8)
+#define GHCI_FMT_FEAT_LINEAR_SHIFT             9u
+#define GHCI_FMT_FEAT_LINEAR_SAMPLED           (1u << 9)
+#define GHCI_FMT_FEAT_LINEAR_FILTER_LINEAR     (1u << 10)
+#define GHCI_FMT_FEAT_LINEAR_COLOR_ATTACHMENT  (1u << 11)
+#define GHCI_FMT_FEAT_LINEAR_BLEND             (1u << 12)
+#define GHCI_FMT_FEAT_LINEAR_DEPTH_STENCIL     (1u << 13)
+#define GHCI_FMT_FEAT_LINEAR_STORAGE_ATOMIC    (1u << 14)
+#define GHCI_FMT_FEAT_LINEAR_BLIT_SRC          (1u << 15)
+#define GHCI_FMT_FEAT_LINEAR_BLIT_DST          (1u << 16)
+#define GHCI_FMT_FEAT_LINEAR_STORAGE_IMAGE     (1u << 17)
+#define GHCI_FMT_FEAT_BUFFER_UNIFORM_TEXEL     (1u << 18) /* 0 in GHCI 1.0 */
+#define GHCI_FMT_FEAT_BUFFER_STORAGE_TEXEL     (1u << 19)
+#define GHCI_FMT_FEAT_BUFFER_STORAGE_ATOMIC    (1u << 20)
+#define GHCI_FMT_FEAT_BUFFER_VERTEX            (1u << 21)
+#define GHCI_FMT_FEAT_SCANOUT                  (1u << 22)
 
 #ifdef __cplusplus
 }

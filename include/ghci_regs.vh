@@ -561,4 +561,21 @@ localparam GHCI_TEX_LIMIT_MAX_ARRAY_M1_SHIFT     = 4;
 localparam GHCI_TEX_LIMIT_MAX_EXTENT_SHIFT       = 16;
 localparam GHCI_TEX_LIMIT_MAX_DEPTH_3D_SHIFT     = 0;
 
+/* Per-Format Capability Word Bit Positions (Words 32 + id) */
+localparam GHCI_FMT_FEAT_OPTIMAL_SAMPLED_BIT      = 0;
+localparam GHCI_FMT_FEAT_OPTIMAL_FILTER_BIT       = 1;
+localparam GHCI_FMT_FEAT_OPTIMAL_COLOR_ATT_BIT    = 2;
+localparam GHCI_FMT_FEAT_OPTIMAL_BLEND_BIT        = 3;
+localparam GHCI_FMT_FEAT_OPTIMAL_DS_BIT           = 4;
+localparam GHCI_FMT_FEAT_OPTIMAL_STOR_ATOMIC_BIT  = 5;
+localparam GHCI_FMT_FEAT_OPTIMAL_BLIT_SRC_BIT     = 6;
+localparam GHCI_FMT_FEAT_OPTIMAL_BLIT_DST_BIT     = 7;
+localparam GHCI_FMT_FEAT_OPTIMAL_STORAGE_BIT      = 8;
+localparam GHCI_FMT_FEAT_LINEAR_SHIFT             = 9;
+localparam GHCI_FMT_FEAT_BUFFER_UNIFORM_TEXEL_BIT = 18;
+localparam GHCI_FMT_FEAT_BUFFER_STORAGE_TEXEL_BIT = 19;
+localparam GHCI_FMT_FEAT_BUFFER_STORAGE_ATOMIC_BIT= 20;
+localparam GHCI_FMT_FEAT_BUFFER_VERTEX_BIT        = 21;
+localparam GHCI_FMT_FEAT_SCANOUT_BIT              = 22;
+
 /* verilator lint_on UNUSEDPARAM */
