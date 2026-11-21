@@ -677,7 +677,7 @@ module atg_rop_fblend (
 	wire sub1_clk = clk;
 `else
 	reg sub1_icg_en;
-	always @(negedge clk) begin
+	always @(negedge clk or posedge rst_sync) begin
 		if (rst_sync)
 			sub1_icg_en <= 1'b1;
 		else
@@ -1022,7 +1022,7 @@ module atg_rop_fblend (
 	wire mul_clk = clk;
 `else
 	reg mul_icg_en;
-	always @(negedge clk) begin
+	always @(negedge clk or posedge rst_sync) begin
 		if (rst_sync)
 			mul_icg_en <= 1'b1;
 		else
@@ -1105,7 +1105,7 @@ module atg_rop_fblend (
 	wire add_clk = clk;
 `else
 	reg add_icg_en;
-	always @(negedge clk) begin
+	always @(negedge clk or posedge rst_sync) begin
 		if (rst_sync)
 			add_icg_en <= 1'b1;
 		else
@@ -1256,7 +1256,7 @@ module atg_rop_fblend (
 	wire enc_clk = clk;
 `else
 	reg enc_icg_en;
-	always @(negedge clk) begin
+	always @(negedge clk or posedge rst_sync) begin
 		if (rst_sync)
 			enc_icg_en <= 1'b1;
 		else

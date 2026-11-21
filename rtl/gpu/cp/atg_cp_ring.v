@@ -877,6 +877,7 @@ module atg_cp_ring #(
 	wire h_bad_words = h_novf_words;
 	wire h_bad_avail = ({7'd0, h_n} >= {1'b0, avail_check});
 	wire h_bad = h_bad_words || h_bad_avail;
+	wire rem_lo8_p1_co_unused = 1'b0;
 `else
 	wire rem_hi_nz   = |rem_words_r[22:16];
 	wire rem_hi8_nz  = |rem_words_r[22:8];
