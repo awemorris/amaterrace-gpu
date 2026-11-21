@@ -1,14 +1,14 @@
 GHCI — GPU Host Controller Interface
 ====================================
 
-**Version 1.0 Draft 117: Non-authoritative  Draft Architecture Specification, 2026-11-20**
+**Version 1.0 Specification, 2026-11-21**
 License: Zlib (the same as the rest of this repository)
 
 GHCI is the single, authoritative host interface specification for conforming
-GPUs and their host drivers (Linux KMD, Mesa Vulkan ICD, and simulator environments).
+GPUs and their host drivers.
 It defines one register layout, one command-ring model, and one set of rules for
 fences, interrupts, faults and reset, so that one operating-system driver can run
-every conforming GPU. Design decision traceability tags are archived separately in [`docs/design_decisions.md`](docs/design_decisions.md).
+every conforming GPU.
 
 Lumiere GPU (`Vendor LUMI` / `Device ATG1`) serves as the reference implementation of GHCI 1.0.
 
@@ -18,7 +18,7 @@ Contents
 1. [Introduction](#1-introduction)
 2. [Conventions](#2-conventions)
 3. [Host control registers](#3-host-control-registers)
-4. [Extended capabilities](#4-extended-capabilities)
+4. [Control-path windows and capability discovery](#4-control-path-windows-and-capability-discovery)
 5. [Command processor states](#5-command-processor-states)
 6. [The command ring](#6-the-command-ring)
 7. [The command set](#7-the-command-set)
@@ -28,9 +28,9 @@ Contents
 11. [Memory model](#11-memory-model)
 12. [The standard shader ISA (GSI1)](#12-the-standard-shader-isa-gsi1)
 13. [The display subsystem (DSQ, modes, events, I2C, and boot display)](#13-the-display-subsystem-dsq-modes-events-i2c-and-boot-display)
-14. [Bring-up and Diagnostics](#14-bring-up-and-diagnostics)
+14. [Bring-up and Timestamping](#14-bring-up-and-timestamping)
 15. [Bindings](#15-bindings)
-16. [Versions](#16-versions)
+16. [Versions & Capabilities](#16-versions--capabilities)
 - [Appendix A. Driver initialization (informative)](#appendix-a-driver-initialization-informative)
 
 1. Introduction
@@ -265,7 +265,7 @@ Detailed execution unit topologies, optional rendering features, and stage exten
 
 | Bits | Name | Meaning |
 | :---: | :--- | :--- |
-| [0] | CAP_UMA | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM. Authoritative: when 1, MEM capability `LOCAL_SIZE` is 0 |
+| [0] | CAP_UMA | 1 = Unified Memory Architecture (Shared DRAM), 0 = Discrete VRAM. Authoritative: when 1, MEM window `MEM_VRAM_SIZE` is 0 |
 | [1] | CAP_IOMMU | 1 = System / Platform IOMMU translation active for GPU device |
 | [2] | CAP_HW_WALKER | 1 = Autonomous hardware page table walker present; 0 = Flat physical mode |
 | [3] | CAP_INDIRECT_DRAW | 1 = Native MultiDrawIndirect and indirect dispatch supported (`CMD_DRAW_INDIRECT`, `CMD_DISPATCH_INDIRECT`) |
@@ -287,7 +287,7 @@ Detailed execution unit topologies, optional rendering features, and stage exten
 **Capability Authority and Resolution**:
 - Early boot capabilities (MMU walker, session protection, address width encodings) are read directly from `BOOT_CAPS` (`0x008`).
 - Comprehensive device architecture capabilities, unit counts, and execution configurations are queried authoritatively via `CMD_QUERY_CAPS` Word 2 (`DEVICE_CAPS`).
-- Where capability bits overlap between `DEVICE_CAPS` and legacy descriptors, the driver must prioritize the value in `CMD_QUERY_CAPS` Word 2 (`DEVICE_CAPS`).
+- Capability discovery is authoritative via `CMD_QUERY_CAPS` Word 2 (`DEVICE_CAPS`) and Word 3 (`EXT_CAP_FEATURE`).
 - Shader ISA architecture identification: `NATIVE_ISA_ID` is queryable via `CMD_QUERY_CAPS` (Word 6 reports `"GSI1"` = `0x47534931`). MMIO register `0x068` is strictly reserved (reads 0). Register `0x048` is strictly reserved for `WDT_CYCLES`. Extended architecture registers reside in the capability block queried via `CMD_QUERY_CAPS`: L2 capacity and associativity are reported in Word 12 (`MEM_CACHE_CFG`).
 
 #### 3.2.2 EXT_CAP_FEATURE (Capability Block Word 3) — Extended Feature & Address Width Descriptor
@@ -302,33 +302,33 @@ In GHCI 1.0, MMIO register `0x084` is strictly reserved and reads 0. Extended re
 - `[8] CAP_DUAL_SOURCE`: Dual-source color blend enabled (hardware mirror of `DEVICE_CAPS[5]`).
 - `[9] CAP_COARSE_SCAN`: Coarse 4x4 tile rasterizer acceleration present.
 - `[10] CAP_FAST_CLEAR`: Hardware fast clear metadata compression present.
-- `[11] CAP_LOGIC_OP`: Vulkan LogicOp blending active.
+- `[11] CAP_LOGIC_OP`: LogicOp blending active.
 - `[12] CAP_EARLY_Z`: Hardware early depth testing and coarse Hi-Z rejection active.
-- `[13] CAP_HW_CURSOR`: Hardware cursor scanout plane supported by display controller.
+- `[13] CAP_HW_CURSOR`: Hardware cursor scanout plane supported by display subsystem.
 - `[14] CAP_COLOR_LUT`: Programmable display gamma / color lookup table present.
 - `[15] CAP_MRT_BLEND`: Independent per-target color blending supported.
 - `[19:16] MAX_MRT`: Maximum simultaneously bound color render targets (1..8).
-  `EXT_CAP_FEATURE[19:16]` is the primary authoritative source for `maxColorAttachments` (reports the implemented colour attachment count, e.g. 8 on the full configuration and 1 on the minimal configuration, matching `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]`).
-- `[27:20] CAP_LDS_SIZE_KB`: Local Data Share capacity in KiB per Shader Unit (8-bit value, 0..255; Vulkan 1.0 conforming GPUs require >= 16 KiB).
+  `EXT_CAP_FEATURE[19:16]` is the primary authoritative source for the implemented color attachment count (e.g. 8 on the full configuration and 1 on a minimal configuration, matching `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]`).
+- `[27:20] CAP_LDS_SIZE_KB`: Local Data Share capacity in KiB per Shader Unit (8-bit value, 0..255; large workgroup configurations require >= 16 KiB).
 - `[28] CAP_FP16`: Half-precision 16-bit floating-point arithmetic supported (mirror of `DEVICE_CAPS[6]`).
 - `[29] CAP_SUBGROUP`: Native subgroup shuffle/ballot instructions supported.
 - `[30] CAP_CLIP_POLY`: Dedicated hardware polygon clipper present. When 1, primitives crossing clip boundaries are subdivided into polygons in hardware. When 0, guard-band bypass clipping is active (primitives crossing behind the camera near plane are culled or handled by software fallback).
 - `[31] CAP_BLT_SCALE`: Hardware 2D blitter scaling and unaligned byte window alignment supported. When 1, `CMD_BLT` supports arbitrary resolution scaling. When 0, hardware blitter supports 1:1 direct rectangular copies and fills only, and scaling blits are delegated to 3D pipeline draw passes.
 
-**EXT_CAP_FMT0 (Capability Block Word 4 / EXTCAP FMT)**:
-Provides immediate hardware texture format support flags via `CMD_QUERY_CAPS` (Word 4) or EXTCAP `FMT` block without MMIO register window indexing (MMIO `0x080` is reserved):
+**EXT_CAP_FMT0 (Capability Block Word 4)**:
+Provides summary hardware texture and blitter capability flags via `CMD_QUERY_CAPS` (Word 4; MMIO `0x080` is reserved and reads 0):
 - `[6:0]`: `CAP_BC[1..7]` — Hardware BC1 through BC7 texture compression decoders present.
 - `[7]`: `CAP_ETC2` — Hardware ETC2 / EAC texture compression decoders present.
 - `[8]`: `CAP_ASTC` — Reserved (reads 0 in GHCI 1.0).
-- `[9]`: `CAP_SRGB` — Hardware sRGB format support and automatic gamma 2.2 decode/encode present.
+- `[9]`: `CAP_SRGB` — Hardware sRGB format support and IEC 61966-2-1 transfer function decode/encode present.
 - `[10]`: `CAP_FFILT_FP16` — Floating-point linear texture filtering for FP16 formats (`CAP_TEX_FFILT`).
 - `[11]`: `CAP_FFILT_FP32` — Floating-point linear texture filtering for FP32 formats.
 - `[15:12]`: `MAX_COLOR_ATTACHMENTS` — Hardware color attachment count limit (the implemented count, mirroring `EXT_CAP_FEATURE[19:16]`).
-- `[16]`: `CAP_TU_BILINEAR` — Hardware bilinear texture filtering supported for normalized texture formats. When 1, bilinear filtering is enabled. When 0, texture sampling is restricted to nearest-neighbor (point) filtering (`VK_FILTER_NEAREST`).
+- `[16]`: `CAP_TU_BILINEAR` — Hardware bilinear texture filtering supported for normalized texture formats. When 1, bilinear filtering is enabled. When 0, texture sampling is restricted to nearest-neighbor (point) filtering.
 - `[17]`: `CAP_BLT_BLEND` — 32-bit color blend-over acceleration supported in blitter. When 0, blitter performs opaque fills and copies only; blending operations are dispatched to shaders or ROP.
-- `[18]`: `CAP_BLT_TILE` — Hardware 4x4 optimal tiled layout conversion supported (`CMD_COPY_BUFFER_TO_IMAGE` / `CMD_COPY_IMAGE_TO_BUFFER`). When 0, blitter operates on linear memory layouts only; optimal tiling conversions are handled by shaders.
-- `[19]`: `CAP_TEX_ARRAY` — 1D and 2D texture array sampling supported (`VK_IMAGE_TYPE_1D/2D` with `arrayLayers > 1`).
-- `[20]`: `CAP_TEX_3D` — 3D volumetric texture sampling supported (`VK_IMAGE_TYPE_3D`).
+- `[18]`: `CAP_BLT_TILE` — Hardware optimal tiled layout conversion supported (`CMD_COPY_BUFFER_TO_IMAGE` / `CMD_COPY_IMAGE_TO_BUFFER`). When 0, blitter operates on linear memory layouts only; optimal tiling conversions are handled by shaders.
+- `[19]`: `CAP_TEX_ARRAY` — 1D and 2D arrayed texture sampling supported (`ARRAY == 1`, `depth >= 1`).
+- `[20]`: `CAP_TEX_3D` — 3D volumetric texture sampling supported (`dimension = 2`).
 - `[21]`: `CAP_TEX_CUBE` — Cubemap texture sampling and seamless cube face edge filtering supported.
 - `[22]`: `CAP_TEX_TRILINEAR` — Hardware trilinear mipmap filtering supported across LOD levels.
 - `[31:23]`: Reserved (reads 0 in GHCI 1.0).
@@ -340,34 +340,34 @@ In GHCI 1.0, pipeline stage capabilities and physical limits are queried authori
 1. **Word 19: `GHCI_CAP_WORD_SHADER_STAGES`**:
    - `[0]`: `CAP_TASK_SHADER` — 1 = Task Shader stage supported (mirrors `DEVICE_CAPS[27]`).
    - `[1]`: `CAP_MESH_SHADER` — 1 = Mesh Shader stage supported (mirrors `DEVICE_CAPS[28]`).
-   - `[2]`: `CAP_GEOMETRY_SHADER` — 1 = Geometry Shader stage supported (Vulkan `VkPhysicalDeviceFeatures::geometryShader`). Requires `CAP_LDS_SIZE_KB >= 16`.
-   - `[3]`: `CAP_TESSELLATION` — 1 = Tessellation stages (TCS/TES) supported (Vulkan `VkPhysicalDeviceFeatures::tessellationShader`). Requires `CAP_LDS_SIZE_KB >= 16`.
+   - `[2]`: `CAP_GEOMETRY_SHADER` — 1 = Geometry Shader stage supported. Requires `CAP_LDS_SIZE_KB >= 16`.
+   - `[3]`: `CAP_TESSELLATION` — 1 = Tessellation stages (TCS/TES) supported. Requires `CAP_LDS_SIZE_KB >= 16`.
    - `[4]`: `CAP_STREAM_OUT` — 1 = Geometry stream output / transform feedback supported.
    - `[31:5]`: Reserved (reads 0).
 
 2. **Word 20: `GHCI_CAP_WORD_STAGE_LIMITS`**:
-   Reports hardware configuration parameters exported from the RTL build for Vulkan `VkPhysicalDeviceLimits`. Conforming implementations with `CAP_LDS_SIZE_KB >= 16` guarantee full compliance with Vulkan minimum requirements:
-   - `[8:0]`: `maxGeometryOutputVertices` — Maximum output vertices per GS invocation (reports RTL parameter, e.g. 256; Vulkan min 256).
-   - `[14:9]`: `maxGeometryShaderInvocations` — Maximum geometry shader invocations per primitive (reports RTL parameter, e.g. 32; Vulkan min 32).
-   - `[20:15]`: `maxTessellationPatchSize` — Maximum patch control points for TCS/TES (reports RTL parameter, e.g. 32; Vulkan min 32).
-   - `[27:21]`: `maxTessellationGenerationLevel` — Maximum tessellation factor level (reports RTL parameter, e.g. 64; Vulkan min 64).
+   Reports hardware configuration parameters for geometry and tessellation stage limits. Implementations with `CAP_LDS_SIZE_KB >= 16` satisfy all architectural stage bounds:
+   - `[8:0]`: Max geometry output vertices per GS invocation (implementation parameter, e.g. `256`).
+   - `[14:9]`: Max geometry shader invocations per primitive (implementation parameter, e.g. `32`).
+   - `[20:15]`: Max tessellation patch control points for TCS/TES (implementation parameter, e.g. `32`).
+   - `[27:21]`: Max tessellation generation factor level (implementation parameter, e.g. `64`).
    - `[31:28]`: Reserved (reads 0).
 
    > [!NOTE]
    > **LDS Capacity & Stage Limits Architecture**:
-   > Per Vulkan specifications, `maxGeometryOutputComponents` is 64 (per vertex), while `maxGeometryTotalOutputComponents` is 1024 (total components across all emitted vertices per invocation, representing exactly $1024 \times 4\text{ B} = 4\text{ KiB}$).
+   > Per GHCI geometry stage invariants, maximum geometry output components per vertex is `64`, while maximum total geometry output components per invocation is `1024` ($1024 \times 4\text{ B} = 4\text{ KiB}$).
    > To support concurrent multi-warp execution, `CAP_GEOMETRY_SHADER` and `CAP_TESSELLATION` strictly require an on-chip LDS capacity of at least 16 KiB (`CAP_LDS_SIZE_KB >= 16`). In constrained configurations where `CAP_LDS_SIZE_KB < 16`, both capability bits MUST report 0.
    > For workloads generating primitive streams exceeding local LDS burst buffers, the driver configures an off-chip spill ring buffer in GPU virtual address space via `GhciPipelineStateExt` dw41-44 (`geom_spill_va`, `geom_spill_size_bytes`, `geom_spill_stride_bytes`). The hardware LDS Burst DMA export pipeline autonomously spills emitted primitives to this ring buffer in LLC/DRAM.
-   > Additional Vulkan stage limits not explicitly encoded in Word 20 (including `maxGeometryOutputComponents = 64`, `maxGeometryTotalOutputComponents = 1024`, `maxGeometryInputComponents = 64`, `maxTessellationControlPerVertexInputComponents = 64`, `maxTessellationControlPerVertexOutputComponents = 64`, `maxTessellationControlPerPatchOutputComponents = 128` (exceeding min 120), and `maxTessellationEvaluationInputComponents = 64`) are architectural invariants guaranteed on all conforming GHCI hardware implementations reporting these capabilities.
+   > Additional architectural stage invariants guaranteed when these capabilities are reported: geometry input/output components per vertex = `64`, tessellation per-vertex input/output components = `64`, tessellation per-patch output components = `128`, and tessellation evaluation input components = `64`.
 
 #### 3.2.3 Clocks, Timestamps and PCI Identification
 
 - **Core Clock Frequency Discovery**:
   Exposed via `CMD_QUERY_CAPS` Capability Block Word 7 as an integer in Hertz. MMIO `0x064` is strictly reserved (reads 0).
-  - Simulator / ASIC configurations: Dynamically reflects target clock frequency.
-- **Vulkan `timestampPeriod` Calculation**:
-  $$\text{timestampPeriod} = \frac{1\,000\,000\,000}{\text{GCLK\_HZ}} \quad (\text{ns})$$
-  At 200 MHz, `timestampPeriod = 5.0` ns.
+  - Dynamically reflects target core clock frequency.
+- **Timestamp Period Calculation**:
+  $$\text{timestamp\_period\_ns} = \frac{1\,000\,000\,000}{\text{GCLK\_HZ}} \quad (\text{ns})$$
+  At 200 MHz, the core cycle period is `5.0` ns (`TIMESTAMP` counter increments independently at `TIMESTAMP_HZ` in Word 30).
 - **Vendor & Device Identification**:
   - `VENDOR_ID`, `DEVICE_ID`, `SUBSYSTEM`, and `DEVICE_VERSION` are queried via `CMD_QUERY_CAPS` Capability Block Words 8–11 (`GHCI_CAP_WORD_VENDOR_ID` through `GHCI_CAP_WORD_DEVICE_VERSION`).
 
@@ -601,8 +601,8 @@ descriptor arrays located in shared memory.
 
 ### 6.0 Command Execution Lifecycle
 
-The primary command ring is exclusively managed and written by the Kernel-Mode Driver (KMD).
-User-Mode Drivers (UMD) record command sequences into user-allocated secondary command
+The primary command ring is exclusively managed and written by privileged host kernel software.
+Client software records command sequences into session-allocated secondary command
 buffers (`CMD_EXECUTE_COMMANDS`).
 
 > [!IMPORTANT]
@@ -645,11 +645,11 @@ Every memory address inside a command packet belongs to one of three strictly de
 
 ![GHCI Command Execution Sequence](docs/svg/ghci_command_sequence.svg)
 
-1. **State Baking:** The User-Mode Driver (UMD) compiles shader binaries into GSI1 ISA and builds immutable
+1. **State Baking:** Host shader/pipeline software compiles shader binaries into GSI1 ISA and builds immutable
    `GhciPipelineState` structures (128 bytes) and descriptor tables directly
    in shared session GPU VA memory.
-2. **Command Recording:** KMD records high-level structured packets into the shared primary ring buffer.
-3. **Doorbell:** The Kernel-Mode Driver (KMD) writes the new head position to
+2. **Command Recording:** Ring-management software records high-level structured packets into the shared primary ring buffer.
+3. **Doorbell:** Host software writes the new head position to
    the 32-bit `RING_WPTR` MMIO register.
 4. **Autonomous Fetch & Translation:** The Command Processor (CP) detects the
    updated `RING_WPTR`, fetches packets over DMA/AXI, and resolves memory
@@ -704,9 +704,8 @@ the register write.
 7. The command set
 ------------------
 
-GHCI 1.0 replaces legacy register-poking loops (such as repetitive `SET_REG`
-packets) with a modern, structured command packet protocol. The driver records
-packets into the shared command ring (Ring 0) in host or shared memory.
+GHCI 1.0 uses a structured command packet protocol. The driver records
+packets into the shared primary command ring (Ring 0) in host or shared memory.
 
 ### 7.1 Packet Format
 
@@ -724,7 +723,7 @@ packet). Packets are processed in strict in-order sequence by the Command Proces
 
 ### 7.2 Structured Command Opcodes (include/ghci_cmd.h)
 
-The canonical GHCI 1.0 structured command set is defined authoritatively by this specification (`docs/ghci.md`), and mirrored in exact binary equivalence by [`include/ghci_cmd.h`](include/ghci_cmd.h):
+The canonical GHCI 1.0 structured command set is defined authoritatively by this specification (`ghci.md`), and mirrored in exact binary equivalence by [`include/ghci_cmd.h`](include/ghci_cmd.h):
 
 | Opcode | Name | Size (dw) | Guard / Capability | Description |
 |:---:|:---|:---:|:---|:---|
@@ -758,7 +757,7 @@ The canonical GHCI 1.0 structured command set is defined authoritatively by this
 | `0x32` | `CMD_EXECUTE_COMMANDS` | 4 | `CAP_SECONDARY_RING`| Direct execution of secondary command buffers (strictly 1 level) |
 | `0x33` | `CMD_FENCE` | 6 | Mandatory | Monotonic 64-bit fence writeback & optional host IRQ |
 | `0x34` | `CMD_WAIT_FENCE` | 5 | Mandatory | CP pauses ring until 64-bit fence condition passes |
-| `0x35` | `CMD_WRITE_TIMESTAMP` | 4 | Mandatory | Latches 64-bit cycle counter to GPU VA or host memory |
+| `0x35` | `CMD_WRITE_TIMESTAMP` | 4 | Mandatory | Writes 64-bit constant-rate `TIMESTAMP` counter to GPU VA or host memory |
 | `0x36` | `CMD_BEGIN_QUERY` | 4 | Mandatory (Raster) | Begins occlusion query sample counting (64-bit pool VA) |
 | `0x37` | `CMD_END_QUERY` | 4 | Mandatory (Raster) | Ends occlusion query sample counting (64-bit pool VA) |
 | `0x40` | `CMD_COPY_BUFFER` | 8 | `CAP_BLT` | 2D DMA buffer-to-buffer transfer (flags & burst align) |
@@ -813,8 +812,8 @@ Binds one or more contiguous vertex attribute stream buffers.
   - `dword 2 + 4*i`: `buffer_va[31:0]`
   - `dword 3 + 4*i`: `buffer_va[63:32]`
   - `dword 4 + 4*i`: `size_bytes`
-  - `dword 5 + 4*i`: `stride_bytes` (32-bit dynamic stride in bytes, $0..4095$). Stride $0$ is explicitly valid per Vulkan specification (all vertices read the same attribute element). Setting `stride_bytes = 0xFFFFFFFF` (`GHCI_STRIDE_FROM_PSO`) instructs the vertex fetcher to take the static default stride from `GhciPipelineState.vertex_strides` for bindings $0..3$.
-- *Robust Buffer Access*: In compliance with Vulkan `robustBufferAccess = true`, vertex fetch operations that exceed the binding's `size_bytes` bound return 0-filled data to the shader register without triggering a GPU MMU fault or halting execution.
+  - `dword 5 + 4*i`: `stride_bytes` (32-bit dynamic stride in bytes, $0..4095$). Stride $0$ is explicitly valid (all vertices read the same attribute element). Setting `stride_bytes = 0xFFFFFFFF` (`GHCI_STRIDE_FROM_PSO`) instructs the vertex fetcher to take the static default stride from `GhciPipelineState.vertex_strides` for bindings $0..3$.
+- *Out-of-Bounds Vertex Fetch*: Vertex fetch operations that exceed a binding's `size_bytes` bound return 0-filled data to the shader register without triggering a GPU MMU fault or halting execution.
 
 #### `CMD_BIND_INDEX_BUFFER` (0x22)
 Binds the index buffer for indexed draw calls.
@@ -847,14 +846,14 @@ Dynamic state updates without pipeline recompilation, exactly matching `GhciCmdS
   - `dword 4`: `height` (float, viewport height)
   - `dword 5`: `min_depth` (float, minimum depth bound in [0.0, 1.0])
   - `dword 6`: `max_depth` (float, maximum depth bound in [0.0, 1.0])
-  - *Note*: GHCI 1.0 supports single-viewport rasterization (`maxViewports = 1`, viewport index 0).
+  - *Note*: GHCI 1.0 supports single-viewport rasterization (viewport index `0`).
 - `CMD_SET_SCISSOR` (5 dwords, 20 bytes):
   - `dword 0`: Header (`opcode = 0x25`, `dwords = 5`)
   - `dword 1`: `x` (int32, scissor upper-left X)
   - `dword 2`: `y` (int32, scissor upper-left Y)
   - `dword 3`: `width` (uint32, scissor box width)
   - `dword 4`: `height` (uint32, scissor box height)
-  - *Note*: GHCI 1.0 supports single-scissor rasterization (`maxScissors = 1`, scissor index 0).
+  - *Note*: GHCI 1.0 supports single-scissor rasterization (scissor index `0`).
 
 #### `CMD_SET_DYNAMIC_STATE` (0x26)
 Overrides fine-grained dynamic pipeline parameters using tagged state IDs (6 dwords, 24 bytes) ([`include/ghci_cmd.h`](include/ghci_cmd.h)):
@@ -907,11 +906,10 @@ Issues draw calls to the graphics pipeline.
   - `dword 5`: `first_instance`
 
 #### `CMD_DRAW_INDIRECT` (0x29)
-Direct support for Vulkan `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect`.
-Arguments are read by the CP from GPU memory without host CPU intervention.
+Executes hardware indirect draws (`CAP_INDIRECT_DRAW == 1`) with arguments read by the CP from GPU memory without host CPU intervention:
 
 - **Standard Indirect Draw (7 dwords)**:
-  - `dword 0`: Header (`opcode = 0x29`, `dwords = 7`, `flags[0]`: 0 = non-indexed `VkDrawIndirectCommand`, 1 = indexed `VkDrawIndexedIndirectCommand`; `flags[1] = 0`)
+  - `dword 0`: Header (`opcode = 0x29`, `dwords = 7`, `flags[0]`: `0` = non-indexed `{ uint32_t vertex_count, instance_count, first_vertex, first_instance; }`, `1` = indexed `{ uint32_t index_count, instance_count, first_index, int32_t vertex_offset, first_instance; }`; `flags[1] = 0`)
   - `dword 1`: `buffer_va[31:0]` (64-bit indirect buffer GPU virtual address)
   - `dword 2`: `buffer_va[63:32]`
   - `dword 3`: `offset_bytes` (byte offset into buffer)
@@ -930,7 +928,7 @@ Arguments are read by the CP from GPU memory without host CPU intervention.
 #### `CMD_DISPATCH_INDIRECT` (0x2E)
 Dispatches compute workgroups using parameters read from GPU memory (6 dwords, 24 bytes):
 - `dword 0`: Header (`opcode = 0x2E`, `dwords = 6`)
-- `dword 1`: `buffer_va[31:0]` (64-bit GPU VA of `VkDispatchIndirectCommand`: `{ uint32_t x, y, z; }`)
+- `dword 1`: `buffer_va[31:0]` (64-bit GPU VA of `{ uint32_t x, y, z; }` indirect dispatch arguments)
 - `dword 2`: `buffer_va[63:32]`
 - `dword 3`: `offset_bytes` (Byte offset into buffer, 4-byte aligned)
 - `dword 4`: Reserved (0)
@@ -966,8 +964,8 @@ Dispatches compute workgroups.
 Enforces execution ordering and cache/TLB consistency between pipeline stages (4 dwords, 16 bytes).
 
 - `dword 0`: Header (`opcode = 0x31`, `dwords = 4`)
-- `dword 1`: `src_stage_mask` (Vulkan pipeline stages to drain before proceeding: VF 0x1, VS 0x2, FS 0x4, CS 0x8, ROP 0x10, BLT 0x20, TCS 0x40, TES 0x80, GS 0x100, TS 0x200, MS 0x400)
-- `dword 2`: `dst_stage_mask` (Vulkan pipeline stages blocked until barrier resolves; same stage bitmask encoding)
+- `dword 1`: `src_stage_mask` (GHCI pipeline stages to drain before proceeding: VF 0x1, VS 0x2, FS 0x4, CS 0x8, ROP 0x10, BLT 0x20, TCS 0x40, TES 0x80, GS 0x100, TS 0x200, MS 0x400)
+- `dword 2`: `dst_stage_mask` (GHCI pipeline stages blocked until barrier resolves; same stage bitmask encoding)
 - `dword 3`: `flags` (Cache flush/invalidation and execution stall operations, matching `include/ghci_cmd.h`):
   - `bit 0`: `GHCI_BARRIER_FLAG_WAIT_IDLE` (0x1) — Complete pipeline stall until all in-flight units are idle
   - `bit 1`: `GHCI_BARRIER_FLAG_INVAL_ICACHE` (0x2) — Invalidate shader instruction cache
@@ -982,7 +980,7 @@ Zero-copy secondary command buffer execution optimized for UMA and multi-threade
 command recording. The CP pauses execution of the primary ring, traverses the
 secondary command buffer in memory, and resumes when complete.
 
-- **Strict 1-Level Nesting**: The CP supports calling secondary command buffers from the primary ring only. Calling `CMD_EXECUTE_COMMANDS` from within a secondary command buffer is strictly prohibited by hardware (trapped as `GHCI_FAULT_KIND_INVALID_OP`, syndrome `0x0001`), fully conforming to Vulkan `vkCmdExecuteCommands` specification.
+- **Strict 1-Level Nesting**: The CP supports calling secondary command buffers from the primary ring only. Calling `CMD_EXECUTE_COMMANDS` from within a secondary command buffer is strictly prohibited by hardware (trapped as `GHCI_FAULT_KIND_INVALID_OP`, syndrome `0x0001`).
 - `dword 0`: Header (`opcode = 0x32`, `dwords = 4`)
 - `dword 1`: `secondary_ring_va[31:0]` (64-byte aligned)
 - `dword 2`: `secondary_ring_va[63:32]`
@@ -1057,7 +1055,7 @@ Latches the 64-bit constant-rate `TIMESTAMP` counter (whose frequency is reporte
 - `dword 7`: `src_xy` (`[15:0] src_x`, `[31:16] src_y`)
 - `dword 8`: `dst_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
 - `dword 9`: `extent` (`[15:0] width`, `[31:16] height`)
-- `dword 10`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] src_tiled`, `[9] dst_tiled`)
+- `dword 10`: `format_and_flags` (`[7:0] format` (`GhciFormat`), `[8] src_tiled`, `[9] dst_tiled`)
 - *Subresource Addressing*: The driver computes `slice_va = image_base_va + mip_offset + (layer * slice_pitch_bytes)` and submits `slice_va` directly; `src_xy` and `dst_xy` are 2D offsets on that slice.
 - *Compressed Format Units*: For block-compressed formats (BC1..BC7, ETC2/EAC), all 2D coordinates (`src_xy`, `dst_xy`, `min_xy`, `max_xy`) and dimensions (`width`, `height`) across transfer packets (`CMD_COPY_BUFFER`, `CMD_COPY_IMAGE`, `CMD_BLIT`, `CMD_COPY_BUFFER_TO_IMAGE`, `CMD_COPY_IMAGE_TO_BUFFER`) are specified in **texels** and must be integer multiples of the format's block dimensions (e.g. 4 texels for 4x4 compressed blocks).
 
@@ -1074,7 +1072,7 @@ Image copy with scaling and format conversion via hardware Blitter (12 dwords, 4
 - `dword 8`: `src_max_xy` (`[15:0] x1`, `[31:16] y1`)
 - `dword 9`: `dst_min_xy` (`[15:0] x0`, `[31:16] y0`)
 - `dword 10`: `dst_max_xy` (`[15:0] x1`, `[31:16] y1`)
-- `dword 11`: `formats_and_filter` (`[7:0] src_format` (`VkFormat`), `[15:8] dst_format` (`VkFormat`), `[16] filter` (0: Nearest, 1: Linear), `[17] src_tiled`, `[18] dst_tiled`)
+- `dword 11`: `formats_and_filter` (`[7:0] src_format` (`GhciFormat`), `[15:8] dst_format` (`GhciFormat`), `[16] filter` (0: Nearest, 1: Linear), `[17] src_tiled`, `[18] dst_tiled`)
 - *Blit Scaling Capability (`CAP_BLT_SCALE`)*: Arbitrary resolution scaling in `CMD_BLIT` ($src\_extent \ne dst\_extent$) requires hardware 2D scaling support (`EXT_CAP_FEATURE[31]` `CAP_BLT_SCALE = 1`). In minimal hardware profiles where `CAP_BLT_SCALE = 0`, `CMD_BLIT` supports 1:1 direct rectangular copies ($src\_extent == dst\_extent$), while scaling blits are executed by the driver via 3D pipeline draw passes.
 
 #### `CMD_FILL_BUFFER` (0x43)
@@ -1097,7 +1095,7 @@ Resolves a multisample (2x or 4x MSAA) image attachment slice to a single-sample
 - `dword 7`: `src_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
 - `dword 8`: `dst_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
 - `dword 9`: `extent_xy` (`[15:0] width`, `[31:16] height`)
-- `dword 10`: `params` (`[7:0] format` (`VkFormat`), `[9:8] resolve_mode` (0: Average, 1: Min, 2: Max, 3: Sample Zero), `[11:10] samples` (0: 1x, 1: 2x, 2: 4x))
+- `dword 10`: `params` (`[7:0] format` (`GhciFormat`), `[9:8] resolve_mode` (0: Average, 1: Min, 2: Max, 3: Sample Zero), `[11:10] samples` (0: 1x, 1: 2x, 2: 4x))
 
 #### `CMD_COPY_BUFFER_TO_IMAGE` (0x45)
 Transfers linear buffer data to an optimal tiled image surface slice (10 dwords, 40 bytes):
@@ -1110,7 +1108,7 @@ Transfers linear buffer data to an optimal tiled image surface slice (10 dwords,
 - `dword 6`: `image_row_pitch` (Destination image row pitch in bytes)
 - `dword 7`: `image_offset_xy` (`[15:0] dst_x`, `[31:16] dst_y`)
 - `dword 8`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
-- `dword 9`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
+- `dword 9`: `format_and_flags` (`[7:0] format` (`GhciFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
 
 #### `CMD_COPY_IMAGE_TO_BUFFER` (0x46)
 Transfers an optimal tiled image surface slice to a linear buffer (10 dwords, 40 bytes):
@@ -1123,7 +1121,7 @@ Transfers an optimal tiled image surface slice to a linear buffer (10 dwords, 40
 - `dword 6`: `buffer_row_pitch` (Linear buffer row pitch in bytes)
 - `dword 7`: `image_offset_xy` (`[15:0] src_x`, `[31:16] src_y`)
 - `dword 8`: `image_extent_xy` (`[15:0] width`, `[31:16] height`)
-- `dword 9`: `format_and_flags` (`[7:0] format` (`VkFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
+- `dword 9`: `format_and_flags` (`[7:0] format` (`GhciFormat`), `[8] tiled` (1 = optimal tiled, 0 = linear))
 
 #### `CMD_VM_MAP` (0x10)
 Maps backing physical/IOVA pages into a session's GPU virtual address space (16 dwords, 64 bytes, primary ring only) ([`include/ghci_cmd.h`](include/ghci_cmd.h)):
@@ -1239,7 +1237,7 @@ Controls hardware occlusion query sample counting (4 dwords, 16 bytes), matching
 - *Output Layout & Availability Word*:
   Between BEGIN and END, hardware ROP tile units count samples that pass depth and stencil tests. On `CMD_END_QUERY`:
   - When `flags[1] (AVAILABILITY) == 0`: Query result slot stride is 8 bytes. Hardware writes the 64-bit sample pass count to session GPU VA at $\text{query\_pool\_va} + (\text{query\_index} \times 8)$.
-  - When `flags[1] (AVAILABILITY) == 1`: Query result slot stride is 16 bytes (matching Vulkan `VK_QUERY_RESULT_WITH_AVAILABILITY_BIT`). Hardware writes the 64-bit sample pass count to session GPU VA at $\text{query\_pool\_va} + (\text{query\_index} \times 16)$, and writes the 64-bit availability flag (`1ULL`) immediately following at $\text{query\_pool\_va} + (\text{query\_index} \times 16) + 8$.
+  - When `flags[1] (AVAILABILITY) == 1`: Query result slot stride is 16 bytes. Hardware writes the 64-bit sample pass count to session GPU VA at $\text{query\_pool\_va} + (\text{query\_index} \times 16)$, and writes the 64-bit availability flag (`1ULL`) immediately following at $\text{query\_pool\_va} + (\text{query\_index} \times 16) + 8$.
 - *Session Atomicity & Context-Switch Semantics*:
   1. **Same-Session Requirement**: The driver MUST ensure that `CMD_BEGIN_QUERY` and its corresponding `CMD_END_QUERY` are submitted within the same session context on the command ring without an intervening session switch (`CMD_BIND_SESSION`).
   2. **Cross-Session Reset Rule**: Any intervening session switch while a query is active resets the active query state to prevent cross-session data leakage; the resulting sample count reported by `CMD_END_QUERY` for an interrupted query is 0 or undefined.
@@ -1335,18 +1333,11 @@ Executes a DDC/EDID or external transmitter I2C transfer asynchronously in the D
 - `dword 8-9`: `comp_val[63:0]` (`comp_val[63:56]` must be `0` if `COMP_WRITE == 1`)
 
 #### Ray Tracing Commands (`0x38`..`0x3B`, Reserved Extension)
-Opcodes `0x38` (`CMD_TRACE_RAYS`), `0x39` (`CMD_BUILD_BLAS`), `0x3A` (`CMD_BUILD_TLAS`), and `0x3B` (`CMD_COPY_AS`) are reserved for future Ray Tracing hardware extensions (`CAP_RAY_TRACING`). They are optional in GHCI 1.0 and not required for Vulkan 1.0 core conformance.
+Opcodes `0x38` (`CMD_TRACE_RAYS`), `0x39` (`CMD_BUILD_BLAS`), `0x3A` (`CMD_BUILD_TLAS`), and `0x3B` (`CMD_COPY_AS`) are reserved for optional Ray Tracing hardware extensions (`CAP_RAY_TRACING`). They are optional in GHCI 1.0.
 
-### 7.5 Legacy Class 2 Gpu-ops & Obsolete Pre-1.0 Protocols [DEPRECATED]
+### 7.5 Unallocated & Reserved Command Ranges
 
-> [!WARNING]
-> **Complete Deprecation Notice**:
-> Legacy class 2 microcode gpu-ops (`0x10100`..`0x1010C`), microcode `INIT` handshake,
-> and aperture-based memory management were internal pre-1.0 prototyping interfaces.
-> **They are completely deprecated and obsolete in GHCI 1.0**.
-> All conforming drivers use the standard structured command packets (§7.2, §7.3)
-> and autonomous virtual memory management (§11.2). No `INIT` packet, firmware hash check,
-> or raw memory aperture programming is required or supported.
+All conforming GHCI 1.0 drivers and hardware operate exclusively using the structured command packets (§7.2, §7.3) and virtual memory commands (§11.2). Unlisted opcodes outside §7.2 raise `GHCI_FAULT_KIND_INVALID_OP` (Kind 1).
 
 8. In-Memory Pipeline State and Descriptors
 ------------------------------------------
@@ -1359,9 +1350,9 @@ chatter and stalling the CPU driver thread.
 
 GHCI 1.0 moves all static and semi-static pipeline states into **in-memory
 immutable data structures**:
-- **Bake Once, Execute Anywhere:** The User-Mode Driver (UMD) validates state
+- **Bake Once, Execute Anywhere:** Host driver software validates state
   combinations and bakes `GhciPipelineState` objects into shared memory during
-  pipeline creation (`vkCreateGraphicsPipelines`).
+  pipeline creation.
 - **Single Pointer Binding:** Switching pipelines requires only a 3-dword
   `CMD_BIND_PIPELINE(pso_va)` packet.
 - **Fast Hardware Prefetch:** The Command Processor prefetches the 128-byte
@@ -1379,7 +1370,7 @@ bytes) ([`include/ghci_cmd.h`](include/ghci_cmd.h)):
 | `0x08` | dw2-3 | `fs_code_va` | uint64_t | Fragment Shader instruction base (64-bit GPU VA) |
 | `0x10` | dw4-5 | `cs_code_va` | uint64_t | Compute Shader instruction base (64-bit GPU VA) |
 | `0x18` | dw6-7 | `ms_code_va` | uint64_t | Mesh / Task Shader instruction base (64-bit GPU VA) |
-| `0x20` | dw8 | `flags` | uint32_t | `[2:0]` topology, `[3]` primitive restart, `[4]` depth clamp, `[5]` logic op enable, `[9:6]` logic op opcode (`VkLogicOp` 0..15), `[10]` alpha to coverage, `[11]` sample shading, `[15:12]` sample mask, `[16]` has_ext_stages (1 = 256-byte GhciPipelineStateExt, dw32..63 active) |
+| `0x20` | dw8 | `flags` | uint32_t | `[2:0]` topology, `[3]` primitive restart, `[4]` depth clamp, `[5]` logic op enable, `[9:6]` logic op opcode (`0..15`), `[10]` alpha to coverage, `[11]` sample shading, `[15:12]` sample mask, `[16]` has_ext_stages (1 = 256-byte GhciPipelineStateExt, dw32..63 active) |
 | `0x24` | dw9 | `raster_state` | uint32_t | `[1:0]` cull mode, `[2]` front face CW, `[4:3]` polygon mode, `[5]` depth bias enable, `[13:6]` line width (8-bit fixed-point: 16 = 1.0) |
 | `0x28` | dw10 | `depth_stencil_state` | uint32_t | `[0]` depth test, `[1]` depth write, `[4:2]` depth op, `[5]` stencil test, `[8:6]` front fail op, `[11:9]` front pass op, `[14:12]` front depth fail op, `[17:15]` front compare op, `[20:18]` back fail op, `[23:21]` back pass op, `[26:24]` back depth fail op, `[29:27]` back compare op, `[30]` separate back stencil enable |
 | `0x2C` | dw11 | `blend_state` | uint32_t | `[0]` blend enable, `[5:1]` src color factor, `[10:6]` dst color factor, `[13:11]` color op, `[18:14]` src alpha, `[23:19]` dst alpha, `[26:24]` alpha op, `[30:27]` write mask |
@@ -1400,7 +1391,7 @@ When `flags[16]` (`has_ext_stages`) is 1, the Command Processor fetches a 256-by
 | `0x88` | dw34-35 | `tes_code_va` | uint64_t | Tessellation Evaluation Shader instruction base (64-bit GPU VA) |
 | `0x90` | dw36-37 | `gs_code_va` | uint64_t | Geometry Shader instruction base (64-bit GPU VA) |
 | `0x98` | dw38 | `tess_state` | uint32_t | `[5:0] input_patch_control_points` (1..32), `[11:6] output_patch_control_points` (1..32), `[13:12] domain` (0: Tri, 1: Quad, 2: Isoline), `[15:14] spacing` (0: Equal, 1: Fractional Even, 2: Fractional Odd), `[16] domain_orientation` (0: CCW, 1: CW), `[17] point_mode`, `[24:18] cp_stride_words` (0..127 words per CP), `[31:25] patch_stride_128b` (1..127 x 128B patch LDS size; must satisfy `patch_stride_128b * 128 >= 0x220 + output_points * cp_stride * 4`) |
-| `0x9C` | dw39 | `gs_state` | uint32_t | `[3:0] input_topology` (0: Points, 1: Lines, 2: LineStrip, 3: Triangles, 4: TriangleStrip, 6: LinesAdj, 7: LineStripAdj, 8: TrianglesAdj, 9: TriangleStripAdj; 5 reserved), `[6:4] output_topology` (0: Points, 1: LineStrip, 2: TriangleStrip), `[15:7] max_vertices` (1..256), `[21:16] invocations` (1..32), `[23:22] stream_count` (0..3 -> 1..4 streams, GL 4.0 reserved), `[30:24] output_stride_words` (1..127 words per output vertex), `[31]` reserved |
+| `0x9C` | dw39 | `gs_state` | uint32_t | `[3:0] input_topology` (0: Points, 1: Lines, 2: LineStrip, 3: Triangles, 4: TriangleStrip, 6: LinesAdj, 7: LineStripAdj, 8: TrianglesAdj, 9: TriangleStripAdj; 5 reserved), `[6:4] output_topology` (0: Points, 1: LineStrip, 2: TriangleStrip), `[15:7] max_vertices` (1..256), `[21:16] invocations` (1..32), `[23:22] stream_count` (0..3 -> 1..4 streams, reserved), `[30:24] output_stride_words` (1..127 words per output vertex), `[31]` reserved |
 | `0xA0` | dw40 | `shader_resource_limits_ext` | uint32_t | `[7:0] used_regs_tcs` (1..63), `[15:8] used_regs_tes` (1..63), `[23:16] used_regs_gs` (1..63), `[31:24] reserved` |
 | `0xA4` | dw41-42 | `geom_spill_va` | uint64_t | Geometry Shader spill memory ring buffer GPU VA (64-byte aligned; 0 = LDS internal only) |
 | `0xAC` | dw43 | `geom_spill_size_bytes` | uint32_t | Size in bytes of spill ring buffer |
@@ -1411,13 +1402,13 @@ When `flags[16]` (`has_ext_stages`) is 1, the Command Processor fetches a 256-by
 `vs_code_va`, `fs_code_va`, `cs_code_va`, and `ms_code_va` are 64-bit GPU virtual addresses pointing directly to the first executable instruction of each shader program (no container or reflection headers). When `flags[16]` is set, `tcs_code_va`, `tes_code_va`, and `gs_code_va` specify entry points for extended stages. For Mesh/Task shaders (`ms_code_va`), the register allocation limit is governed by `used_regs_cs` (dw13 `[23:16]`).
 
 **State Encodings (include/ghci_cmd.h):**
-- **Topology (`flags[2:0]`)**: `0`: `POINT`, `1`: `LINE`, `2`: `LINE_STRIP`, `3`: `TRIANGLE`, `4`: `TRIANGLE_STRIP`, `7`: `PATCH_LIST` (tessellation patch primitive). Conforming GHCI hardware does NOT natively execute `TRIANGLE_FAN` or adjacency topologies in `flags[2:0]`; submitting an unlisted topology raises `GHCI_FAULT_KIND_INVALID_OP`. The Vulkan driver emulates triangle fans via index buffer expansion. Geometry shader adjacency topologies (lines/triangles with adjacency) are configured authoritatively via `GhciPipelineStateExt.gs_state.input_topology`.
-- **Logic Operations (`flags[9:6]`, `VkLogicOp`)**: `0`: `CLEAR`, `1`: `AND`, `2`: `AND_REVERSE`, `3`: `COPY`, `4`: `AND_INVERTED`, `5`: `NO_OP`, `6`: `XOR`, `7`: `OR`, `8`: `NOR`, `9`: `EQUIV`, `10`: `INVERT`, `11`: `OR_REVERSE`, `12`: `COPY_INVERTED`, `13`: `OR_INVERTED`, `14`: `NAND`, `15`: `SET`.
+- **Topology (`flags[2:0]`)**: `0`: `POINT`, `1`: `LINE`, `2`: `LINE_STRIP`, `3`: `TRIANGLE`, `4`: `TRIANGLE_STRIP`, `7`: `PATCH_LIST` (tessellation patch primitive). Conforming GHCI hardware does NOT natively execute triangle fans or other unlisted topologies in `flags[2:0]`; submitting an unlisted topology raises `GHCI_FAULT_KIND_INVALID_OP` (drivers emulate unsupported topologies such as triangle fans via index buffer expansion). Geometry shader adjacency topologies (lines/triangles with adjacency) are configured authoritatively via `GhciPipelineStateExt.gs_state.input_topology`.
+- **Logic Operations (`flags[9:6]`)**: `0`: `CLEAR`, `1`: `AND`, `2`: `AND_REVERSE`, `3`: `COPY`, `4`: `AND_INVERTED`, `5`: `NO_OP`, `6`: `XOR`, `7`: `OR`, `8`: `NOR`, `9`: `EQUIV`, `10`: `INVERT`, `11`: `OR_REVERSE`, `12`: `COPY_INVERTED`, `13`: `OR_INVERTED`, `14`: `NAND`, `15`: `SET`.
 - **Cull Mode (`raster_state[1:0]`)**: `0`: `NONE`, `1`: `FRONT`, `2`: `BACK`, `3`: `FRONT_AND_BACK`.
 - **Front Face (`raster_state[2]`)**: `0`: `CCW`, `1`: `CW`.
 - **Polygon Mode (`raster_state[4:3]`)**: `0`: `FILL`, `1`: `LINE`, `2`: `POINT`.
-- **Compare Ops (`depth_stencil_state[4:2]`, `[17:15]`, `[29:27]`, `VkCompareOp`)**: `0`: `NEVER`, `1`: `LESS`, `2`: `EQUAL`, `3`: `LEQUAL`, `4`: `GREATER`, `5`: `NEQUAL`, `6`: `GEQUAL`, `7`: `ALWAYS`.
-- **Stencil Operations (`depth_stencil_state[8:6]`, `[11:9]`, `[14:12]`, `[20:18]`, `[23:21]`, `[26:24]`, `VkStencilOp`)**: `0`: `KEEP`, `1`: `ZERO`, `2`: `REPLACE`, `3`: `INCR_CLAMP`, `4`: `DECR_CLAMP`, `5`: `INVERT`, `6`: `INCR_WRAP`, `7`: `DECR_WRAP`. Dynamic stencil compare/write masks and references are configured via `CMD_SET_DYNAMIC_STATE` (0x26, `state_id = 0x03`).
+- **Compare Ops (`depth_stencil_state[4:2]`, `[17:15]`, `[29:27]`)**: `0`: `NEVER`, `1`: `LESS`, `2`: `EQUAL`, `3`: `LEQUAL`, `4`: `GREATER`, `5`: `NEQUAL`, `6`: `GEQUAL`, `7`: `ALWAYS`.
+- **Stencil Operations (`depth_stencil_state[8:6]`, `[11:9]`, `[14:12]`, `[20:18]`, `[23:21]`, `[26:24]`)**: `0`: `KEEP`, `1`: `ZERO`, `2`: `REPLACE`, `3`: `INCR_CLAMP`, `4`: `DECR_CLAMP`, `5`: `INVERT`, `6`: `INCR_WRAP`, `7`: `DECR_WRAP`. Dynamic stencil compare/write masks and references are configured via `CMD_SET_DYNAMIC_STATE` (0x26, `state_id = 0x03`).
 - **Blend Operations (`blend_state[13:11]`, `[26:24]`)**: `0`: `ADD`, `1`: `SUBTRACT`, `2`: `REVERSE_SUBTRACT`, `3`: `MIN`, `4`: `MAX`.
 - **Blend Factors (`blend_state[5:1]`, `[10:6]`, `[18:14]`, `[23:19]`)**:
   `0`: `ZERO`, `1`: `ONE`, `2`: `SRC_COLOR`, `3`: `ONE_MINUS_SRC_COLOR`, `4`: `DST_COLOR`, `5`: `ONE_MINUS_DST_COLOR`,
@@ -1428,7 +1419,7 @@ When `flags[16]` (`has_ext_stages`) is 1, the Command Processor fetches a 256-by
 - **Independent Attachment Blending (`CAP_MRT_BLEND`)**: When `EXT_CAP_FEATURE[15] == 1`, the driver can dynamically configure per-attachment blend states for color attachments 0..7 via `CMD_SET_DYNAMIC_STATE` (0x26, `state_id = 0x07..0x0E`). When `CAP_MRT_BLEND == 0`, `blend_state` (dw11) applies globally across all active color attachments.
 
 Each attribute entry (`GhciVertexAttribute`, 4 bytes / 32 bits) is packed as follows:
-- `[7:0] format`: Vertex format code (`VkFormat` enum value).
+- `[7:0] format`: Vertex format code (`GhciFormat` ID).
 - `[11:8] binding`: Vertex buffer binding slot index (0..15).
 - `[12] input_rate`: Input rate (`0` = Per-Vertex, `1` = Per-Instance).
 - `[31:13] offset`: Byte offset within vertex buffer (0..524,287 bytes, 512 KiB range).
@@ -1460,7 +1451,7 @@ A compact 32-byte structure describing a texture resource:
 | `0x18` | `sample_count` | uint8_t | MSAA sample count (1, 2, 4) |
 | `0x19` | `dimension` | uint8_t | 0=1D, 1=2D, 2=3D, 3=CubeMap |
 | `0x1A` | `flags` | uint16_t | `[0]` `TILED` (`0`=Linear, `1`=Tiled); `[1]` reserved (`0`, sRGB comes solely from `format`); `[2]` `STENCIL_ASPECT` (`1`=sample stencil aspect of depth-stencil format); `[4:3]` `ROW_ALIGN_LOG2`; `[5]` `ARRAY` (`1`=arrayed 1D/2D/Cube); `[15:6]` reserved (`0`) |
-| `0x1C` | `component_swizzle` | uint32_t | Component swizzle mappings: `[2:0]` R swizzle, `[5:3]` G swizzle, `[8:6]` B swizzle, `[11:9]` A swizzle (0: ZERO, 1: ONE, 2: R, 3: G, 4: B, 5: A; `VkComponentSwizzle`), `[31:12]` reserved |
+| `0x1C` | `component_swizzle` | uint32_t | Component swizzle mappings: `[2:0]` R swizzle, `[5:3]` G swizzle, `[8:6]` B swizzle, `[11:9]` A swizzle (`0`: ZERO, `1`: ONE, `2`: R, `3`: G, `4`: B, `5`: A), `[31:12]` reserved (`0`) |
 
 #### Sampler Descriptor (`GhciSamplerDescriptor`, 16 Bytes)
 A compact 16-byte structure describing texture sampling parameters:
@@ -1474,14 +1465,14 @@ A compact 16-byte structure describing texture sampling parameters:
 | `0x04` | `address_mode_v` | uint8_t | 0=Repeat, 1=MirroredRepeat, 2=ClampToEdge, 3=ClampToBorder, 4=MirrorClampToEdge |
 | `0x05` | `address_mode_w` | uint8_t | 0=Repeat, 1=MirroredRepeat, 2=ClampToEdge, 3=ClampToBorder, 4=MirrorClampToEdge |
 | `0x06` | `compare_enable` | uint8_t | 1 = Enable depth comparison (Percentage-Closer Filtering) |
-| `0x07` | `compare_op` | uint8_t | Depth compare operator (`VkCompareOp`: 0: NEVER, 1: LESS, 2: EQUAL, 3: LEQUAL, 4: GREATER, 5: NOTEQUAL, 6: GEQUAL, 7: ALWAYS) |
+| `0x07` | `compare_op` | uint8_t | Depth compare operator (`0`: NEVER, `1`: LESS, `2`: EQUAL, `3`: LEQUAL, `4`: GREATER, `5`: NOTEQUAL, `6`: GEQUAL, `7`: ALWAYS) |
 | `0x08` | `lod_bias_fx8` | int16_t | Signed 8.8 fixed-point LOD bias |
 | `0x0A` | `min_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point minimum LOD clamp |
 | `0x0B` | `max_lod_fx4` | uint8_t | Unsigned 4.4 fixed-point maximum LOD clamp |
 | `0x0C` | `max_anisotropy` | uint8_t | Maximum anisotropy ratio (1..16) |
 | `0x0D` | `border_color_type` | uint8_t | 0=TransparentBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=CustomTable |
-| `0x0E` | `border_color_idx` | uint8_t | Index (0..15) into 16-entry table of 128-bit border colors (`VkClearColorValue`), bound via `CMD_SET_DYNAMIC_STATE` with `state_id = 0x10` taking 64-bit session GPU VA in `table_va` |
-| `0x0F` | `unnormalized_coords` | uint8_t | `[0]` unnormalized_coordinates: 0 = Normalized coordinates [0.0, 1.0], 1 = Unnormalized coordinates [0.0, width/height] (Vulkan `unnormalizedCoordinates`); `[7:1]` reserved |
+| `0x0E` | `border_color_idx` | uint8_t | Index (0..15) into 16-entry table of 128-bit border colors (`{ r, g, b, a }`), bound via `CMD_SET_DYNAMIC_STATE` with `state_id = 0x10` taking 64-bit session GPU VA in `table_va` |
+| `0x0F` | `unnormalized_coords` | uint8_t | `[0]` coordinate mode: `0` = Normalized coordinates `[0.0, 1.0]`, `1` = Unnormalized texel coordinates `[0.0, width/height]`; `[7:1]` reserved (`0`) |
 
 #### Buffer Descriptor (`GhciBufferDescriptor`, 16 Bytes)
 A compact 16-byte structure describing raw, uniform, storage, or texel buffers:
@@ -1491,7 +1482,7 @@ A compact 16-byte structure describing raw, uniform, storage, or texel buffers:
 | `0x00` | `base_address` | uint64_t | 64-bit GPU virtual address of buffer base |
 | `0x08` | `size_bytes` | uint32_t | Buffer range in bytes |
 | `0x0C` | `stride_bytes` | uint16_t | Element stride in bytes for texel buffers; 0 for raw/uniform |
-| `0x0E` | `format` | uint8_t | Format code (`VkFormat`) for typed texel buffers; 0 for uniform/storage |
+| `0x0E` | `format` | uint8_t | Format code (`GhciFormat`) for typed texel buffers; 0 for uniform/storage |
 | `0x0F` | `flags` | uint8_t | `[0]` ReadOnly, `[1]` Coherent |
 
 ### 8.4 Descriptor Tables, Push Constants & Shader Resource Binding
@@ -1553,7 +1544,7 @@ typedef struct GhciRenderPassDesc {
     uint16_t layers;           /* Array layer count (1..2048) */
     uint8_t  samples;          /* Sample count: 1, 2, or 4 (MSAA) */
     uint8_t  reserved0;
-    uint64_t clear_color_table_va; /* 64-bit GPU VA pointing to table of 8 x 16-byte VkClearColorValue entries (128 bytes total); 0 = default */
+    uint64_t clear_color_table_va; /* 64-bit GPU VA pointing to table of 8 x 16-byte 128-bit clear color entries (128 bytes total); 0 = default */
     uint64_t reserved1;
     uint64_t reserved2;        /* Total struct size = 192 bytes, 64-byte aligned */
 } GhciRenderPassDesc;
@@ -1571,13 +1562,13 @@ typedef struct GhciRenderPassDesc {
 **Attachment Clear & Resolve Semantics**:
 - **Priority**: If an attachment's `ops` field specifies `LoadOp == 1 (CLEAR)` OR the corresponding clear flag is asserted in `CMD_BEGIN_RENDER_PASS.flags`, clear execution is mandatory.
 - **Clear Value Resolution**:
-  - If `clear_color_table_va` is non-zero, attachments $0..7$ read their 128-bit clear colors directly from `clear_color_table_va[i]` (`VkClearColorValue`: float32[4], int32[4], or uint32[4]), providing complete support for floating-point and integer formats.
+  - If `clear_color_table_va` is non-zero, attachments $0..7$ read their 128-bit clear colors directly from `clear_color_table_va[i]` (`{ float32[4] / int32[4] / uint32[4] }`), providing complete support for floating-point and integer formats.
   - If `clear_color_table_va` is zero:
     - **Color Attachment 0**: Always cleared using `CMD_BEGIN_RENDER_PASS.color_clear_rgba`. Interpretation is determined strictly by Attachment 0's `format`: packed 4×8-bit (`[7:0] R, [15:8] G, [23:16] B, [31:24] A`) for 8-bit unorm/snorm/srgb formats; single-channel 32-bit float or integer clear value for `R32_*` formats.
     - **Color Attachments 1..7**: Automatically cleared to all zeros (0.0f / integer 0 / transparent black) according to their respective format.
   - Depth buffer: Cleared with `CMD_BEGIN_RENDER_PASS.depth_clear_value`.
   - Stencil buffer: Cleared with `CMD_BEGIN_RENDER_PASS.stencil_clear_value`.
-- **Multisample Resolve**: `GhciRenderPassDesc.resolve` specifies the fast automatic hardware resolve destination for color attachment 0 (`COLOR_ATTACHMENT_0`, standard display swapchain target) executed at render pass end. For multi-target MRT resolve (attachments 1..7), the driver issues explicit `CMD_RESOLVE_IMAGE` (0x44) commands.
+- **Multisample Resolve**: `GhciRenderPassDesc.resolve` specifies the fast automatic hardware resolve destination for color attachment 0 executed at render pass end. For multi-target MRT resolve (attachments 1..7), the driver issues explicit `CMD_RESOLVE_IMAGE` (0x44) commands.
 
 #### Descriptor Table Persistence & Dynamic Binding
 - Texture and sampler descriptor tables bound to sets `0..7` via `CMD_BIND_DESCRIPTOR_TABLE` remain active per bind point (`Graphics` vs. `Compute`) and persist across draws/dispatches until explicitly rebound or invalidated (`CMD_SESSION_CLOSE` / `CTRL.RESET`).
@@ -1596,7 +1587,7 @@ The on-chip Shader Unit constant bank provides 512 32-bit words ($c[0..511]$):
 
 #### Dual-Source Blending & State Encodings
 - **Dual-Source Blending Export**: In dual-source blending pipelines (`CAP_DUAL_SOURCE = 1`), the fragment shader exports primary color (`SRC0`) to export targets `0x100..0x103` (`GHCI_EXP_COLOR(0, c)`) and secondary blend color (`SRC1`) to export targets `0x108..0x10B` (`GHCI_EXP_COLOR0_SRC1(c)`) using the `exp` instruction (§12.5, §12.10.3). When `CAP_DUAL_SOURCE == 0`, exports to `0x108..0x10B` are silently discarded by hardware (no fault).
-- **Blend and Depth/Stencil Encodings**: Integer values for `VkBlendOp`, `VkBlendFactor`, `VkLogicOp`, `VkCompareOp`, and `VkStencilOp` in `GhciPipelineState` strictly match 1:1 with standard Vulkan core numerical specification values.
+- **Blend and Depth/Stencil Encodings**: Numerical encodings for blend ops, blend factors, logic ops, depth compare ops, and stencil ops in `GhciPipelineState` follow the tables defined in §8.2 and `include/ghci_cmd.h`.
 
 ### 8.5 Supported Image Formats, Texture Compression & Dimensions
 
@@ -1698,47 +1689,46 @@ Textures are configured through `GhciTextureDescriptor.dimension` (`0x19`) and l
 - **Depth/Stencil Formats:** Interleaved packed pixels. D24S8 is 32-bit (depth in `[23:0]`, stencil in `[31:24]`). D32S8 is 64-bit (float32 depth in `[31:0]`, uint8 stencil in `[39:32]`).
 - **Memory Alignment:** Image subresource rows are aligned to 64 bytes (`GHCI_LAYOUT_ALIGN`), and slices/layers are aligned to 64 bytes.
 
-### 8.6 Vulkan Hardware Limits and Standard Architectural Constants
+### 8.6 Hardware Limits and Standard Architectural Constants
 
-Drivers populating `VkPhysicalDeviceLimits` should configure properties according
-to the following architectural parameters:
+Drivers querying GHCI 1.0 architectural limits use the following hardware parameters and capability-word sources:
 
-| Vulkan Limit Property | Value | Hardware Source / Explanation |
+| Limit Parameter | Value | Hardware Source / Explanation |
 | :--- | :---: | :--- |
-| `maxImageDimension1D` | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
-| `maxImageDimension2D` | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
-| `maxImageDimension3D` | Word 31`[15:0]` (e.g. `2,048`) | `MAX_TEX_DEPTH_3D` in `CMD_QUERY_CAPS` Word 31`[15:0]` (`0` if `TEX_3D == 0`) |
-| `maxImageDimensionCube` | Word 27`[31:16]` (e.g. `16,384`) | Cube face extent limit from Word 27`[31:16]` |
-| `maxImageArrayLayers` | Word 27`[15:4] + 1` (e.g. `2,048`) | `MAX_ARRAY_LAYERS_M1 + 1` in `CMD_QUERY_CAPS` Word 27`[15:4]` |
-| `maxTexelBufferElements` | 67,108,864 | 256 MiB maximum texel buffer size |
-| `maxUniformBufferRange` | 65,536 | 64 KiB uniform buffer window (8 KiB on-chip constant cache) |
-| `maxStorageBufferRange` | 4,294,967,295 | 4 GiB max buffer range per descriptor in 64-bit GPU VA space |
-| `maxPushConstantsSize` | 128 bytes | Full `c[0..31]` loaded via `CMD_LOAD_CONST` into on-chip constant bank |
-| `maxMemoryAllocationCount` | 4,096 | Supported concurrent OS DMA mappings |
-| `maxSamplerAllocationCount` | 4,000 | In-memory descriptor limit |
-| `maxBoundDescriptorSets` | `8` (`Word 26[7:0]`) | `MAX_DESCRIPTOR_SETS` (`set 0..7` in `CMD_BIND_DESCRIPTOR_TABLE`) |
-| `maxPerStageDescriptorSamplers` | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
-| `maxPerStageDescriptorUniformBuffers` | `>= 16` | Software/constant-bank backed buffer descriptors |
-| `maxPerStageDescriptorStorageBuffers` | `>= 16` | Software/constant-bank backed buffer descriptors |
-| `maxPerStageDescriptorSampledImages` | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
-| `maxPerStageDescriptorStorageImages` | `8` | Storage image descriptors |
-| `maxDescriptorSetSamplers` | `8,192` | `13`-bit per-set index range (`0..8191`) |
-| `maxDescriptorSetSampledImages` | `8,192` | `13`-bit per-set index range (`0..8191`) |
-| `maxVertexInputAttributes` | 16 | Hardware vertex fetcher attribute channels (0..15) |
-| `maxVertexInputBindings` | 16 | Hardware vertex stream buffer slots (0..15) |
-| `maxVertexInputAttributeOffset` | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range) |
-| `maxVertexInputBindingStride` | 4,095 | Fallback 8-bit default in PSO, or up to 4095 dynamic stride via `CMD_BIND_VERTEX_BUFFERS` |
-| `maxColorAttachments` | 1..8 (implemented count) | Reported authoritatively via `EXT_CAP_FEATURE[19:16]`, mirroring `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]` |
-| `maxComputeWorkGroupCount[3]` | {65535, 65535, 65535} | 16-bit workgroup dispatch counters |
-| `maxComputeWorkGroupInvocations` | 256 | Maximum invocations per compute workgroup ($\le 256$) |
-| `maxComputeWorkGroupSize[3]` | {256, 256, 64} | Max workgroup dimensions (total invocations $\le 256$) |
-| `maxComputeSharedMemorySize` | 16,384 bytes | On-chip Local Data Share (LDS) RAM per SU (reported via `EXT_CAP_FEATURE[27:20]`; constrained prototype profiles are documented in implementation datasheets) |
-| `subGroupSize` | 32 | Native SIMD warp width |
-| `timestampPeriod` | `1.0e9 / GCLK_HZ` ns | Dynamically computed from `CMD_QUERY_CAPS` Word 7 (`GHCI_CAP_WORD_GCLK_HZ`) |
-| `subPixelPrecisionBits` | 4 | 4 bits subpixel precision (1/16 pixel grid rasterization) |
-| `viewportSubPixelBits` | 0 | Integer viewport coordinate snapping |
-| `maxViewportDimensions[2]` | {16384, 16384} | Maximum viewport width and height |
-| `viewportBoundsRange[2]` | [-32768.0, 32767.0] | Viewport coordinate bounds range |
+| Max 1D image dimension | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
+| Max 2D image dimension | Word 27`[31:16]` (e.g. `16,384`) | `MAX_TEX_EXTENT` in `CMD_QUERY_CAPS` Word 27`[31:16]` |
+| Max 3D image dimension | Word 31`[15:0]` (e.g. `2,048`) | `MAX_TEX_DEPTH_3D` in `CMD_QUERY_CAPS` Word 31`[15:0]` (`0` if `TEX_3D == 0`) |
+| Max Cube image dimension | Word 27`[31:16]` (e.g. `16,384`) | Cube face extent limit from Word 27`[31:16]` |
+| Max image array layers | Word 27`[15:4] + 1` (e.g. `2,048`) | `MAX_ARRAY_LAYERS_M1 + 1` in `CMD_QUERY_CAPS` Word 27`[15:4]` |
+| Max texel buffer elements | 67,108,864 | 256 MiB maximum texel buffer size |
+| Max uniform buffer range | 65,536 | 64 KiB uniform buffer window (8 KiB on-chip constant cache) |
+| Max storage buffer range | 4,294,967,295 | 4 GiB max buffer range per descriptor in 64-bit GPU VA space |
+| Max push constants size | 128 bytes | Full `c[0..31]` loaded via `CMD_LOAD_CONST` into on-chip constant bank |
+| Max memory allocation count | 4,096 | Supported concurrent OS DMA mappings |
+| Max sampler allocation count | 4,000 | In-memory descriptor limit |
+| Max bound descriptor sets | `8` (`Word 26[7:0]`) | `MAX_DESCRIPTOR_SETS` (`set 0..7` in `CMD_BIND_DESCRIPTOR_TABLE`) |
+| Max per-stage samplers | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
+| Max per-stage uniform buffers | `>= 16` | Software/constant-bank backed buffer descriptors |
+| Max per-stage storage buffers | `>= 16` | Software/constant-bank backed buffer descriptors |
+| Max per-stage sampled images | `8,192` (`64` immediate) | `2^INDEX_BITS` (`Word 26[19:16] = 13`) via `.idx` register mode; `64` via static immediate mode |
+| Max per-stage storage images | `8` | Storage image descriptors |
+| Max descriptor set samplers | `8,192` | `13`-bit per-set index range (`0..8191`) |
+| Max descriptor set sampled images | `8,192` | `13`-bit per-set index range (`0..8191`) |
+| Max vertex input attributes | 16 | Hardware vertex fetcher attribute channels (0..15) |
+| Max vertex input bindings | 16 | Hardware vertex stream buffer slots (0..15) |
+| Max vertex attribute offset | 524,287 | 19-bit packed attribute offset field in `GhciPipelineState` (512 KiB range) |
+| Max vertex binding stride | 4,095 | Fallback 8-bit default in PSO, or up to 4095 dynamic stride via `CMD_BIND_VERTEX_BUFFERS` |
+| Max color attachments | 1..8 (implemented count) | Reported authoritatively via `EXT_CAP_FEATURE[19:16]`, mirroring `EXT_CAP_FMT0[15:12]` and `FMT_LIMITS[3:0]` |
+| Max compute workgroup count | {65535, 65535, 65535} | 16-bit workgroup dispatch counters |
+| Max compute workgroup invocations | 256 | Maximum invocations per compute workgroup ($\le 256$) |
+| Max compute workgroup size | {256, 256, 64} | Max workgroup dimensions (total invocations $\le 256$) |
+| Max compute shared memory (LDS) | 16,384 bytes | On-chip Local Data Share (LDS) RAM per SU (reported via `EXT_CAP_FEATURE[27:20]`; constrained prototype profiles are documented in implementation datasheets) |
+| Subgroup width | 32 | Native SIMD warp width |
+| Core cycle period (ns) | `1.0e9 / GCLK_HZ` ns | Dynamically computed from `CMD_QUERY_CAPS` Word 7 (`GHCI_CAP_WORD_GCLK_HZ`) |
+| Subpixel precision bits | 4 | 4 bits subpixel precision (1/16 pixel grid rasterization) |
+| Viewport subpixel bits | 0 | Integer viewport coordinate snapping |
+| Max viewport dimensions | {16384, 16384} | Maximum viewport width and height |
+| Viewport coordinate bounds | [-32768.0, 32767.0] | Viewport coordinate bounds range |
 
 9. Fences and interrupts
 ------------------------
@@ -1941,15 +1931,15 @@ dedicated high-bandwidth local memory (VRAM):
 
 | | Unified | Discrete |
 | --- | --- | --- |
-| MEM capability | Absent, or LOCAL_SIZE = 0 | LOCAL_SIZE > 0 |
+| MEM window (`CAP_BOOT_MEM`) | Absent, or `MEM_VRAM_SIZE` = 0 | `MEM_VRAM_SIZE` > 0 |
 | Where the driver allocates | Everything in host memory | Device-local resources in local memory; host-visible resources (staging, uniforms the host rewrites, readback) in host memory |
 | Ring, command buffers, fences | Host memory | Host memory |
 | Upload and readback | Not needed: the host writes the buffer | A copy command between host and local memory, then a fence |
 | Framebuffer | Host memory | Local memory or Host memory (scanout supports both; a boot framebuffer in board VRAM is accessed via the local window, section 13) |
 
 Everything else — the registers, the ring, the commands, fences,
-interrupts and the ISA — is the same in both. A Vulkan driver offers one
-heap on a unified GPU and two on a discrete one: device-local, and host
+interrupts and the ISA — is the same in both. A driver exposes one
+memory heap on a unified GPU and two on a discrete one: device-local, and host
 memory that is host-visible and host-coherent.
 
 **The `MEM` window (`0x100..0x13F`, present when `BOOT_CAPS[3] CAP_BOOT_MEM == 1`)**:
@@ -1981,8 +1971,7 @@ Whether the GPU's accesses to host memory are coherent with the CPU's
 caches is a property of the platform, not of the GPU, and the GPU does not
 need to know it.
 
-- **The platform says it:** the device tree's `dma-coherent`, ACPI's
-  `_CCA`; on PCIe, accesses are snooped unless the device asks otherwise.
+- **The platform reports coherence:** platform firmware/bus attributes indicate whether DMA accesses are cache-coherent; on PCIe, accesses are snooped unless No Snoop is set.
 - **The driver** uses the operating system's DMA synchronization around
   the GPU's accesses to host memory (a no-op on a coherent platform; a
   cache clean before the GPU reads, an invalidate before the host reads
@@ -2085,12 +2074,12 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   - `CMD_QUERY_CAPS` Word 5 (`GHCI_CAP_WORD_RESIDENT_WARPS`): `[15:0]` Maximum resident warp capacity across all Shader Units (`[23:16]` register count per thread; MMIO offset `0x04C` is strictly reserved and reads 0).
 - **Architectural Capability Mapping for GSI1 Core**:
   Instruction subsets are governed by host-visible registers:
-  - Subgroup operations (`shfl`, `vote`, `ballot`): governed by `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`, legacy GSI1 CAPS[24]).
-  - Packed FP16 arithmetic (custom-2): governed by `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`, legacy GSI1 CAPS[28]).
+  - Subgroup operations (`shfl`, `vote`, `ballot`): governed by `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`).
+  - Packed FP16 arithmetic (custom-2): governed by `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`).
   - Advanced texture addressing (.3 forms for 2D array, 3D, cube, depth compare `.c`, and gather `texg`): standard GSI1 ISA operations supported by the Texture Unit on all configurations (`GHCI_CAP_GSI1 == 1`). `DEVICE_CAPS[25]` (`CAP_TEX_FFILT`) specifically indicates whether floating-point linear filtering is supported in hardware; when `CAP_TEX_FFILT == 0`, UNORM8 bilinear filtering is performed, while FP16/FP32 textures fall back to nearest point-sampling, without restricting 2D array, 3D, or cube sampling.
-  - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA`, legacy GSI1 CAPS[29]).
-  - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`, legacy GSI1 CAPS[30]).
-  - Systolic-array instructions (legacy `rq`, `sactl`): legacy GSI1 CAPS[25] reserved (reads 0 in GHCI 1.0; executing these instructions raises `GHCI_FAULT_KIND_INVALID_OP`). Special operands 126..127 are reserved (read 0).
+  - Multisampling queries (`texsz.s`): governed by `DEVICE_CAPS[31]` (`CAP_MSAA`).
+  - ROP format packing: governed by `DEVICE_CAPS[26]` (`CAP_ROP_PACK`).
+  - Systolic-array instructions (`rq`, `sactl`): reserved in GHCI 1.0 (executing them raises `GHCI_FAULT_KIND_INVALID_OP`). Special operands 126..127 are reserved (read 0).
 - Reference implementation: `mk/gsi1asm.py` (the assembler and the
   decode table), `mk/gsi1dis.py` (the disassembler), together with the
   reference execution model (`gsi1model`) and bit-exact arithmetic model
@@ -2145,17 +2134,17 @@ Operand numbers have 7 bits:
 | 106-108 | `wgx` `wgy` `wgz` (workgroup ID) |
 | 109-111 | `lidx` `lidy` `lidz` (local ID) |
 | 112 | `lidn` (local index) |
-| 113 | `prim` (primitive index: `gl_PrimitiveID` in FS, `gl_PrimitiveIDIn` in GS/TCS/TES) |
+| 113 | `prim` (primitive index in FS/GS/TCS/TES) |
 | 114 | `front` (front facing, a Boolean) |
 | 115-117 | `nwgx` `nwgy` `nwgz` (workgroup counts) |
 | 118 | `oneh2` (packed 1.0h, 1.0h: `0x3C003C00`) |
 | 119 | `mask` (coverage; for compute and vertex warps, the initial EXEC) |
-| 120 | `vtx_idx` (`gl_VertexIndex`, uint32, Vertex Shader only; reads 0 in other stages) |
-| 121 | `inst_idx` (`gl_InstanceIndex`, uint32, Vertex Shader only; reads 0 in other stages) |
-| 122 | `invid` (`gl_InvocationID`, Geometry / Tessellation Control invocation index) |
-| 123 | `patch_vtx` (`gl_PatchVerticesIn`, number of vertices in input patch) |
-| 124 | `tess_u` (`gl_TessCoord.x`, Tessellation Evaluation domain coordinate u) |
-| 125 | `tess_v` (`gl_TessCoord.y`, Tessellation Evaluation domain coordinate v) |
+| 120 | `vtx_idx` (vertex index, uint32, Vertex Shader only; reads 0 in other stages) |
+| 121 | `inst_idx` (instance index, uint32, Vertex Shader only; reads 0 in other stages) |
+| 122 | `invid` (invocation ID within Geometry / Tessellation Control invocation) |
+| 123 | `patch_vtx` (input patch vertex count) |
+| 124 | `tess_u` (Tessellation Evaluation domain coordinate u) |
+| 125 | `tess_v` (Tessellation Evaluation domain coordinate v) |
 | 126-127 | reserved (read 0; preserved for future system built-ins) |
 
 ### 12.4 Instruction format
@@ -2234,7 +2223,7 @@ word1 (bits 63:32):
 - **Optional instructions:** the packed arithmetic (everything of custom-2
   except `packh` and `unpackh`) needs `DEVICE_CAPS[6]` / `EXT_CAP_FEATURE[28]` (`CAP_FP16`); `shfl`, `vote` and
   `ballot` need `EXT_CAP_FEATURE[29]` (`CAP_SUBGROUP`); systolic instructions
-  (`rq`, `sactl`) are reserved under legacy CAPS[25] and raise `GHCI_FAULT_KIND_INVALID_OP`.
+  (`rq`, `sactl`) are reserved and raise `GHCI_FAULT_KIND_INVALID_OP`.
 
 ### 12.6 ISA faults
 
@@ -2306,11 +2295,11 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
   - **Short 32-bit Addressing**: `lw`, `ld.64`, `sw`, `sd.64`, and `sw.x` compute the 64-bit effective address with 32-bit modular wrap and upper-half zero-extension:
     $$\text{EA} = \{\text{32'd0},\ (\text{rs1}[31:0] + \text{sext32}(\text{imm}))[31:0]\}$$
     `atom.<op>` (`custom-0, funct3 = 2, sub[4] = 0`) uses $\text{EA} = \{\text{32'd0},\ \text{rs1}[31:0]\}$. Thus short forms always address `[0, 4 GiB)` even when `VA_BITS > 32`.
-  - **Extended 64-bit Addressing (`.a64`) & Consecutive Register Pairs**: When `VA_BITS > 32` (when `VA_BITS <= 32`, any `.a64` form raises `GHCI_FAULT_KIND_INVALID_OP`), shaders use `.a64` instructions (`lw.a64`, `ld.64.a64`, `sw.a64`, `sd.64.a64` via `LOAD`/`STORE` `sub = 2`, and `atom.<op>.a64` via `custom-0` `funct3 = 3`) with a consecutive GPR pair `{r_{k+1}, r_k}` (`k <= min(NREGS - 2, 61)`, valid for any `k` without even/odd parity restriction; `r_k` holds bits `[31:0]` and `r_{k+1}` holds bits `[63:32]`):
+  - **Extended 64-bit Addressing (`.a64`) & Consecutive Register Pairs**: When `VA_BITS > 32` (when `VA_BITS <= 32`, any `.a64` form raises `GHCI_FAULT_KIND_INVALID_OP`), shaders use `.a64` instructions (`lw.a64`, `ld.64.a64`, `sw.a64`, `sd.64.a64` via `LOAD`/`STORE` `sub = 2`, and `atom.<op>.a64` via `custom-0` `funct3 = 3`) with a consecutive GPR pair `{r_{k+1}, r_k}` (`k <= min(NREGS - 2, 61)`, valid for any `k` without register-index parity restriction; `r_k` holds bits `[31:0]` and `r_{k+1}` holds bits `[63:32]`):
     - `lw.a64` / `ld.64.a64` / `sw.a64` / `sd.64.a64`: $\text{EA} = \{r_{k+1}[31:0],\ r_k[31:0]\} + \text{sext64}(\text{imm})$
     - `atom.<op>.a64`: $\text{EA} = \{r_{k+1}[31:0],\ r_k[31:0]\}$
     If `EA[63:VA_BITS] != 0` on an executed lane, hardware raises `GHCI_FAULT_KIND_PAGE_FAULT` (`kind 9`).
-  - **64-bit Data Transfers (`ld.64`, `sd.64`)**: `ld.64` / `ld.64.a64` load 64 bits into consecutive GPR pair `{rd+1, rd}` (`rd = r_k` with `k <= min(NREGS - 2, 61)`), and `sd.64` / `sd.64.a64` store 64 bits from `{rs2+1, rs2}` (`rs2 = r_k` with `k <= min(NREGS - 2, 61)`), without even/odd restriction.
+  - **64-bit Data Transfers (`ld.64`, `sd.64`)**: `ld.64` / `ld.64.a64` load 64 bits into consecutive GPR pair `{rd+1, rd}` (`rd = r_k` with `k <= min(NREGS - 2, 61)`), and `sd.64` / `sd.64.a64` store 64 bits from `{rs2+1, rs2}` (`rs2 = r_k` with `k <= min(NREGS - 2, 61)`), without register-index parity restriction.
   - **Alignment & Active-Lane Fault Rules**: Every global memory access enforces natural alignment:
     - 32-bit operations (`lw`, `sw`, `sw.x`, `atom.<op>`, including `.a64` forms) require 4-byte alignment (`EA[1:0] == 0`).
     - 64-bit operations (`ld.64`, `sd.64`, including `.a64` forms) require 8-byte alignment (`EA[2:0] == 0`).
@@ -2346,7 +2335,7 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
   bank size; c0-c31 are its first 32 words as operands. LOAD_CONST
   (section 7.3) loads the bank.
 
-### 12.9 Texture instructions (Approved Architecture)
+### 12.9 Texture instructions
 
 - `texl`, `texb` and `texf` write R, G, B, A of the texel to rd..rd+3
   (fp32 for float/unorm/snorm formats, raw 32-bit uint/sint bit patterns for integer formats). The coordinates are rs1 (u or x) and rs1+1 (v or y).
@@ -2379,20 +2368,18 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
   `texsz.s rd` (immediate 3, no rs1): writes the sample
   count (`GhciTextureDescriptor.sample_count`: 1, 2, or 4; section 12.11); without
   multisampling (`DEVICE_CAPS[31]`) an ISA fault. Other immediates are ISA faults.
-- **Texel offsets** (ConstOffset): word1 [25:22], [29:26]
+- **Texel offsets** (`ConstOffset`): word1 [25:22], [29:26]
   and [13:10] of `texl`, `texb`, `texf` and `texg` (the R forms, whose
   imm_hi and float source modifiers are otherwise unused) are the signed
-  offsets du, dv, dw in -8..7 (Vulkan: minTexelOffset -8, maxTexelOffset
-  7), added to the integer texel coordinates before the address modes
-  (section 8.4).  Offsets on a cube map are ignored (Vulkan does not allow
-  them).  Assembly: a last operand `off(du, dv[, dw])`.
-- **Supported Formats & Return Values**: Sampled formats are authoritatively governed by §8.5.1 (Comprehensive Vulkan Format Features Table). Return values written to `rd..rd+3` depend on format data type:
-  - **UNORM formats** (RGBA8, BGRA8, RGB565, etc.): return normalized values in $[0.0, 1.0]$ as IEEE-754 fp32.
-  - **SNORM formats** (R8_SNORM, R8G8_SNORM, R8G8B8A8_SNORM, R16_SNORM, etc.): return normalized signed values in $[-1.0, 1.0]$ as IEEE-754 fp32.
-  - **Floating-point formats** (R16_SFLOAT, R32_SFLOAT, R16G16_SFLOAT, R16G16B16A16_SFLOAT, R32G32B32A32_SFLOAT, etc.): return unconstrained IEEE-754 single-precision float values as stored in memory (without clamping or normalization to [0, 1]).
-  - **UINT / SINT integer formats** (R8_UINT, R8_SINT, R16_UINT, R16_SINT, R32_UINT, R32_SINT, RGBA integer formats, etc.): return raw 32-bit unsigned or sign-extended integer bit patterns in `rd..rd+3` (`uint32_t` / `int32_t`), bypassing fp32 conversion.
+  offsets du, dv, dw in `-8..7`, added to the integer texel coordinates before the address modes
+  (section 8.4). Offsets on a cube map are ignored. Assembly: a last operand `off(du, dv[, dw])`.
+- **Supported Formats & Return Values**: Sampled formats are authoritatively governed by §8.5.1. Return values written to `rd..rd+3` depend on format data type:
+  - **UNORM formats** (`R8G8B8A8_UNORM`, `B8G8R8A8_UNORM`, `R5G6B5_UNORM_P16`, etc.): return normalized values in $[0.0, 1.0]$ as IEEE-754 fp32.
+  - **SNORM formats** (`R8_SNORM`, `R8G8_SNORM`, `R8G8B8A8_SNORM`, `R16_SNORM`, etc.): return normalized signed values in $[-1.0, 1.0]$ as IEEE-754 fp32.
+  - **Floating-point formats** (`R16_SFLOAT`, `R32_SFLOAT`, `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT`, `R32G32B32A32_SFLOAT`, etc.): return unconstrained IEEE-754 single-precision float values as stored in memory (without clamping or normalization to [0, 1]).
+  - **UINT / SINT integer formats** (`R8_UINT`, `R8_SINT`, `R16_UINT`, `R16_SINT`, `R32_UINT`, `R32_SINT`, RGBA integer formats, etc.): return raw 32-bit unsigned or sign-extended integer bit patterns in `rd..rd+3` (`uint32_t` / `int32_t`), bypassing fp32 conversion.
   - **Missing component expansion**: formats with fewer than 4 components expand missing channels as follows: R-only returns `(R, 0, 0, 1)`, RG returns `(R, G, 0, 1)`, RGB returns `(R, G, B, 1)` (with 0.0f/1.0f for float/unorm/snorm, 0/1 for uint/sint). Depth formats without compare return `(D, 0, 0, 1.0f)`.
-  - `texf` (texel fetch by integer coordinates, implementing Vulkan `OpImageFetch`) decodes and returns texel values according to the format rules above (UNORM returns $[0.0, 1.0]$ fp32, SNORM returns $[-1.0, 1.0]$ fp32, SFLOAT returns IEEE-754 fp32, UINT/SINT returns raw integer bit patterns, missing channels expanded to 0/1), but completely bypasses sampler filtering (linear filtering and LOD calculation) and depth comparison.
+  - `texf` (texel fetch by integer coordinates) decodes and returns texel values according to the format rules above (UNORM returns $[0.0, 1.0]$ fp32, SNORM returns $[-1.0, 1.0]$ fp32, SFLOAT returns IEEE-754 fp32, UINT/SINT returns raw integer bit patterns, missing channels expanded to 0/1), but completely bypasses sampler filtering (linear filtering and LOD calculation) and depth comparison.
 - **Depth compare**: `texl.c rd, rs1, rs2` and
   `texb.c rd, rs1, rs2` (funct7 [0]) are `texl` and `texb` with the
   reference Dref after the coordinates: rs1+2, or rs1+3 for the .3 forms
@@ -2401,8 +2388,7 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
   (op = `GhciSamplerDescriptor.compare_op`, §8.3) and 0.0 otherwise, and the results are
   filtered; rd is the result (0.0 to 1.0), rd+1 and rd+2 are 0, rd+3 is
   1.0. A `.c` form on a sampler without compare returns the sample without
-  compare, a plain form on a compare sampler compares with Dref = 0
-  (Vulkan leaves both undefined). The coordinate registers must be
+  compare, while a plain form on a compare sampler compares with `Dref = 0` (hardware undefined/unrecommended usage). The coordinate registers must be
   registers like rs1+1 (an operand past r62, or past the constant words or
   the specials, is an ISA fault). Implementation note: the four or five
   sources take two operand reads per lane group (rs1, rs1+1, rs2; then
@@ -2410,34 +2396,20 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
 - **Gather**: `texg.r`, `texg.g`, `texg.b`, `texg.a rd,
   rs1` (`texl` with funct7 [1] set and the component in funct7 [3:2]; no
   rs2) write component C of the four texels of the bilinear footprint of
-  level 0 to rd..rd+3 in Vulkan's order: (i0, j1), (i1, j1), (i1, j0),
-  (i0, j0). `texg.c rd, rs1` (funct7 0000011, Dref after the coordinates)
+  level 0 to rd..rd+3 in order: `(i0, j1)`, `(i1, j1)`, `(i1, j0)`,
+  `(i0, j0)`. `texg.c rd, rs1` (funct7 0000011, Dref after the coordinates)
   writes the four compare results (1.0 or 0.0) of a compare sampler
   (DrefGather). A depth format without compare gives D for component 0,
   1.0 for 3 and 0 for 1 and 2.  On a 2D array or a cube map the .3 forms.
 - **Level of detail query**: `texqlod rd, rs1` (`texb`
   with funct7 0010000; no rs2, no bias) writes to rd the level that would
   be accessed, clamp(lambda, 0, LEVELS - 1), and to rd+1 lambda' (before
-  minLod / maxLod), both as fp32 multiples of 1/256; rd+2 and rd+3 are 0.
-  Vulkan-Docs issue 2383 discusses the order and the base level; this
-  conforms to GLSL's textureQueryLod (the level first, relative to the
-  base level).  `texqlod.3` for 3D images and cube maps.
-- The SPIR-V image instructions map as follows: ImplicitLod
-  `texb` (bias rs2, `zero` without); ExplicitLod with Lod `texl`;
-  Dref*ImplicitLod `texb.c`; Dref*ExplicitLod `texl.c`; Gather `texg.*`;
-  DrefGather `texg.c`; Fetch `texf`; QuerySizeLod / QuerySize `texsz` and
-  (arrays, 3D) `texsz.d`; QueryLevels `texsz.l`; QueryLod `texqlod`; the
-  Proj forms divide first; 1D images are 2D images of height 1; Arrayed,
-  3D and Cube take the .3 forms; ConstOffset the offset field. Grad
-  (ExplicitLod with gradients) is compiled to `texsz`, the level of detail
-  from the gradients, and `texl`.
-- **Not in version 1** (a compiler rejects them):
-  - Multisampled images without `DEVICE_CAPS[31]` (QuerySamples,
-    sampledImageColorSampleCounts 4); with `DEVICE_CAPS[31]` section 12.11.
-  - Offset and ConstOffsets (optional, shaderImageGatherExtended), cube
-    arrays (optional, imageCubeArray), MinLod (optional,
-    shaderResourceMinLod), anisotropic filtering (optional,
-    samplerAnisotropy), sparse residency (optional).
+  minLod / maxLod), both as fp32 multiples of 1/256; rd+2 and rd+3 are 0
+  (the accessed level first, relative to the base level). `texqlod.3` for 3D images and cube maps.
+- **Instruction Form Mapping**: Implicit-LOD sampling uses `texb` (with optional bias `rs2`, `zero` otherwise); explicit-LOD uses `texl`; depth-compare variants use `texb.c` / `texl.c`; bilinear gather uses `texg.*` / `texg.c`; integer coordinate fetch uses `texf`; mip-dimension / array-depth / level-count / LOD queries use `texsz` / `texsz.d` / `texsz.l` / `texqlod`. Projective coordinates divide prior to sampling; 1D textures behave as height-1 2D textures; arrayed, 3D, and cube views use `.3` forms; integer texel offsets use the offset fields; gradient-based explicit LOD is compiled via `texsz` + gradient calculation + `texl`.
+- **Optional Texture Features (Conditional on Capabilities)**:
+  - Multisampled images without `DEVICE_CAPS[31]` (`CAP_MSAA`; when present, see §12.11).
+  - Gather offsets, cube arrays, per-view `minLod`, anisotropic filtering, and sparse residency are optional extensions beyond base GHCI 1.0 unless reported.
 - **Floating-point texture filtering (`CAP_TEX_FFILT`):**
   Hardware implementations may optionally omit floating-point linear texture filtering (`CAP_TEX_FFILT == 0`), in which case only UNORM8 bilinear filtering is performed and FP16/FP32 textures use nearest-neighbor point sampling.
   Texture sampling from FP16 and FP32 image formats bypasses linear interpolation, falling back to
@@ -2448,7 +2420,7 @@ sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub`
 
 #### 12.10.1 Pure Executable Binary Structure
 In GHCI 1.0, shader programs are submitted as **pure, raw executable machine code** without any container headers or reflection structures:
-- **No Container Header**: The legacy 16-word container header (Magic "GSI1", interface offset, etc.) and legacy `PROGRAM` gpu-op are completely eliminated.
+- **No Container Header**: Shaders are raw GSI1 machine code without container headers or software interface descriptor tables.
 - **Entry Points & Alignment**:
   - Shader stage entry points (`vs_code_va`, `fs_code_va`, `cs_code_va`, `ms_code_va` in `GhciPipelineState`, §8.2) are 64-bit GPU virtual addresses pointing directly to the first 64-bit GSI1 instruction of each stage in session GPU VA.
   - Instructions are 64-bit little-endian, strictly 8-byte aligned in memory.
@@ -2463,8 +2435,8 @@ In GHCI 1.0, shader programs are submitted as **pure, raw executable machine cod
 #### 12.10.2 Unified Resource Binding Architecture
 GHCI 1.0 standardizes on a direct hardware descriptor indexing architecture:
 - **Direct Descriptor Table Indexing**:
-  - The legacy interface table (kinds 1–14) is completely deprecated and removed.
-  - Texture (`32`-byte entries, `TABLE_KIND = 0`) and sampler (`16`-byte entries, `TABLE_KIND = 1`) descriptor tables are bound per bind point (`Graphics` vs. `Compute`) to sets `0..7` (`GHCI_MAX_DESCRIPTOR_SETS = 8`) via `CMD_BIND_DESCRIPTOR_TABLE` (`0x23`), specifying `table_va` and `table_size_16b`.
+  - Shaders access buffers, textures, and samplers directly through hardware descriptor tables:
+    - Texture (`32`-byte entries, `TABLE_KIND = 0`) and sampler (`16`-byte entries, `TABLE_KIND = 1`) descriptor tables are bound per bind point (`Graphics` vs. `Compute`) to sets `0..7` (`GHCI_MAX_DESCRIPTOR_SETS = 8`) via `CMD_BIND_DESCRIPTOR_TABLE` (`0x23`), specifying `table_va` and `table_size_16b`.
   - Buffer descriptor tables are referenced directly by shaders via addresses loaded into the constant bank (`CMD_LOAD_CONST`) using `lw` / `ld.64` / `.a64` instructions (`base + binding_offset_bytes + element_idx * 16` + dynamic offset).
   - Texture and sampler instructions (`texl`, `texg`, `texb`, `texqlod`, `texf`, `texsz`) use the unified 6-bit `.idx` encoding (`w1[21] I/R`, §12.9) to index Set `0` (`0..63` immediate) or any bound set `0..7` (`0..8191` via GPR `{set_id[2:0], index[12:0]}`).
 - **Constant Bank & Push Constants (`c0..c31`, `CMD_LOAD_CONST`)**:
@@ -2493,15 +2465,15 @@ The Vertex Fetcher (VF) automatically fetches enabled vertex attributes and deli
   - **Autonomous Hardware Configuration**:
     - When executing `CMD_BIND_PIPELINE`, the Command Processor (CP) scans `PSO.attributes[0..15]`, calculates $base_i$ and $C_i$ for each enabled slot, and autonomously configures the hardware per-attribute destination register and component count state ($base_i, C_i$). Drivers never emit internal state-register writes directly.
 
-- **System Built-in Inputs (`gl_VertexIndex`, `gl_InstanceIndex`)**:
-  - To support independent compilation without pipeline linking, SPIR-V system built-in inputs can be read directly via native GSI1 system operands in 1 cycle without register consumption:
-    - **Operand 120 (`vtx_idx`)**: `gl_VertexIndex` (uint32)
+- **System Built-in Inputs (`vtx_idx`, `inst_idx`)**:
+  - To support independent stage compilation without cross-stage linking, shader built-in inputs can be read directly via native GSI1 system operands in 1 cycle without register consumption:
+    - **Operand 120 (`vtx_idx`)**: Vertex index (`uint32`)
       - Non-indexed draw (`CMD_DRAW`): $\text{first\_vertex} + n$
       - Indexed draw (`CMD_DRAW_INDEXED`): $\text{index} + \text{vertex\_offset}$
-    - **Operand 121 (`inst_idx`)**: `gl_InstanceIndex` (uint32)
+    - **Operand 121 (`inst_idx`)**: Instance index (`uint32`)
       - Instance sequence value: $\text{first\_instance} + i$
-  - **Fixed-Register Fallback Delivery**:
-    - For backwards compatibility, hardware VF also delivers `gl_VertexIndex` to $r60$ (`GHCI_VS_REG_VERTEX_INDEX`) and `gl_InstanceIndex` to $r61$ (`GHCI_VS_REG_INSTANCE_INDEX`) when `PSO.shader_resource_limits[7:0]` (`used_regs_vs`) $\ge 62$. If `used_regs_vs < 62`, VF skips register delivery.
+  - **Fixed-Register Compatibility Delivery**:
+    - Hardware VF also delivers `vtx_idx` to $r60$ (`GHCI_VS_REG_VERTEX_INDEX`) and `inst_idx` to $r61$ (`GHCI_VS_REG_INSTANCE_INDEX`) when `PSO.shader_resource_limits[7:0]` (`used_regs_vs`) $\ge 62$. If `used_regs_vs < 62`, VF skips register delivery.
   - **`r62`**: Reserved exclusively for compiler scratchpad / temporary computation (`GHCI_VS_REG_SCRATCH`). Hardware never writes to $r62$.
   - **`r63`**: `rq` (Systolic Array Queue operand / hardware reserved).
 
@@ -2510,27 +2482,27 @@ Vertex shaders write output values to the Post-Transform Buffer (PT) using the `
 
 | Export Target (`target`) | Mnemonic | Description | Destination PT / Output Destination |
 | :---: | :--- | :--- | :---: |
-| `0x000` | `POS.x` | Clip-space Position X (`gl_Position.x`, fp32) | PT Word 0 |
-| `0x001` | `POS.y` | Clip-space Position Y (`gl_Position.y`, fp32) | PT Word 1 |
-| `0x002` | `POS.z` | Clip-space Position Z (`gl_Position.z`, fp32) | PT Word 2 |
-| `0x003` | `POS.w` | Clip-space Position W (`gl_Position.w`, fp32) | PT Word 3 |
-| `0x004` | `POINT_SIZE` | Point Size (`gl_PointSize`, fp32). Ignored in GHCI 1.0 (fixed at 1.0, `pointSizeRange = [1.0, 1.0]`, `largePoints = false`). Not stored in PT. | - |
-| `0x005` | `LAYER` | Render Layer (`gl_Layer`, uint32, layered rendering) | Primitive Header |
-| `0x006` | `VIEWPORT_INDEX` | Viewport Index (`gl_ViewportIndex`, uint32, GL 4.1 multi-viewport) | Primitive Header |
-| `0x007` | `PRIMITIVE_ID` | Primitive ID output (`gl_PrimitiveID`, uint32, Geometry Shader output) | Primitive Header |
+| `0x000` | `POS.x` | Clip-space Position X (`fp32`) | PT Word 0 |
+| `0x001` | `POS.y` | Clip-space Position Y (`fp32`) | PT Word 1 |
+| `0x002` | `POS.z` | Clip-space Position Z (`fp32`) | PT Word 2 |
+| `0x003` | `POS.w` | Clip-space Position W (`fp32`) | PT Word 3 |
+| `0x004` | `POINT_SIZE` | Point Size (`fp32`). Ignored in GHCI 1.0 (fixed at 1.0). Not stored in PT. | - |
+| `0x005` | `LAYER` | Render Layer (`uint32`, layered rendering) | Primitive Header |
+| `0x006` | `VIEWPORT_INDEX` | Viewport Index (`uint32`, multi-viewport) | Primitive Header |
+| `0x007` | `PRIMITIVE_ID` | Primitive ID output (`uint32`, Geometry Shader output) | Primitive Header |
 | `0x008 .. 0x00F` | *Reserved* | Reserved by hardware | - |
 | `0x010 + w` ($w = 0..63$) | `VARYING(w)` | Varying output word $w$ ($0 \le w \le 63$) | PT Word $4 + w$ |
-| `0x200` | `EMIT_VERTEX` / `EXP_MESH` | GS: `EmitVertex` (flushes vertex to primitive buffer). MS: Meshlet primitive/vertex export. Stream Out (Transform Feedback) export requires `Word 19 [4] CAP_STREAM_OUT = 1` | LDS / Stream Out |
-| `0x201` | `END_PRIMITIVE` | GS: `EndPrimitive` (terminates current primitive strip cut) | LDS metadata |
+| `0x200` | `EMIT_VERTEX` / `EXP_MESH` | GS: emits vertex to primitive buffer. MS: Meshlet primitive/vertex export. Stream Out (Transform Feedback) export requires `Word 19 [4] CAP_STREAM_OUT = 1` | LDS / Stream Out |
+| `0x201` | `END_PRIMITIVE` | GS: terminates current primitive strip cut | LDS metadata |
 
 - **Varying Slot Mapping & Direct Position Access**:
   - User-defined vertex output Location $L \in [0, 15]$, component $c \in [0, 3]$ maps to varying word index $w = 4L + c$:
     $$\text{Target}(L, c) = 0\text{x}010 + 4L + c, \quad \text{PT Word} = 4 + 4L + c$$
   - `GhciPipelineState.shader_resource_limits[31:24]` (`varying_count`) specifies the total number of varying 4-component vectors allocated ($0..16$, covering words $0..63$).
-  - **Direct Clip-space Position Access**: PT words $0..3$ store raw clip-space position components ($POS.x, y, z, w$). Fragment shaders can directly access $POS.w$ from PT Word 3 using `lda rd, GSI1_LDA(3, vtx)` without exporting $POS.w$ to varying space, preserving all 64 varying words ($w = 0..63$) exclusively for user attributes (fully satisfying Vulkan 1.0 `maxVertexOutputComponents = 64` and `maxFragmentInputComponents = 64`).
+  - **Direct Clip-space Position Access**: PT words $0..3$ store raw clip-space position components ($POS.x, y, z, w$). Fragment shaders can directly access $POS.w$ from PT Word 3 using `lda rd, GSI1_LDA(3, vtx)` without exporting $POS.w$ to varying space, preserving all 64 varying words ($w = 0..63$) exclusively for user attributes.
 
 - **Clip to Window Space Transformation**:
-  - Clip Volume: Follows standard Vulkan conventions ($-w \le x, y \le w$ and $0 \le z \le w$).
+  - Clip Volume: Standard GHCI clip bounds ($-w \le x, y \le w$ and $0 \le z \le w$).
   - Perspective Division: Normalized device coordinates $x_d = x/w$, $y_d = y/w$, $z_d = z/w$.
   - Viewport Mapping: Configured via `CMD_SET_VIEWPORT` (§7.3):
     $$x_w = \frac{\text{width}}{2} x_d + \left(x + \frac{\text{width}}{2}\right)$$
@@ -2541,7 +2513,7 @@ Vertex shaders write output values to the Post-Transform Buffer (PT) using the `
 
 - **Primitive Assembly & Provoking Vertex**:
   - Vertex index $k \in \{0, 1, 2\}$ in `lda` instruction corresponds directly to barycentric coordinates $b_k$ (`r0, r1, r2`).
-  - In accordance with Vulkan primitive topology vertex order, vertex 0 is authoritative Provoking Vertex (First Vertex convention). Flat interpolation reads vertex 0. For line primitives, vertex 2 is undefined; for point primitives, vertices 1 and 2 are undefined.
+  - Vertex 0 is the authoritative Provoking Vertex (First Vertex convention). Flat interpolation reads vertex 0. For line primitives, vertex 2 is undefined; for point primitives, vertices 1 and 2 are undefined.
 
 ##### 3. Fragment Shader Input Interface
 Before a fragment warp commences execution, the hardware rasterizer initializes general-purpose registers:
@@ -2554,15 +2526,15 @@ Before a fragment warp commences execution, the hardware rasterizer initializes 
 | `r6` | Sample Mask In | Coverage bitmask ($[3:0]$ for MSAA samples $0..3$). 0 for helper lanes. |
 | `r7, r8, r9` | Centroid Barycentrics | Barycentrics evaluated at primitive centroid (valid only when `PSO.compute_lds_and_flags[16]` `fs_centroid` is 1). |
 
-- **Vertex Attribute Fetching via `lda` (Post-Transform Buffer Access, 100% True Binary Compatibility)**:
+- **Vertex Attribute Fetching via `lda` (Post-Transform Buffer Access)**:
   - Shaders read per-vertex varying outputs and clip-space position directly from the Post-Transform Buffer (PT) using the standard `lda rd, imm(rs1)` instruction (I-type, `custom-1 funct3 101`).
-  - To maintain **100% true binary compatibility** with existing Fragment Shader (FS) binaries, compilers (and assembler), and hardware, where existing binaries encode `rs1 = 0` (register `r0`) and `sub = 0`:
+  - Static and dynamic index fields:
     - `imm[1:0]`: Static vertex index low bits ($0..3$).
-    - `imm[8:2]`: PT table word offset ($0..127$: words $0..3$ for clip-space position $POS.x..w$, words $4 + w$ for varying word $w \in [0, 63]$). Strictly identical to legacy Fragment Shader encoding.
+    - `imm[8:2]`: PT table word offset ($0..127$: words $0..3$ for clip-space position $POS.x..w$, words $4 + w$ for varying word $w \in [0, 63]$).
     - `imm[11:9]`: Static vertex / control-point index high bits ($[4:2]$). Combined 5-bit static vertex index is `{imm[11:9], imm[1:0]}` ($0..31$).
     - **Dynamic Index Selection via Instruction Sub-Opcode (`w1[17]`)**:
-      - **`sub[0] == 0` (Static Index Mode, Default / 100% Binary Compatible)**:
-        The `rs1` field is completely ignored (even when encoded as 0 / `r0` by existing FS compilers). The vertex/control point index is statically determined solely by the 5-bit immediate `{imm[11:9], imm[1:0]}` ($0..31$). All existing FS binaries with `sub == 0` and `imm[11:9] == 0` execute without modification or behavioral change.
+      - **`sub[0] == 0` (Static Index Mode)**:
+        The `rs1` field is ignored. The vertex/control point index is statically determined solely by `{imm[11:9], imm[1:0]}` ($0..31$).
       - **`sub[0] == 1` (Dynamic Index Mode, TCS / Dynamic Control Points)**:
         The runtime value of scalar register `rs1` (`r0..r62`) is added dynamically to the immediate vertex index:
         $$\text{effective\_vertex\_id} = (\text{GPR}[rs1] + \{imm[11:9], imm[1:0]\}) \pmod{32}$$
@@ -2570,7 +2542,7 @@ Before a fragment warp commences execution, the hardware rasterizer initializes 
   - In Fragment Shaders, attribute interpolation evaluates:
     $$V = b_0 \times \text{lda}(w, 0) + b_1 \times \text{lda}(w, 1) + b_2 \times \text{lda}(w, 2)$$
   - In Geometry Shaders, inputs across all vertices of the input primitive ($vtx \in [0, 5]$, covering lines/triangles with adjacency) are read directly via `lda rd, imm(vtx)` (with `sub[0] = 0`).
-  - In Tessellation Control Shaders, input patch control points (`gl_in[i]`) exported by the Vertex Shader are fetched directly from the PT via dynamic `lda rd, imm(rs1)` (with `sub[0] = 1`) or static `lda rd, imm` (with `sub[0] = 0`).
+  - In Tessellation Control Shaders, input patch control points exported by the Vertex Shader are fetched directly from the PT via dynamic `lda rd, imm(rs1)` (with `sub[0] = 1`) or static `lda rd, imm` (with `sub[0] = 0`).
 
 ##### 4. Fragment Shader Output / Export Interface
 Fragment shaders export final pixel results to the ROP backend using the `exp rs2, target` instruction:
@@ -2578,39 +2550,39 @@ Fragment shaders export final pixel results to the ROP backend using the `exp rs
 | Export Target (`target`) | Mnemonic | Description |
 | :---: | :--- | :--- |
 | `0x100 + 16k + c` | `COLOR(k, c)` | Color Attachment $k$ ($0 \le k \le 7$), component $c$ ($0: R, 1: G, 2: B, 3: A$). Targets range `0x100` to `0x173`. |
-| `0x104` | `DEPTH` | Exported fragment depth (`gl_FragDepth`, fp32, requires `PSO dw15 [17] fs_depth_export`). |
-| `0x105` | `SAMPLE_MASK` | Exported sample mask (`gl_SampleMask`, uint32). Must be exported by every fragment shader prior to termination. |
+| `0x104` | `DEPTH` | Exported fragment depth (`fp32`, requires `PSO dw15 [17] fs_depth_export`). |
+| `0x105` | `SAMPLE_MASK` | Exported sample mask (`uint32`). Must be exported by every fragment shader prior to termination. |
 | `0x108 .. 0x10B` | `COLOR0_SRC1(c)` | Dual-source blending second color output for Attachment 0 (components $0..3$). |
 
-- **Multi-Render-Target Support**: Multi-Render-Target (MRT) exports up to 8 attachments ($k = 0..7$) are part of core hardware rasterization/ROP output and do NOT depend on `DEVICE_CAPS[26]` (`CAP_ROP_PACK`). `CAP_ROP_PACK` solely gates hardware packing for non-blended integer and 32-bit float attachments. Exports targeting attachments $k \ge \text{maxColorAttachments}$ (`MAX_MRT`) or targeting `COLOR0_SRC1` when `CAP_DUAL_SOURCE == 0` are silently discarded by hardware without overwriting valid targets or raising a fault.
+- **Multi-Render-Target Support**: Multi-Render-Target (MRT) exports up to 8 attachments ($k = 0..7$) are part of core hardware rasterization/ROP output and do NOT depend on `DEVICE_CAPS[26]` (`CAP_ROP_PACK`). `CAP_ROP_PACK` solely gates hardware packing for non-blended integer and 32-bit float attachments. Exports targeting attachments $k \ge \text{MAX\_MRT}$ or targeting `COLOR0_SRC1` when `CAP_DUAL_SOURCE == 0` are silently discarded by hardware without overwriting valid targets or raising a fault.
 
-##### 5. Compute Shader Built-in Operand Interface
-Compute shaders access workgroup, invocation, and grid coordinates directly via native GSI1 ISA operands (§12.3) in 1 cycle, without register consumption:
+##### 5. Compute & Shader Stage Built-in Operand Interface
+Shaders access workgroup, invocation, grid, and tessellation coordinates directly via native GSI1 ISA operands (§12.3) in 1 cycle, without register consumption:
 
-| Operand Index | Mnemonic | Corresponding SPIR-V Built-in |
+| Operand Index | Mnemonic | Built-in Definition |
 | :---: | :--- | :--- |
 | `102` | `lane` | Subgroup / Warp Lane Index ($0..31$) |
 | `103` | `warp` | Subgroup / Warp Slot Index |
-| `106` | `wgx` | `gl_WorkGroupID.x` |
-| `107` | `wgy` | `gl_WorkGroupID.y` |
-| `108` | `wgz` | `gl_WorkGroupID.z` |
-| `109` | `lidx` | `gl_LocalInvocationID.x` |
-| `110` | `lidy` | `gl_LocalInvocationID.y` |
-| `111` | `lidz` | `gl_LocalInvocationID.z` |
-| `112` | `lidn` | `gl_LocalInvocationIndex` (Linearized invocation index within workgroup) |
-| `113` | `prim` | `gl_PrimitiveID` / `gl_PrimitiveIDIn` (Shared primitive index across GS, TCS, TES, FS) |
-| `115` | `nwgx` | `gl_NumWorkGroups.x` |
-| `116` | `nwgy` | `gl_NumWorkGroups.y` |
-| `117` | `nwgz` | `gl_NumWorkGroups.z` |
+| `106` | `wgx` | Workgroup ID X |
+| `107` | `wgy` | Workgroup ID Y |
+| `108` | `wgz` | Workgroup ID Z |
+| `109` | `lidx` | Local invocation ID X |
+| `110` | `lidy` | Local invocation ID Y |
+| `111` | `lidz` | Local invocation ID Z |
+| `112` | `lidn` | Linearized local invocation index within workgroup |
+| `113` | `prim` | Primitive index (shared across GS, TCS, TES, FS) |
+| `115` | `nwgx` | Workgroup grid count X |
+| `116` | `nwgy` | Workgroup grid count Y |
+| `117` | `nwgz` | Workgroup grid count Z |
 | `118` | `oneh2` | Packed FP16 Constant $1.0$ (`0x3C003C00`) |
 | `119` | `mask` | Active SIMD Execution Mask (`EXEC`) |
-| `120` | `vtx_idx` | `gl_VertexIndex` (Non-indexed: first_vertex + n; Indexed: index + vertex_offset) |
-| `121` | `inst_idx` | `gl_InstanceIndex` (first_instance + i) |
-| `122` | `invid` | `gl_InvocationID` (Geometry / Tessellation Control invocation index) |
-| `123` | `patch_vtx` | `gl_PatchVerticesIn` (Number of vertices in input patch) |
-| `124` | `tess_u` | `gl_TessCoord.x` (Tessellation Evaluation domain coordinate u) |
-| `125` | `tess_v` | `gl_TessCoord.y` (Tessellation Evaluation domain coordinate v) |
-| `126-127` | *reserved* | Reserved (read 0; `gl_TessCoord.z` is computed by shader compiler as $1.0 - u - v$ in triangle domain) |
+| `120` | `vtx_idx` | Vertex index (Non-indexed: `first_vertex + n`; Indexed: `index + vertex_offset`) |
+| `121` | `inst_idx` | Instance index (`first_instance + i`) |
+| `122` | `invid` | Geometry / Tessellation Control invocation index |
+| `123` | `patch_vtx` | Number of vertices in input patch |
+| `124` | `tess_u` | Tessellation Evaluation domain coordinate $u$ |
+| `125` | `tess_v` | Tessellation Evaluation domain coordinate $v$ |
+| `126-127` | *reserved* | Reserved (read 0; domain coordinate $w$ is computed by compiler as $1.0 - u - v$ in triangle domain) |
 
 #### 12.10.4 Mesh, Task, Geometry Shader, and Tessellation Contracts (Optional Extensions)
 
@@ -2619,36 +2591,34 @@ When enabled via `DEVICE_CAPS` (`CAP_MESH_SHADER` / `CAP_TASK_SHADER`) or Capabi
 1. **Mesh & Task Shaders (`CAP_MESH_SHADER` / `CAP_TASK_SHADER`)**:
    - Dispatched via `CMD_DRAW_MESH_TASKS` (0x2A), using the core 128-byte `GhciPipelineState` (`ms_code_va` in dw6–7, register limit via `used_regs_cs` in dw13, and workgroup dimensions via `compute_local_size` in dw14).
 2. **Geometry Shader ABI & Spill Ring Contract**:
-   - **Operands & Exports**: `gl_InvocationID` is supplied in GSI1 operand `122` and `gl_PrimitiveIDIn` in `113`. For each emitted vertex, the shader writes clip-space position (`0x000..0x003`), system outputs (`0x005` `gl_Layer`, `0x006` `gl_ViewportIndex`, `0x007` `gl_PrimitiveID`), and varyings (`0x010 + w`) via `exp`, and then commits the vertex with `exp target 0x200` (`EMIT_VERTEX`); strip cuts use `exp target 0x201` (`END_PRIMITIVE`).
+   - **Operands & Exports**: Invocation ID is supplied in GSI1 operand `122` and primitive ID in `113`. For each emitted vertex, the shader writes clip-space position (`0x000..0x003`), system outputs (`0x005` Layer, `0x006` Viewport Index, `0x007` Primitive ID), and varyings (`0x010 + w`) via `exp`, and then commits the vertex with `exp target 0x200` (`EMIT_VERTEX`); strip cuts use `exp target 0x201` (`END_PRIMITIVE`).
    - **PSO Fields & Limits**: Configured via the 256-byte `GhciPipelineStateExt` (`flags[16] = 1`), using `gs_state` (including `input_topology`, `output_stride_words` $1..127$, `max_output_vertices`, and `invocations`). Architectural limit: $\text{max\_output\_vertices} \times \text{output\_stride\_words} \le 1024$ dwords ($4\,\text{KiB}$ per invocation).
    - **Spill Ring Buffer (`geom_spill_va`, `geom_spill_size_bytes`, `geom_spill_stride_bytes`)**:
      - Per-warp footprint: $\text{warp\_footprint} = 32 \times \text{max\_output\_vertices} \times \text{output\_stride\_words} \times 4 \le 128\,\text{KiB}$ (matching `geom_spill_stride_bytes * 32`, 64-byte aligned).
      - Available per-warp LDS allocation: $\text{LDS\_alloc} = (\text{CAP\_LDS\_SIZE\_KB} \times 1024) / (\text{RESIDENT\_WARPS} / \text{NUM\_SU})$.
-     - If $\text{warp\_footprint} > \text{LDS\_alloc}$, the driver MUST allocate an off-chip spill ring buffer in GPU VA space satisfying $\text{geom\_spill\_size\_bytes} \ge \text{RESIDENT\_WARPS} \times \text{warp\_footprint}$ (using the maximum $\text{warp\_footprint}$ across active pipelines when sharing a ring). If allocation fails, pipeline creation returns `VK_ERROR_OUT_OF_DEVICE_MEMORY`. Submitting a malformed PSO with `geom_spill_va == 0` when spilling is required triggers `GHCI_FAULT_KIND_INVALID_OP`.
+     - If $\text{warp\_footprint} > \text{LDS\_alloc}$, the driver MUST allocate an off-chip spill ring buffer in GPU VA space satisfying $\text{geom\_spill\_size\_bytes} \ge \text{RESIDENT\_WARPS} \times \text{warp\_footprint}$ (using the maximum $\text{warp\_footprint}$ across active pipelines when sharing a ring). Submitting a malformed PSO with `geom_spill_va == 0` when spilling is required triggers `GHCI_FAULT_KIND_INVALID_OP`.
      - **Forward-Progress Guarantee**: Provided the driver-allocated spill ring satisfies this sizing equation, hardware guarantees strict forward progress without deadlock (newly dispatched warps may stall waiting for ring capacity, but all in-flight warps are guaranteed sufficient space to complete primitive emission and drain).
      - Note: On most hardware configurations, $\text{warp\_footprint}$ exceeds $\text{LDS\_alloc}$, making the off-chip spill ring the primary execution path.
 3. **Tessellation ABI (TCS / TES)**:
-   - **PSO & Operands**: Configured via `GhciPipelineStateExt.tess_state` (domain, spacing, orientation, control point count). TCS receives `gl_InvocationID` in operand `122` and `gl_PatchVerticesIn` in `123`; TES receives canonical domain coordinates $u$ in operand `124` (`tess_u`) and $v$ in operand `125` (`tess_v`).
-   - **Patch LDS Layout & Instructions**: TCS reads input control points via `lda` and writes/synchronizes patch attributes using `sts` and `bar` (`custom-0 funct3 101`). Standardized relative LDS offsets: `0x000..0x00F` (`gl_TessLevelOuter[4]`), `0x010..0x017` (`gl_TessLevelInner[2]`), `0x018..0x01F` (patch header), `0x020..0x21F` (per-patch outputs, up to 128 components), and `0x220+` (output control point array at `0x220 + i * cp_stride_words * 4`). `tess_state.patch_stride_128b` ($\text{patch\_bytes} = \text{patch\_stride\_128b} \times 128$) must satisfy `0x220 + output_points * cp_stride_words * 4 <= 16256` (maximum `3928` dwords per patch). TES fetches patch attributes using `lds`, and exports evaluated clip-space position (`0x000..0x003`) and varyings (`0x010 + w`) using `exp` identically to a Vertex Shader.
+   - **PSO & Operands**: Configured via `GhciPipelineStateExt.tess_state` (domain, spacing, orientation, control point count). TCS receives invocation ID in operand `122` and input patch vertex count in `123`; TES receives canonical domain coordinates $u$ in operand `124` (`tess_u`) and $v$ in operand `125` (`tess_v`).
+   - **Patch LDS Layout & Instructions**: TCS reads input control points via `lda` and writes/synchronizes patch attributes using `sts` and `bar` (`custom-0 funct3 101`). Standardized relative LDS offsets: `0x000..0x00F` (outer tessellation levels `[4]`), `0x010..0x017` (inner tessellation levels `[2]`), `0x018..0x01F` (patch header), `0x020..0x21F` (per-patch outputs, up to 128 components), and `0x220+` (output control point array at `0x220 + i * cp_stride_words * 4`). `tess_state.patch_stride_128b` ($\text{patch\_bytes} = \text{patch\_stride\_128b} \times 128$) must satisfy `0x220 + output_points * cp_stride_words * 4 <= 16256` (maximum `3928` dwords per patch). TES fetches patch attributes using `lds`, and exports evaluated clip-space position (`0x000..0x003`) and varyings (`0x010 + w`) using `exp` identically to a Vertex Shader.
 
-### 12.11 Multisampling (Approved Architecture)
+### 12.11 Multisampling
 
 With `DEVICE_CAPS[31]` (`CAP_MSAA`), the GPU rasterizes with 1, 2, or 4 samples per pixel.
 - **Sample Shading**: When `GhciPipelineState.flags[11]` (`sample_shading`) is 1, the rasterizer runs fragment shader invocations per covered sample location (with `FragCoord` and barycentrics computed at each sample). When `sample_shading` is 0, the fragment program executes once per pixel at pixel center (or centroid if `compute_lds_and_flags[16]` `fs_centroid` (PSO dw15 [16]) is set).
 - **Autonomous State Programming**: In GHCI 1.0, the immutable Pipeline State Object (`GhciPipelineState`, §8.2) and Render Pass Descriptor (`GhciRenderPassDesc`, §8.4) are authoritative; sample count, centroid interpolation, alpha-to-coverage, and sample mask states are configured autonomously by the Command Processor upon `CMD_BEGIN_RENDER_PASS` and `CMD_BIND_PIPELINE`.
-- **Resource Descriptor Mapping**: Legacy ISA references to `TEX_IMAGE` and `TEX_SAMPLER` map directly to standard GHCI 1.0 descriptor structures (§8.3):
-  - `TEX_IMAGE[3:0]` (mip levels) maps to `GhciTextureDescriptor.mip_levels` (`1..MAX_MIP_LEVELS`).
-  - `TEX_IMAGE[15:12]` (samples) maps to `GhciTextureDescriptor.sample_count` (1, 2, 4).
-  - `TEX_IMAGE format 4` maps to `GhciTextureDescriptor.format = GHCI_FMT_R5G6B5_UNORM_P16` (`0x02`).
-  - `TEX_SAMPLER[9]` (compare enable) maps to `GhciSamplerDescriptor.compare_enable`.
-  - `TEX_SAMPLER[12:10]` (compare op) maps to `GhciSamplerDescriptor.compare_op` (`VkCompareOp`).
+- **Resource Descriptor Fields**: Texture and sampler fields follow `GhciTextureDescriptor` and `GhciSamplerDescriptor` (§8.3):
+  - `GhciTextureDescriptor.mip_levels`: mip level count (`1..MAX_MIP_LEVELS`).
+  - `GhciTextureDescriptor.sample_count`: MSAA sample count (`1, 2, 4`).
+  - `GhciTextureDescriptor.format`: `GhciFormat` ID (e.g. `GHCI_FMT_R5G6B5_UNORM_P16` = `0x02`).
+  - `GhciSamplerDescriptor.compare_enable` and `compare_op`: depth comparison enable and operator (`0..7`).
 
 **Sample locations.** The standard locations: with 1 sample (0.5, 0.5);
 with 2 samples, sample 0 (0.75, 0.75), sample 1 (0.25, 0.25);
 with 4 samples, sample 0 (0.375, 0.125), 1 (0.875, 0.375), 2 (0.125, 0.625), 3
 (0.625, 0.875) inside the pixel. A sample on an edge follows the same
-tie rule as a pixel centre. (Values referenced: Vulkan specification,
-Multisampling, standard sample locations.)
+tie rule as a pixel centre.
 
 **Fragment program inputs and outputs** (GSI1; the rasterizer writes the
 registers before the warp starts):
@@ -2701,7 +2671,7 @@ so that a multisampled RGB565 colour attachment can be fetched.
 
 **Resolve**: Multisample resolve is executed via automatic render pass resolve (`GhciRenderPassDesc.resolve`, §8.4) for color attachment 0, or explicit `CMD_RESOLVE_IMAGE` (opcode `0x44`, §7.3) for multi-target MRT resolves. Synchronization is performed using `CMD_BARRIER` (0x31) with `GHCI_BARRIER_FLAG_WAIT_IDLE` (`flags[0] = 1`), guaranteeing that all prior rendering writes have fully reached memory before the resolve operation commences.
 
-### 12.12 Colour outputs and primitive inputs (Approved Architecture)
+### 12.12 Colour outputs and primitive inputs
 
 Multi-Render-Target (MRT) exports up to 8 attachments are part of core hardware rasterization/ROP output and do not depend on `DEVICE_CAPS[26]` (`CAP_ROP_PACK`). `CAP_ROP_PACK` specifically indicates hardware render-target format packing support for non-blended integer and 32-bit float attachments.
 
@@ -2710,8 +2680,7 @@ Multi-Render-Target (MRT) exports up to 8 attachments are part of core hardware 
   (a second colour of attachment 0 for dual-source blending, `GHCI_EXP_COLOR0_SRC1`). An
   attachment no lane of the warp exported is not written; in an
   attachment some lane exported, a covered lane that exported another
-  target but not this attachment writes undefined values (Vulkan leaves
-  an output a shader does not write undefined).
+  target but not this attachment writes undefined values.
 - **Inputs of a point's fragment warp**: r0 and r1 hold PointCoord (s, t)
   = (1/2 + x_p - x_f, 1/2 + y_p - y_f) at the pixel centre (x_p, y_p) for
   the vertex at (x_f, y_f) (points of size 1); r2 has no meaning. A
@@ -2857,13 +2826,13 @@ The base form of GHCI. The platform's firmware describes the device:
   WINDOW_SIZE bytes;
 - one interrupt line, level-triggered, active high (the level of
   section 9.2);
-- whether the GPU's memory accesses are cache coherent (`dma-coherent` in
-  the device tree, `_CCA` in ACPI);
+- whether the GPU's memory accesses are cache coherent (per platform
+  firmware / bus coherency attributes, §11.4);
 - the bus addresses the GPU may reach (DMA ranges, an IOMMU).
 
-Device tree (draft): `compatible = "ghci,ghci-1"`, optionally preceded by a
-vendor-specific string. A driver identifies the device by GHCI_MAGIC and
-GHCI_VERSION, not by the strings.
+Device tree binding property: `compatible = "ghci,ghci-1"`, optionally preceded by a
+vendor-specific string. A driver identifies the device by `GHCI_MAGIC` and
+`GHCI_VERSION`, not by platform strings.
 
 ### 15.2 PCIe binding
 
@@ -2872,7 +2841,7 @@ Nothing else changes.
 
 | Item | Mapping |
 | --- | --- |
-| Identification | Base class 03h (display controller), subclass 02h (3D controller), or 80h when it has a display controller without VGA compatibility. The vendor and device IDs are the implementer's. A driver identifies GHCI by GHCI_MAGIC and GHCI_VERSION at offset 0 of BAR0 (draft: no programming-interface value is assigned) |
+| Identification | Base class 03h (display controller), subclass 02h (3D controller), or 80h when it has a display controller without VGA compatibility. The vendor and device IDs are the implementer's. A driver identifies GHCI by `GHCI_MAGIC` and `GHCI_VERSION` at offset 0 of BAR0 (no programming-interface value is assigned) |
 | BAR0 | 32-bit, non-prefetchable memory, 128 KiB: the register window of section 3 |
 | BAR2 (optional) | Memory, 32-bit or 64-bit (the BAR's type bits say which; no GHCI capability): the local window, WINDOW_SIZE bytes rounded up to a power of two. Prefetchable is recommended (it may then be mapped write-combining; section 11.1) but not required |
 | Interrupts | MSI or MSI-X with one vector, or INTx as a fallback. The device sends a message when CTRL.IRQ_GLOBAL == 1 and OR(IRQ_STATUS & IRQ_ENABLE) goes from 0 to 1, and again after a write to IRQ_STATUS or IRQ_ENABLE that leaves it 1. INTx carries the level itself. Display completion and event-ring notifications consolidate into `IRQ_STATUS[3]` (`GHCI_IRQ_DISPLAY`): the one vector covers them |
@@ -2887,9 +2856,9 @@ Nothing else changes.
 - GHCI is strictly **Version 1.0** (`GHCI_VERSION` major = 1, minor = 0).
   There are no other versions (no 1.1 or 2.0).
 - All architectural extensions, optional units (MMU, Blitter, Shader Units,
-  Display Controller, Session Protection), and diagnostic features are exposed
-  exclusively through **Hardware Capability flags** (`DEVICE_CAPS`, `EXT_CAP_FEATURE`,
-  and Extended Capabilities `EXTCAP`).
+  Display Subsystem, Session Protection), and diagnostic features are exposed
+  exclusively through **Hardware Capability flags** (`BOOT_CAPS`, `DEVICE_CAPS`,
+  `EXT_CAP_FEATURE`, `EXT_CAP_FMT0`, and `CMD_QUERY_CAPS` Words 18–31).
 - Drivers identify hardware features dynamically through capabilities rather
   than assuming monolithic version increments.
 

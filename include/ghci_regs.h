@@ -6,7 +6,7 @@
  */
 
 /*
- * ghci_regs.h: the GHCI 1.0 host control registers (docs/ghci.md, draft).
+ * ghci_regs.h: the GHCI 1.0 host control registers (ghci.md).
  * An OS driver copies this file; it has no dependency but the C integer
  * constants.  include/ghci_regs.vh holds the same values for the RTL.
  */
@@ -178,11 +178,11 @@ extern "C" {
  * ============================================================================
  */
 
-/* DEVICE_CAPS bits (0x008, K05) */
+/* DEVICE_CAPS bits (CMD_QUERY_CAPS Word 2) */
 #define GHCI_CAP_UMA             (1u << 0)  /* 1 = Unified Memory (Shared DRAM), 0 = Discrete */
 #define GHCI_CAP_IOMMU           (1u << 1)  /* 1 = Platform / System IOMMU active */
 #define GHCI_CAP_HW_WALKER       (1u << 2)  /* 1 = Autonomous HW Page Table Walker present */
-#define GHCI_CAP_INDIRECT_DRAW   (1u << 3)  /* 1 = MultiDrawIndirect supported */
+#define GHCI_CAP_INDIRECT_DRAW   (1u << 3)  /* 1 = Multi-draw indirect supported */
 #define GHCI_CAP_SECONDARY_RING  (1u << 4)  /* 1 = CMD_EXECUTE_COMMANDS supported */
 #define GHCI_CAP_DUAL_SOURCE     (1u << 5)  /* 1 = Dual-source color blending supported */
 #define GHCI_CAP_FP16            (1u << 6)  /* 1 = Packed FP16 arithmetic supported */
@@ -191,12 +191,12 @@ extern "C" {
 #define GHCI_CAP_NUM_SU(caps)    (((caps) >> 16) & 0xFFu) /* Number of Shader Units (1..4) */
 #define GHCI_CAP_PROT            (1u << 24) /* 1 = Session protection hardware present */
 #define GHCI_CAP_TEX_FFILT       (1u << 25) /* 1 = Hardware floating-point texture filter present */
-#define GHCI_CAP_ROP_PACK        (1u << 26) /* 1 = ROP Path 2 integer/float RT packer present */
-#define GHCI_CAP_TASK_SHADER     (1u << 27) /* 1 = VK_EXT Task Shader supported (K05) */
-#define GHCI_CAP_MESH_SHADER     (1u << 28) /* 1 = VK_EXT Mesh Shader supported (K05) */
-#define GHCI_CAP_BLT             (1u << 29) /* 1 = Blitter 2D engine present (K05) */
-#define GHCI_CAP_DISP            (1u << 30) /* 1 = Display controller present (K05) */
-#define GHCI_CAP_MSAA            (1u << 31) /* 1 = MSAA 4x multisampling supported (K05) */
+#define GHCI_CAP_ROP_PACK        (1u << 26) /* 1 = ROP integer/float RT packer present */
+#define GHCI_CAP_TASK_SHADER     (1u << 27) /* 1 = Task Shader stage supported */
+#define GHCI_CAP_MESH_SHADER     (1u << 28) /* 1 = Mesh Shader stage supported */
+#define GHCI_CAP_BLT             (1u << 29) /* 1 = Blitter 2D engine present */
+#define GHCI_CAP_DISP            (1u << 30) /* 1 = Display subsystem present */
+#define GHCI_CAP_MSAA            (1u << 31) /* 1 = MSAA multisampling supported */
 
 /* CTRL bits (0x014) */
 #define GHCI_CTRL_RESET          (1u << 0)  /* Soft reset GPU (self-clearing) */
@@ -250,7 +250,7 @@ extern "C" {
 #define GHCI_FAULT_KIND_PAGE_FAULT      9u /* Unmapped virtual page address (FAULT_INFO[20]: 0=Read, 1=Write) */
 #define GHCI_FAULT_KIND_PERM_FAULT      10u /* VM permission violation, LDS OOB, or unaligned access (FAULT_INFO[20]: 0=Read, 1=Write) */
 
-/* Source Units [7:4] (K04) */
+/* Source Units [7:4] */
 #define GHCI_UNIT_CP             0u
 #define GHCI_UNIT_VF             1u
 #define GHCI_UNIT_SU             2u
@@ -269,7 +269,7 @@ extern "C" {
 #define GHCI_FAULT_STAGE_TES     6u
 #define GHCI_FAULT_STAGE_GS      7u
 
-/* Extended Capability Registers (0x080+) & Feature Field Decoding (K07) */
+/* Feature Field Decoding (CMD_QUERY_CAPS Word 3) */
 #define GHCI_FEATURE_VA_BITS(f)   ((f) & 0x0Fu)        /* [3:0] Virtual Address bits (32..40) */
 #define GHCI_FEATURE_PA_BITS(f)   (((f) >> 4) & 0x0Fu) /* [7:4] Physical Address bits (40..48) */
 
@@ -311,7 +311,7 @@ extern "C" {
 #define GHCI_CPFW_STATUS_LOADING (1u << 4)
 #define GHCI_CPFW_STATUS_STATE(s) (((s) >> 8) & 0xFFu)
 
-/* DEVICE_CAPS (0x008) bits */
+/* DEVICE_CAPS (CMD_QUERY_CAPS Word 2) bits */
 #define GHCI_DEV_CAP_UMA (1u << 0)
 #define GHCI_DEV_CAP_IOMMU (1u << 1)
 #define GHCI_DEV_CAP_HW_WALKER (1u << 2)
@@ -352,19 +352,19 @@ extern "C" {
 /* Note: Bits [0] and [1] mirror DEVICE_CAPS[27] and DEVICE_CAPS[28] for unified stage query */
 #define GHCI_STAGE_CAP_TASK_SHADER       (1u << 0)  /* 1 = Task Shader supported (mirrors DEVICE_CAPS[27]) */
 #define GHCI_STAGE_CAP_MESH_SHADER       (1u << 1)  /* 1 = Mesh Shader supported (mirrors DEVICE_CAPS[28]) */
-#define GHCI_STAGE_CAP_GEOMETRY_SHADER   (1u << 2)  /* 1 = Geometry Shader supported (VkPhysicalDeviceFeatures::geometryShader) */
-#define GHCI_STAGE_CAP_TESSELLATION      (1u << 3)  /* 1 = Tessellation supported (VkPhysicalDeviceFeatures::tessellationShader) */
+#define GHCI_STAGE_CAP_GEOMETRY_SHADER   (1u << 2)  /* 1 = Geometry Shader supported */
+#define GHCI_STAGE_CAP_TESSELLATION      (1u << 3)  /* 1 = Tessellation supported */
 #define GHCI_STAGE_CAP_STREAM_OUT        (1u << 4)  /* 1 = Transform Feedback Stream Out supported */
 
 #define GHCI_CAP_GEOMETRY_SHADER         GHCI_STAGE_CAP_GEOMETRY_SHADER
 #define GHCI_CAP_TESSELLATION            GHCI_STAGE_CAP_TESSELLATION
 
 /* STAGE_LIMITS fields (Capability Block Word 20: GHCI_CAP_WORD_STAGE_LIMITS) */
-/* Hardware reports RTL configuration-dependent maximum limits. All stages guaranteed to meet or exceed Vulkan minimums. */
-#define GHCI_LIMIT_MAX_GEOM_OUTPUT_VTX(w)  ((w) & 0x1FFu)         /* [8:0]: maxGeometryOutputVertices (e.g. 256) */
-#define GHCI_LIMIT_MAX_GEOM_INVOCATIONS(w) (((w) >> 9) & 0x3Fu)   /* [14:9]: maxGeometryShaderInvocations (e.g. 32) */
-#define GHCI_LIMIT_MAX_TESS_PATCH_SIZE(w)  (((w) >> 15) & 0x3Fu)  /* [20:15]: maxTessellationPatchSize (e.g. 32) */
-#define GHCI_LIMIT_MAX_TESS_GEN_LEVEL(w)   (((w) >> 21) & 0x7Fu)  /* [27:21]: maxTessellationGenerationLevel (e.g. 64) */
+/* Hardware reports implementation-defined maximum pipeline stage limits. */
+#define GHCI_LIMIT_MAX_GEOM_OUTPUT_VTX(w)  ((w) & 0x1FFu)         /* [8:0]: Max geometry output vertices (e.g. 256) */
+#define GHCI_LIMIT_MAX_GEOM_INVOCATIONS(w) (((w) >> 9) & 0x3Fu)   /* [14:9]: Max geometry shader invocations (e.g. 32) */
+#define GHCI_LIMIT_MAX_TESS_PATCH_SIZE(w)  (((w) >> 15) & 0x3Fu)  /* [20:15]: Max tessellation patch control points (e.g. 32) */
+#define GHCI_LIMIT_MAX_TESS_GEN_LEVEL(w)   (((w) >> 21) & 0x7Fu)  /* [27:21]: Max tessellation generation level (e.g. 64) */
 
 /* BOOT_CAPS bits (0x008, RO) */
 #define GHCI_BOOT_CAP_CP                (1u << 0)

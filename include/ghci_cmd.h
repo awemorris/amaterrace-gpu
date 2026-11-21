@@ -7,10 +7,10 @@
 
 /*
  * ghci_cmd.h: GHCI 1.0 Structured Command Packets, Immutable Pipeline State
- * Objects (PSO), and In-Memory Resource Descriptors (docs/ghci.md).
+ * Objects (PSO), and In-Memory Resource Descriptors (ghci.md).
  *
  * All structures are defined with explicit sizing and fixed alignments
- * for zero-copy sharing between host drivers (UMD/KMD) and GPU hardware.
+ * for zero-copy sharing between host drivers and GPU hardware.
  */
 
 #ifndef GHCI_CMD_H
@@ -361,12 +361,12 @@ extern "C" {
 #define GHCI_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA     18u
 
 /*
- * Vertex Attribute High-Density Packing (K11):
+ * Vertex Attribute High-Density Packing:
  * 128-byte PSO allocates 64 bytes (0x40 - 0x7F) for 16 vertex attributes (4 bytes each):
- *   [7:0]   format:       VkFormat / Amaterrace internal format ID (0..255)
+ *   [7:0]   format:        GhciFormat ID (0x00..0xFF)
  *   [11:8]  binding_index: Vertex buffer binding slot (0..15)
- *   [12]    input_rate:   0 = PER_VERTEX, 1 = PER_INSTANCE
- *   [31:13] offset:       Byte offset within vertex buffer (0..524287 bytes, up to 512 KiB)
+ *   [12]    input_rate:    0 = PER_VERTEX, 1 = PER_INSTANCE
+ *   [31:13] offset:        Byte offset within vertex buffer (0..524287 bytes, up to 512 KiB)
  */
 #define GHCI_VERTEX_INPUT_RATE_VERTEX   0u
 #define GHCI_VERTEX_INPUT_RATE_INSTANCE 1u
@@ -379,36 +379,34 @@ extern "C" {
 
 /*
  * ============================================================================
- * Shader Stage Interface & Register Conventions (N37)
+ * Shader Stage Interface & Register Conventions
  * ============================================================================
  */
 
 /* Vertex Shader General Register Allocation ABI (§12.10.3 Consecutive Register Allocation) */
 #define GHCI_VS_REG_ATTR_COMP(base, comp)   (((uint32_t)(base)) + ((uint32_t)(comp) & 3u))
 #define GHCI_VS_REG_ATTR(base, comp)        GHCI_VS_REG_ATTR_COMP(base, comp)
-/* Legacy fixed 4-component slot mapping (deprecated, provided for backward compatibility) */
-#define GHCI_VS_REG_ATTR_LEGACY(loc, comp)  (((uint32_t)(loc) * 4u) + ((uint32_t)(comp) & 3u))
-#define GHCI_VS_REG_VERTEX_INDEX        60u     /* gl_VertexIndex (uint32) */
-#define GHCI_VS_REG_INSTANCE_INDEX      61u     /* gl_InstanceIndex (uint32) */
+#define GHCI_VS_REG_VERTEX_INDEX        60u     /* Vertex index (uint32) */
+#define GHCI_VS_REG_INSTANCE_INDEX      61u     /* Instance index (uint32) */
 #define GHCI_VS_REG_SCRATCH             62u     /* Compiler scratchpad */
 
 /* Vertex & Geometry Shader Export Targets (exp rs2, target) */
 #define GHCI_EXP_POS(c)                 (0x000u + ((uint32_t)(c) & 3u))
 #define GHCI_EXP_POINT_SIZE             0x004u
-#define GHCI_EXP_LAYER                  0x005u  /* gl_Layer (GL 3.2, layered render targets) */
-#define GHCI_EXP_VIEWPORT_INDEX         0x006u  /* gl_ViewportIndex (GL 4.1, multi-viewport) */
-#define GHCI_EXP_PRIMITIVE_ID           0x007u  /* gl_PrimitiveID (Geometry Shader output) */
+#define GHCI_EXP_LAYER                  0x005u  /* Output layer index (layered render targets) */
+#define GHCI_EXP_VIEWPORT_INDEX         0x006u  /* Output viewport index */
+#define GHCI_EXP_PRIMITIVE_ID           0x007u  /* Output primitive ID (Geometry Shader) */
 #define GHCI_EXP_VARYING(w)             (0x010u + ((uint32_t)(w) & 0x3Fu))
-#define GHCI_EXP_GEOM_EMIT              0x200u  /* EmitVertex / primitive stream export */
-#define GHCI_EXP_GEOM_CUT               0x201u  /* EndPrimitive / strip cut */
+#define GHCI_EXP_GEOM_EMIT              0x200u  /* Emit primitive vertex / stream export */
+#define GHCI_EXP_GEOM_CUT               0x201u  /* Terminate current primitive strip */
 
 /* System Built-in Operands for Geometry and Tessellation Stages (§12.3, §12.10) */
-/* Note: gl_PrimitiveID / gl_PrimitiveIDIn reuse GSI1 standard operand 113 (GSI1_PRIM). */
-/* gl_TessCoord.z (tess_w) is derived by compiler as (1.0 - u - v), saving operand slots. */
-#define GHCI_SYS_OPERAND_INVID          122u    /* gl_InvocationID */
-#define GHCI_SYS_OPERAND_PATCH_VTX_IN   123u    /* gl_PatchVerticesIn */
-#define GHCI_SYS_OPERAND_TESS_COORD_U   124u    /* gl_TessCoord.x */
-#define GHCI_SYS_OPERAND_TESS_COORD_V   125u    /* gl_TessCoord.y */
+/* Note: Primitive ID reuses GSI1 standard operand 113 (prim). */
+/* Domain coordinate z (tess_w) is derived by compiler as (1.0 - u - v), saving operand slots. */
+#define GHCI_SYS_OPERAND_INVID          122u    /* Invocation ID */
+#define GHCI_SYS_OPERAND_PATCH_VTX_IN   123u    /* Input patch vertex count */
+#define GHCI_SYS_OPERAND_TESS_COORD_U   124u    /* Tessellation domain coordinate u */
+#define GHCI_SYS_OPERAND_TESS_COORD_V   125u    /* Tessellation domain coordinate v */
 /* Operands 126..127 are reserved (read 0) for future system built-ins */
 
 /* Fragment Shader Input Registers */
@@ -437,7 +435,7 @@ extern "C" {
 #define GHCI_VERTEX_ATTR_OFFSET(a)     (((a) >> 13) & 0x7FFFFu)
 
 typedef struct GhciVertexAttribute {
-	uint32_t packed_attr; /* [7:0] format, [11:8] binding, [12] input_rate, [31:13] offset (K11) */
+	uint32_t packed_attr; /* [7:0] format, [11:8] binding, [12] input_rate, [31:13] offset */
 } GhciVertexAttribute;
 
 typedef struct GhciPipelineState {
@@ -448,16 +446,16 @@ typedef struct GhciPipelineState {
 	uint64_t ms_code_va;            /* dw6-7: Mesh/task Shader instruction base */
 
 	/* 0x20: Pipeline Creation Flags & Rasterizer State */
-	uint32_t flags;                 /* dw8: [2:0] topology, [3] prim restart, [4] depth clamp, [5] logic op enable, [9:6] logic op opcode, [10] alpha to coverage, [11] sample shading, [15:12] sample mask, [16] has_ext_stages (N14, N32) */
-	uint32_t raster_state;          /* dw9: [1:0] cull mode, [2] front face CW, [4:3] polygon mode, [5] depth bias enable, [13:6] line width (N14) */
-	uint32_t depth_stencil_state;   /* dw10: [0] depth test, [1] depth write, [4:2] depth op, [5] stencil test, [8:6] front fail op, [11:9] front pass op, [14:12] front depth fail op, [17:15] front compare op, [20:18] back fail op, [23:21] back pass op, [26:24] back depth fail op, [29:27] back compare op, [30] separate back stencil enable (N14) */
+	uint32_t flags;                 /* dw8: [2:0] topology, [3] prim restart, [4] depth clamp, [5] logic op enable, [9:6] logic op opcode, [10] alpha to coverage, [11] sample shading, [15:12] sample mask, [16] has_ext_stages */
+	uint32_t raster_state;          /* dw9: [1:0] cull mode, [2] front face CW, [4:3] polygon mode, [5] depth bias enable, [13:6] line width */
+	uint32_t depth_stencil_state;   /* dw10: [0] depth test, [1] depth write, [4:2] depth op, [5] stencil test, [8:6] front fail op, [11:9] front pass op, [14:12] front depth fail op, [17:15] front compare op, [20:18] back fail op, [23:21] back pass op, [26:24] back depth fail op, [29:27] back compare op, [30] separate back stencil enable */
 	uint32_t blend_state;           /* dw11: Color blend factors & ops */
-	uint32_t vertex_strides;        /* dw12: Default packed strides for bindings 0..3 (used when CMD_BIND_VERTEX_BUFFERS stride is GHCI_STRIDE_FROM_PSO) (N14) */
-	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs (1..63), [15:8] used_regs_fs (1..63), [23:16] used_regs_cs/ms (1..63), [31:24] varying_count (0..16) (N01) */
-	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z (N01) */
-	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes (0..16384), [16] fs_centroid, [17] fs_depth_export, [18] fs_discard (N01, N24) */
+	uint32_t vertex_strides;        /* dw12: Default packed strides for bindings 0..3 (used when CMD_BIND_VERTEX_BUFFERS stride is GHCI_STRIDE_FROM_PSO) */
+	uint32_t shader_resource_limits;/* dw13: [7:0] used_regs_vs (1..63), [15:8] used_regs_fs (1..63), [23:16] used_regs_cs/ms (1..63), [31:24] varying_count (0..16) */
+	uint32_t compute_local_size;    /* dw14: [9:0] local_size_x, [19:10] local_size_y, [29:20] local_size_z */
+	uint32_t compute_lds_and_flags; /* dw15: [15:0] lds_bytes (0..16384), [16] fs_centroid, [17] fs_depth_export, [18] fs_discard */
 
-	/* 0x40: Vertex Attributes Descriptor (64 bytes: 16 attributes x 4 bytes, K11) */
+	/* 0x40: Vertex Attributes Descriptor (64 bytes: 16 attributes x 4 bytes) */
 	uint32_t attributes[16];        /* dw16-31: 16 packed vertex attributes */
 } GhciPipelineState;
 
@@ -482,7 +480,7 @@ typedef struct GhciPipelineStateExt {
 
 	/* 0x98: Tessellation and Geometry Shader Pipeline State */
 	uint32_t tess_state;             /* dw38: [5:0] input_patch_control_points (1..32), [11:6] output_patch_control_points (1..32), [13:12] domain (0: Tri, 1: Quad, 2: Iso), [15:14] spacing, [16] winding (0: CCW, 1: CW), [17] point_mode, [24:18] cp_stride_words (0..127 words per CP), [31:25] patch_stride_128b (1..127 x 128B patch LDS size; requires 0x220 + output_points*cp_stride_words*4 <= 16256) */
-	uint32_t gs_state;               /* dw39: [3:0] input_topology (0..9), [6:4] output_topology (0: Points, 1: LineStrip, 2: TriangleStrip), [15:7] max_vertices (1..256), [21:16] invocations (1..32), [23:22] stream_count (0..3 -> 1..4 streams, reserved for GL 4.0), [30:24] output_stride_words (1..127 words per output vertex), [31] reserved */
+	uint32_t gs_state;               /* dw39: [3:0] input_topology (0..9), [6:4] output_topology (0: Points, 1: LineStrip, 2: TriangleStrip), [15:7] max_vertices (1..256), [21:16] invocations (1..32), [23:22] stream_count (0..3 -> 1..4 streams, reserved), [30:24] output_stride_words (1..127 words per output vertex), [31] reserved */
 	uint32_t shader_resource_limits_ext; /* dw40: [7:0] used_regs_tcs (1..63), [15:8] used_regs_tes (1..63), [23:16] used_regs_gs (1..63), [31:24] reserved */
 
 	/* 0xA4: Geometry Shader Spill Memory Buffer (For Amplification Exceeding LDS) */
@@ -529,7 +527,7 @@ typedef struct GhciTextureDescriptor {
 	uint32_t component_swizzle;     /* 0x1C: [2:0] R, [5:3] G, [8:6] B, [11:9] A, [31:12] reserved (0) */
 } GhciTextureDescriptor;
 
-/* Sampler Descriptor (16 Bytes, N23, N61) */
+/* Sampler Descriptor (16 Bytes) */
 typedef struct GhciSamplerDescriptor {
 	uint8_t  min_filter;            /* 0x00: 0=Nearest, 1=Linear */
 	uint8_t  mag_filter;            /* 0x01: 0=Nearest, 1=Linear */
@@ -538,14 +536,14 @@ typedef struct GhciSamplerDescriptor {
 	uint8_t  address_mode_v;        /* 0x04: Address mode V */
 	uint8_t  address_mode_w;        /* 0x05: Address mode W */
 	uint8_t  compare_enable;        /* 0x06: 1=Depth compare active */
-	uint8_t  compare_op;            /* 0x07: VkCompareOp: 0=NEVER, 1=LESS, 2=EQUAL, 3=LEQUAL, 4=GREATER, 5=NOTEQUAL, 6=GEQUAL, 7=ALWAYS (N23) */
+	uint8_t  compare_op;            /* 0x07: 0=NEVER, 1=LESS, 2=EQUAL, 3=LEQUAL, 4=GREATER, 5=NOTEQUAL, 6=GEQUAL, 7=ALWAYS */
 	int16_t  lod_bias_fx8;          /* 0x08: Fixed-point 8.8 LOD bias */
 	uint8_t  min_lod_fx4;           /* 0x0A: Fixed-point 4.4 min LOD */
 	uint8_t  max_lod_fx4;           /* 0x0B: Fixed-point 4.4 max LOD */
-	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) (N23) */
-	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom (N23) */
-	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) (N23) */
-	uint8_t  unnormalized_coords;   /* 0x0F: [0] unnormalized_coordinates (0: norm [0,1], 1: unnorm [0,dim]), [7:1] res (N61) */
+	uint8_t  max_anisotropy;        /* 0x0C: Max anisotropy (1..16) */
+	uint8_t  border_color_type;     /* 0x0D: 0=TransBlack, 1=OpaqueBlack, 2=OpaqueWhite, 3=Custom */
+	uint8_t  border_color_idx;      /* 0x0E: Custom 128-bit border color table index (0..15) */
+	uint8_t  unnormalized_coords;   /* 0x0F: [0] 0=Normalized [0,1], 1=Unnormalized [0,dim]; [7:1] reserved */
 } GhciSamplerDescriptor;
 
 /*
@@ -604,7 +602,7 @@ typedef struct GhciCmdSetScissor {
 	uint32_t height;
 } GhciCmdSetScissor;
 
-/* CMD_SET_DYNAMIC_STATE (0x26): 6 dwords (N14, N23) */
+/* CMD_SET_DYNAMIC_STATE (0x26): 6 dwords */
 #define GHCI_DYNAMIC_STATE_DEPTH_BIAS        0x01u
 #define GHCI_DYNAMIC_STATE_BLEND_CONSTANTS   0x02u
 #define GHCI_DYNAMIC_STATE_STENCIL_PARAMS    0x03u
@@ -754,7 +752,7 @@ typedef struct GhciCmdFence {
 	uint32_t flags;                 /* GHCI_FENCE_FLAG_* */
 } GhciCmdFence;
 
-/* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 4 dwords (J18, N17, N32) */
+/* CMD_BEGIN_QUERY (0x36) / CMD_END_QUERY (0x37): 4 dwords */
 typedef struct GhciCmdQuery {
 	uint32_t header;                /* GHCI_CMD_BEGIN_QUERY / END_QUERY, size = 4 */
 	uint32_t query_pool_va_lo;      /* 64-bit session GPU VA [31:0] */
@@ -955,7 +953,7 @@ typedef struct GhciBufferDescriptor {
  */
 
 /*
- * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 192 Bytes (64-byte aligned, K12, N03, N47)
+ * In-Memory Render Pass Descriptor (GhciRenderPassDesc) - 192 Bytes (64-byte aligned)
  * Pointed to by CMD_BEGIN_RENDER_PASS via render_pass_desc_va.
  * Attachments are strictly linear row layout (64-byte aligned row_pitch_bytes).
  * image_va points directly to the subresource slice base. mip_level and base_array_layer
@@ -998,15 +996,15 @@ typedef struct GhciRenderPassDesc {
 	/* 0xA0 - 0xBF: Framebuffer Dimensions & Sample/Clear Config (32 bytes) */
 	uint16_t width;                 /* 0xA0: Framebuffer width in pixels (1..16384) */
 	uint16_t height;                /* 0xA2: Framebuffer height in pixels (1..16384) */
-	uint16_t layers;                /* 0xA4: Array layer count (must be 1 in GHCI 1.0, N47) */
+	uint16_t layers;                /* 0xA4: Array layer count (must be 1 in GHCI 1.0) */
 	uint8_t  samples;               /* 0xA6: Sample count: 1, 2, or 4 (MSAA) */
 	uint8_t  reserved0;             /* 0xA7: Reserved */
-	uint64_t clear_color_table_va;  /* 0xA8: 64-bit GPU VA to 8 x 16-byte VkClearColorValue table (128 bytes total); 0 = default */
+	uint64_t clear_color_table_va;  /* 0xA8: 64-bit GPU VA to 8 x 16-byte clear color entries (128 bytes total); 0 = default */
 	uint64_t reserved1;             /* 0xB0: Reserved */
 	uint64_t reserved2;             /* 0xB8: Reserved (total struct size = 192 bytes, 64-byte aligned) */
 } GhciRenderPassDesc;
 
-/* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords (K12) */
+/* CMD_BEGIN_RENDER_PASS (0x2B): 10 dwords */
 typedef struct GhciCmdBeginRenderPass {
 	uint32_t header;                /* opcode: GHCI_CMD_BEGIN_RENDER_PASS, dwords: 10 */
 	uint32_t render_pass_desc_va_lo;/* 64-bit GPU virtual address of GhciRenderPassDesc [31:0] */
@@ -1016,7 +1014,7 @@ typedef struct GhciCmdBeginRenderPass {
 	uint32_t color_clear_rgba;      /* Packed RGBA8 or float clear color for attachment 0 */
 	uint32_t depth_clear_value;     /* 32-bit float or 24-bit depth clear */
 	uint32_t stencil_clear_value;   /* [7:0] Stencil clear value */
-	uint32_t flags;                 /* dw8: [7:0] clear_color (attachments 0..7), [8] clear_depth, [9] clear_stencil, [16] inline_secondary (N03, N32) */
+	uint32_t flags;                 /* dw8: [7:0] clear_color (attachments 0..7), [8] clear_depth, [9] clear_stencil, [16] inline_secondary */
 	uint32_t reserved;              /* Reserved padding to 10 dwords */
 } GhciCmdBeginRenderPass;
 
@@ -1033,11 +1031,11 @@ typedef struct GhciCmdLoadConst {
 	/* Followed by uint32_t data[count_dwords] */
 } GhciCmdLoadConst;
 
-/* CMD_WAIT_FENCE (0x34): 5 dwords (64-bit wait value, K09, N11, N12) */
+/* CMD_WAIT_FENCE (0x34): 5 dwords (64-bit wait value) */
 typedef struct GhciCmdWaitFence {
 	uint32_t header;                /* opcode: GHCI_CMD_WAIT_FENCE, dwords: 5 */
-	uint32_t fence_addr_lo;         /* 64-bit host DMA address or local DRAM PA [31:0] (N12) */
-	uint32_t fence_addr_hi;         /* 64-bit host DMA address or local DRAM PA [63:32] (N12) */
+	uint32_t fence_addr_lo;         /* 64-bit host DMA address or local DRAM PA [31:0] */
+	uint32_t fence_addr_hi;         /* 64-bit host DMA address or local DRAM PA [63:32] */
 	uint32_t wait_value_lo;         /* 64-bit value to compare [31:0] */
 	uint32_t wait_value_hi;         /* 64-bit value to compare [63:32] ((int64_t)(mem - val) >= 0) */
 } GhciCmdWaitFence;
@@ -1055,7 +1053,7 @@ typedef struct GhciCmdWriteTimestamp {
 	uint32_t pipeline_stage;        /* 0=TOP, 1=POST_RASTER, 2=BOTTOM */
 } GhciCmdWriteTimestamp;
 
-/* CMD_COPY_BUFFER (0x40): 8 dwords (N13) */
+/* CMD_COPY_BUFFER (0x40): 8 dwords */
 #define GHCI_COPY_BUFFER_FLAG_ASYNC        (1u << 0)
 #define GHCI_COPY_BUFFER_FLAG_FILL_PATTERN (1u << 1)
 #define GHCI_COPY_BUFFER_FLAG_FLUSH_SRC    (1u << 2)
@@ -1072,7 +1070,7 @@ typedef struct GhciCmdCopyBuffer {
 	uint32_t fill_data;             /* 32-bit fill pattern (used when flags[1] == 1) */
 } GhciCmdCopyBuffer;
 
-/* CMD_COPY_IMAGE (0x41): 11 dwords (J18, N13) */
+/* CMD_COPY_IMAGE (0x41): 11 dwords */
 typedef struct GhciCmdCopyImage {
 	uint32_t header;                /* opcode: GHCI_CMD_COPY_IMAGE, dwords: 11 */
 	uint32_t src_va_lo;             /* Source slice GPU VA [31:0] */
@@ -1087,7 +1085,7 @@ typedef struct GhciCmdCopyImage {
 	uint32_t format_and_flags;      /* [7:0] format (GhciFormat), [8] src_tiled, [9] dst_tiled */
 } GhciCmdCopyImage;
 
-/* CMD_BLIT (0x42): 12 dwords (J18, N13) */
+/* CMD_BLIT (0x42): 12 dwords */
 typedef struct GhciCmdBlit {
 	uint32_t header;                /* opcode: GHCI_CMD_BLIT, dwords: 12 */
 	uint32_t src_va_lo;             /* Source slice GPU VA [31:0] */
@@ -1112,7 +1110,7 @@ typedef struct GhciCmdFillBuffer {
 	uint32_t pattern_data;          /* 32-bit fill pattern */
 } GhciCmdFillBuffer;
 
-/* CMD_RESOLVE_IMAGE (0x44): 11 dwords (N13) */
+/* CMD_RESOLVE_IMAGE (0x44): 11 dwords */
 typedef struct GhciCmdResolveImage {
 	uint32_t header;                /* opcode: GHCI_CMD_RESOLVE_IMAGE, dwords: 11 */
 	uint32_t src_va_lo;             /* Source multisample slice GPU VA [31:0] */
@@ -1124,10 +1122,10 @@ typedef struct GhciCmdResolveImage {
 	uint32_t src_offset_xy;         /* [15:0] src_x, [31:16] src_y */
 	uint32_t dst_offset_xy;         /* [15:0] dst_x, [31:16] dst_y */
 	uint32_t extent_xy;             /* [15:0] width, [31:16] height */
-	uint32_t params;                /* [7:0] format, [9:8] resolve_mode, [11:10] samples */
+	uint32_t params;                /* [7:0] format (GhciFormat), [9:8] resolve_mode, [11:10] samples */
 } GhciCmdResolveImage;
 
-/* CMD_COPY_BUFFER_TO_IMAGE (0x45): 10 dwords (N13) */
+/* CMD_COPY_BUFFER_TO_IMAGE (0x45): 10 dwords */
 typedef struct GhciCmdCopyBufferToImage {
 	uint32_t header;                /* opcode: GHCI_CMD_COPY_BUFFER_TO_IMAGE, dwords: 10 */
 	uint32_t src_buffer_va_lo;      /* Source linear buffer GPU VA [31:0] */

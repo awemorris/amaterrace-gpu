@@ -217,7 +217,7 @@ localparam GHCI_DEV_CAP_BLT            = 29;
 localparam GHCI_DEV_CAP_DISP           = 30;
 localparam GHCI_DEV_CAP_MSAA           = 31;
 
-/* EXT_CAP_FMT0 bits (0x080) */
+/* EXT_CAP_FMT0 bits (CMD_QUERY_CAPS Word 4) */
 localparam GHCI_EXT_FMT_BC1            = 0;
 localparam GHCI_EXT_FMT_BC2            = 1;
 localparam GHCI_EXT_FMT_BC3            = 2;
@@ -243,7 +243,7 @@ localparam GHCI_BOOT_CAP_BOOT_DISP      = 5;
 localparam GHCI_BOOT_CAP_VA_BITS_SHIFT  = 8;
 localparam GHCI_BOOT_CAP_PA_BITS_SHIFT  = 12;
 
-/* EXT_CAP_FEATURE bits (0x084) */
+/* EXT_CAP_FEATURE bits (CMD_QUERY_CAPS Word 3) */
 localparam GHCI_EXT_FEAT_VA_BITS_SHIFT  = 0;
 localparam GHCI_EXT_FEAT_PA_BITS_SHIFT  = 4;
 localparam GHCI_EXT_FEAT_DUAL_SOURCE    = 8;
@@ -399,7 +399,7 @@ localparam [8:0] GHCI_S_BLEND4 = 9'h1B8;
 localparam [8:0] GHCI_S_BLEND5 = 9'h1B9;
 localparam [8:0] GHCI_S_BLEND6 = 9'h1BA;
 localparam [8:0] GHCI_S_BLEND7 = 9'h1BB;
-localparam [8:0] GHCI_S_RT_FORMATS1 = 9'h1BC;	/* VkFormats of attachments 4-7 */
+localparam [8:0] GHCI_S_RT_FORMATS1 = 9'h1BC;	/* GhciFormats of attachments 4-7 */
 localparam [8:0] GHCI_S_WRITE_MASK1 = 9'h1BD;	/* Write masks for attachments 4-7 */
 localparam [8:0] GHCI_S_ATTR_DST = 9'h1C0;	/* VF: ATTR_DST[0..15] */
 localparam [8:0] GHCI_S_ATTR_LIMIT = 9'h1D0;	/* VF: ATTR_LIMIT[0..15], draft, CAPS[30] */
@@ -450,30 +450,30 @@ localparam [8:0] GHCI_S_STENCIL_BACK = 9'h079;
 localparam [8:0] GHCI_S_BLEND = 9'h07A;
 localparam [8:0] GHCI_S_BLEND_CONST = 9'h07B;
 localparam [8:0] GHCI_S_WRITE_MASK = 9'h07C;
-localparam [8:0] GHCI_S_RT_FORMATS = 9'h07D;	/* draft, CAPS[30]: the VkFormats of attachments 0-3 */
+localparam [8:0] GHCI_S_RT_FORMATS = 9'h07D;	/* CAPS[30]: GhciFormats of attachments 0-3 */
 localparam [8:0] GHCI_S_RT1_BASE = 9'h07E;	/* RTk_BASE at 0x07E + 2(k - 1), RTk_STRIDE at + 1 */
 localparam [8:0] GHCI_S_BLEND1 = 9'h084;	/* BLEND1-BLEND3 */
 localparam [8:0] GHCI_S_BLEND_CONST_R = 9'h087;	/* BLEND_CONST_R, _G, _B, _A (fp32) */
 localparam [8:0] GHCI_S_DEPTH_BOUNDS_MIN = 9'h08B;
 localparam [8:0] GHCI_S_DEPTH_BOUNDS_MAX = 9'h08C;
 localparam [8:0] GHCI_S_ROP_CTRL = 9'h08D;	/* [0] occlusion count, [1] fp32 blend constants, [2] logic_op_en, [6:3] logic_op */
-localparam [8:0] GHCI_S_LOGIC_OP = 9'h08E;	/* [0] logic_op_en, [4:1] logic_op (VkLogicOp 0..15) */
+localparam [8:0] GHCI_S_LOGIC_OP = 9'h08E;	/* [0] logic_op_en, [4:1] logic_op (0..15) */
 
-/* TU (0x090-0x18F, docs/ghci.md section 8.4): slot s's words at
+/* TU (0x090-0x18F, ghci.md section 8.4): slot s's words at
  * GHCI_S_TU + 16 s + GHCI_TEX_*: the image words (BASE, SIZE, IMAGE,
  * LAYER_STRIDE), the sampler words (SAMPLER, LOD), +6 TEX_FORMAT
- * (CAPS[30], docs/ghci.md section 8.5), +7 TEX_ROW, +8..+15 reserved. */
+ * (CAPS[30], ghci.md section 8.5), +7 TEX_ROW, +8..+15 reserved. */
 localparam [3:0] GHCI_TEX_BASE = 4'd0;	/* level 0 of layer 0, a multiple of 64 */
 localparam [3:0] GHCI_TEX_SIZE = 4'd1;	/* [15:0] width, [31:16] height */
 localparam [3:0] GHCI_TEX_IMAGE = 4'd2;
 localparam [3:0] GHCI_TEX_LAYER_STRIDE = 4'd3;	/* bytes between layers, a multiple of 64 */
 localparam [3:0] GHCI_TEX_SAMPLER = 4'd4;
 localparam [3:0] GHCI_TEX_LOD = 4'd5;
-localparam [3:0] GHCI_TEX_FORMAT = 4'd6;	/* CAPS[30]: [7:0] VkFormat (0: TEX_IMAGE[7:4]) */
+localparam [3:0] GHCI_TEX_FORMAT = 4'd6;	/* CAPS[30]: [7:0] GhciFormat (0: TEX_IMAGE[7:4]) */
 localparam [3:0] GHCI_TEX_ROW = 4'd7;	/* [1:0]: rows of w_l rounded up to 2^n texels (0: packed) */
 localparam GHCI_TROW_ALIGN = 0;	/* TEX_ROW [1:0] */
 localparam GHCI_TFMT_STENCIL = 8;	/* TEX_FORMAT [8]: the stencil aspect of D24_UNORM_S8_UINT */
-localparam GHCI_TFMT_SWIZZLE = 9;	/* [20:9]: VkComponentSwizzle of R, G, B, A, 3 bits each */
+localparam GHCI_TFMT_SWIZZLE = 9;	/* [20:9]: Component swizzle of R, G, B, A, 3 bits each */
 localparam GHCI_IMG_LEVELS = 0;	/* TEX_IMAGE [3:0]: the level count (0 reads as 1, > 13 as 13) */
 localparam GHCI_IMG_FMT = 4;	/* [7:4]: 0 RGBA8, 1 BGRA8, 2 D24, 3 D32_SFLOAT */
 localparam GHCI_IMG_TILED = 8;	/* 4x4 tiles (CAPS[11]) */
@@ -487,8 +487,8 @@ localparam GHCI_SAMP_MAG_LINEAR = 6;
 localparam GHCI_SAMP_MIN_LINEAR = 7;
 localparam GHCI_SAMP_MIP_LINEAR = 8;
 localparam GHCI_SAMP_COMPARE = 9;
-localparam GHCI_SAMP_COMPARE_OP = 10;	/* [12:10] VkCompareOp */
-localparam GHCI_SAMP_BORDER = 13;	/* [15:13] VkBorderColor */
+localparam GHCI_SAMP_COMPARE_OP = 10;	/* [12:10] CompareOp */
+localparam GHCI_SAMP_BORDER = 13;	/* [15:13] BorderColor */
 localparam GHCI_SAMP_UNNORM = 16;	/* unnormalizedCoordinates */
 localparam GHCI_SAMP_LOD_BIAS = 19;	/* [31:19] mipLodBias, signed 5.8 fixed */
 localparam GHCI_TEX_MIN_LOD = 0;	/* TEX_LOD [11:0]: minLod, 4.8 fixed */
