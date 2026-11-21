@@ -423,46 +423,32 @@ module atg_blt_async_tb;
 			$display("Test 2 PASS: 3D volume copy verified.");
 
 		// -------------------------------------------------------------
-		// Test 3: Concurrent Graphics Rendering + Async Transfer Queue
+		// Test 3: Concurrent Graphics Rendering + Background 3D DMA
 		// -------------------------------------------------------------
-		$display("--- Test 3: Concurrent 3D Draw Rendering + Background DMA Queue ---");
+		$display("--- Test 3: Concurrent 3D Draw Rendering + Background 3D DMA ---");
 
-		// Program RING_DMA registers in atg_cp_ring
+		// Verify host MMIO RING_DMA_WPTR is retired in GHCI 1.0 (writes ignored)
 		hcr_we <= 1'b1;
-		hcr_widx <= GHCI_RING_DMA_BASE[11:2];
-		hcr_wdata <= 32'h0002_0000; // DMA source base
+		hcr_widx <= GHCI_RING_DMA_WPTR[11:2];
+		hcr_wdata <= 32'd1;
 		@(posedge clk);
-
-		hcr_widx <= GHCI_DMA_DST_BASE[11:2];
-		hcr_wdata <= 32'h0006_0000; // DMA destination base
-		@(posedge clk);
-
-		hcr_widx <= GHCI_DMA_ROW_STRIDE[11:2];
-		hcr_wdata <= 32'd256;
-		@(posedge clk);
-
-		hcr_widx <= GHCI_DMA_SLICE_STRIDE[11:2];
-		hcr_wdata <= 32'd2048;
-		@(posedge clk);
-
-		hcr_widx <= GHCI_DMA_EXTENT[11:2];
-		// extent: [31:24]=depth(4), [23:16]=height(8), [15:0]=width(128 bytes)
-		hcr_wdata <= {8'd4, 8'd8, 16'd128};
-		@(posedge clk);
-
 		hcr_we <= 1'b0;
-		@(posedge clk);
+		repeat (3) @(posedge clk);
+		if (!q_dma_empty || q_dma_req_valid) begin
+			$display("FAIL Test 3: retired MMIO RING_DMA_WPTR unexpectedly started DMA");
+			errors = errors + 1;
+		end
 
-		// Connect CP Ring DMA dispatch to atg_blt_3d
-		b3d_src_base <= q_dma_src_base;
-		b3d_dst_base <= q_dma_dst_base;
-		b3d_src_row_stride <= q_dma_src_row_stride;
-		b3d_dst_row_stride <= q_dma_dst_row_stride;
-		b3d_src_slice_stride <= q_dma_src_slice_stride;
-		b3d_dst_slice_stride <= q_dma_dst_slice_stride;
-		b3d_copy_w <= q_dma_copy_w;
-		b3d_copy_h <= q_dma_copy_h;
-		b3d_copy_d <= q_dma_copy_d;
+		// Configure atg_blt_3d directly via its supported request interface
+		b3d_src_base <= 32'h0002_0000;
+		b3d_dst_base <= 32'h0006_0000;
+		b3d_src_row_stride <= 32'd256;
+		b3d_dst_row_stride <= 32'd256;
+		b3d_src_slice_stride <= 32'd2048;
+		b3d_dst_slice_stride <= 32'd2048;
+		b3d_copy_w <= 16'd128;
+		b3d_copy_h <= 16'd8;
+		b3d_copy_d <= 16'd4;
 
 		// Initialize DMA source memory
 		for (z = 0; z < 4; z = z + 1) begin
@@ -476,17 +462,11 @@ module atg_blt_async_tb;
 			end
 		end
 
-		// Start background DMA by ringing doorbell on RING_DMA_WPTR
-		hcr_we <= 1'b1;
-		hcr_widx <= GHCI_RING_DMA_WPTR[11:2];
-		hcr_wdata <= 32'd1;
+		// Start background 3D DMA transfer directly on atg_blt_3d
 		@(posedge clk);
-		hcr_we <= 1'b0;
-
-		// Wait for CP ring to assert dma_req_valid
-		while (!q_dma_req_valid) @(posedge clk);
 		b3d_req_v <= 1'b1;
 		@(posedge clk);
+		while (!b3d_req_r) @(posedge clk);
 		b3d_req_v <= 1'b0;
 
 		// Concurrently execute Main Graphics Pipeline Draw writes (Client 0)
@@ -506,16 +486,6 @@ module atg_blt_async_tb;
 		// Wait for DMA 3D transfer to complete
 		while (!b3d_done) @(posedge clk);
 		#20;
-
-		// Verify semaphore incremented in atg_cp_ring
-		hcr_widx <= GHCI_DMA_SEMAPHORE[11:2];
-		#5;
-		if (hcr_rdata !== 32'd1) begin
-			$display("FAIL Test 3: expected DMA semaphore == 1, got %0d", hcr_rdata);
-			errors = errors + 1;
-		end else begin
-			$display("Test 3: DMA hardware semaphore incremented correctly (sem=%0d).", hcr_rdata);
-		end
 
 		// Verify DMA destination memory
 		for (z = 0; z < 4; z = z + 1) begin

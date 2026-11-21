@@ -540,7 +540,7 @@ int scene_main()
 			uint32_t opt_got = packed & 0x1FFu;
 			uint32_t lin_got = (packed >> 9) & 0x1FFu;
 			uint32_t buf_got = (packed >> 18) & 0xFu;
-			if (opt_got != (w[1] & 0x1FFu) || lin_got != (w[2] & 0x1FFu) || buf_got != (w[3] & 0xFu)) {
+			if (opt_got != (w[1] & 0x1FFu) || lin_got != (w[2] & 0x1FFu) || buf_got != ((w[3] >> 3) & 0xFu)) {
 				std::printf("FAIL verilator core: FMT %u packed=%08x, model=%08x/%08x/%08x\n",
 				    w[0], packed, w[1], w[2], w[3]);
 				errors++;
@@ -551,11 +551,20 @@ int scene_main()
 	host_write(GHCI_LEGACY_APERTURE_BASE, 0x20000);
 	host_write(GHCI_LEGACY_APERTURE_LIMIT, SCENE_APER_LIMIT);
 	host_write(GHCI_RING_BASE, ring);
-	host_write(GHCI_RING_SIZE, SCENE_RING_LOG2);	/* 11: 512 words */
+	host_write(GHCI_RING_SIZE, 1u << SCENE_RING_LOG2);
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 	host_write(GHCI_RING_WPTR, wp);
-	for (int i = 0; i < SCENE_WAIT && host_read(GHCI_LEGACY_FENCE_LAST) != 1; i++)
-		;
+	for (int i = 0; i < SCENE_WAIT; i++) {
+		if (host_read(GHCI_LEGACY_FENCE_LAST) == 1)
+			break;
+		uint32_t st = host_read(GHCI_STATUS);
+		if (st & GHCI_STATUS_FAULTED) {
+			std::printf("FAIL verilator " SCENE_NAME ": FAULTED, FAULT_INFO %08x FAULT_ADDR %08x RPTR %08x\n",
+			    host_read(GHCI_FAULT_INFO), host_read(GHCI_FAULT_ADDR), host_read(GHCI_RING_RPTR));
+			errors++;
+			break;
+		}
+	}
 	expect("FENCE_LAST", host_read(GHCI_LEGACY_FENCE_LAST), 1);
 	unsigned bad = 0;
 	for (auto &e : exp)
@@ -603,7 +612,7 @@ int compute_main()
 	host_write(GHCI_LEGACY_APERTURE_BASE, 0x1000);
 	host_write(GHCI_LEGACY_APERTURE_LIMIT, 0x60000);
 	host_write(GHCI_RING_BASE, ring);
-	host_write(GHCI_RING_SIZE, 10);
+	host_write(GHCI_RING_SIZE, 0x1000u);
 	host_write(GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
 	while (std::fscanf(f, "%3s", k) == 1) {
 		if (k[0] == 'S' && std::fscanf(f, "%31s", name) == 1) {

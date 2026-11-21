@@ -135,6 +135,7 @@ module atg_cp_tb;
 		.ROP_FAST_CLEAR(`EXP_CFG_ROP_FAST_CLEAR),
 		.ROP_ENABLE_LOGICOP(`EXP_CFG_ROP_LOGICOP),
 		.ROP_DUAL_SOURCE(`EXP_CFG_ROP_DUAL_SRC),
+		.MRT_COUNT(`CFG_ROP_MRT_COUNT),
 		.BLT_SCALE(`EXP_CFG_BLT_SCALE),
 		.BLT_BLEND(`EXP_CFG_BLT_BLEND),
 		.BLT_TILE(`EXP_CFG_BLT_TILE)
@@ -531,30 +532,12 @@ module atg_cp_tb;
 		end else begin
 			$display("PASS: MMIO EXT_CAP_FMT0 reads 0");
 		end
-`ifdef CFG_ENABLE_BC
-		if (`CFG_ENABLE_BC != 0) begin
-			if (def_cap_fmt0[0] !== 1'b1 || def_cap_fmt0[6] !== 1'b1) begin
-				$display("FAIL: BC1/BC7 support not reflected");
-				errors = errors + 1;
-			end else begin
-				$display("PASS: BC1-BC7 format bitmap correctly reflected");
-			end
-		end else begin
-			if (def_cap_fmt0[0] !== 1'b0 || def_cap_fmt0[6] !== 1'b0) begin
-				$display("FAIL: BC1/BC7 should be 0 when CFG_ENABLE_BC=0");
-				errors = errors + 1;
-			end else begin
-				$display("PASS: BC1-BC7 correctly disabled");
-			end
-		end
-`else
-		if (def_cap_fmt0[0] !== 1'b0 || def_cap_fmt0[6] !== 1'b0) begin
-			$display("FAIL: BC1/BC7 should be 0 when CFG_ENABLE_BC=0");
+		if (def_cap_fmt0[6:0] !== 7'd0) begin
+			$display("FAIL: EXT_CAP_FMT0[6:0] should be 0 in GHCI 1.0 (got %h)", def_cap_fmt0[6:0]);
 			errors = errors + 1;
 		end else begin
-			$display("PASS: BC1-BC7 correctly disabled");
+			$display("PASS: EXT_CAP_FMT0[6:0] correctly 0");
 		end
-`endif
 
 		/* Test 3: Verify Default EXT_CAP_FEATURE (0x084) reads 0, feature bits on u_caps */
 		mmio_read(GHCI_REG_EXT_CAP_FEATURE, rdata);

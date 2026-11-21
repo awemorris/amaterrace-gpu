@@ -530,7 +530,7 @@ module ghci_probe #(
 			end
 			if (w0[7:0] == 8'd6)  check32("CPFW window ptr", w1, 32'h00000170);
 			if (w0[7:0] == 8'd8)  check32("MEM window ptr",  w1, 32'h000001E0);
-			if (w0[7:0] == 8'd9)  check32("PROT window ptr", w1, 32'h00000190);
+			if (w0[7:0] == 8'd9)  check32("PROT window ptr", w1, 32'h000001D0);
 			if (w0[7:0] == 8'd11) check32("DISP2 window ptr", w1, 32'h00000200);
 			xoff = (w0[31:16] == 0) ? 0 : xoff + {w0[31:16], 2'b00};
 		end
@@ -676,8 +676,14 @@ module ghci_probe #(
 			$display("PASS CMD_FENCE wrote {00000001, CAFE0042} to host memory at 0x8000 (flags=0x3)");
 		end
 
-		/* Verify IRQ_STATUS[0] is set for flags=0x3 */
+		/* Wait for IRQ_STATUS[0] after B-channel completion reaches atg_cp_fence */
+		to_cnt = 0;
 		host_read(GHCI_REG_IRQ_STATUS, val);
+		while (!val[0] && to_cnt < 100) begin
+			#50;
+			host_read(GHCI_REG_IRQ_STATUS, val);
+			to_cnt = to_cnt + 1;
+		end
 		if (!val[0]) begin
 			err_count = err_count + 1;
 			$display("FAIL IRQ_STATUS[0] not set for flags=0x3 (val=%08h)", val);

@@ -255,7 +255,13 @@ module atg_kc705_pcie_tb;
 		end
 		if (v != 32'd6)
 			fail("the GPU did not advance RING_RPTR");
+		n = 0;
 		dut.pcie.host_read(32'h0001_2040, v);
+		while (v !== 32'hC0FF_EE02 && n < 200) begin
+			wait_uclk(10);
+			dut.pcie.host_read(32'h0001_2040, v);
+			n = n + 1;
+		end
 		if (v !== 32'hC0FF_EE02)
 			fail("the GPU's host write is not in the host's memory");
 		if (dut.pcie.host_err_n != 0)

@@ -350,7 +350,8 @@ module atg_rx_setup #(
 			end
 			if (r_st_ps_valid) begin
 				point_size <= r_st_ps_is_fp ? ps_fix[15:0] : r_st_ps_raw_lo;
-				if (r_st_ps_raw == 32'h0100 || r_st_ps_raw == 32'h3F800000) begin
+				if ((r_st_ps_is_fp ? (ps_fix[15:0] == 16'd0) : (r_st_ps_raw_lo == 16'd0)) ||
+				    r_st_ps_raw == 32'h0100 || r_st_ps_raw == 32'h3F800000) begin
 					inv_ps_lo <= 16'h0000;
 					inv_ps_hi <= 16'h3F80;
 				end else
@@ -1779,7 +1780,7 @@ module atg_rx_setup #(
 
 	/* 9. Main Control FSM: Compute st_next, seq_next, p_step_next ONCE combinationally
 	 * so replicating st_rep_*, seq_step_rep_*, p_step_rep_* does NOT duplicate next-state logic cones! */
-	wire ps_ne_0100 = (point_size != 16'h0100);
+	wire ps_ne_0100 = (point_size != 16'h0100) && (point_size != 16'd0);
 	wire [4:0] seq_inc;
 	wire seq_inc_co_unused;
 	wire seq_inc_hi_co_unused = 1'b0;

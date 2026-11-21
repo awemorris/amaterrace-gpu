@@ -448,12 +448,10 @@ module atg_top_scene_harness #(
 			/* Wait for CMD_FENCE completion */
 			wait_reg(GHCI_LEGACY_FENCE_LAST, 32'hCAFE0001, 32'hFFFFFFFF);
 
-			/* Reset CP engine so subsequent ring commands start cleanly */
+			/* Reset CP engine and wait for state replay to complete */
 			host_write(GHCI_CTRL, 32'd1 << GHCI_CTRL_RESET);
-			repeat (4) @(posedge clk);
-			host_write(GHCI_CTRL, 32'd0);
-			repeat (4) @(posedge clk);
-			wait_reg(GHCI_STATUS, 32'd0, 32'd1 << GHCI_STATUS_RUNNING);
+			wait_reg(GHCI_CTRL, 32'd0, 32'd1 << GHCI_CTRL_RESET);
+			wait_reg(GHCI_STATUS, 32'd0, 32'h000F0000 | (32'd1 << GHCI_STATUS_RUNNING));
 			host_write(GHCI_LEGACY_APERTURE_BASE, 32'h00020000);
 			host_write(GHCI_LEGACY_APERTURE_LIMIT, APER_LIMIT);
 

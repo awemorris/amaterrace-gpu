@@ -265,6 +265,8 @@ module atg_cpu_win #(
 				q_dmem <= in_dmem;
 				q_own <= in_win && !idx[5] && !idx[4];
 				q_sub <= in_win && (idx[5] || idx[4]);
+				if (!in_dmem && !in_win)
+					q_rdata <= 32'd0;
 			end else if (state == S_DMEM) begin
 				state <= S_ACK;
 			end else if (sub_rd) begin

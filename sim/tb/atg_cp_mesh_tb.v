@@ -62,10 +62,12 @@ module atg_cp_mesh_tb;
 		.kick(kick), .kick_code(kick_code), .inv(inv), .busy_in(busy_in),
 		.vsync(1'b0),
 		.f_valid(), .f_ready(1'b1), .f_op(), .f_addr(), .f_value(),
-		.f_aux(), .f_irq(), .f_mem(), .f_flush(), .f_busy(1'b0),
+		.f_aux(), .f_irq(), .f_mem(), .f_flush(), .f_64(), .f_busy(1'b0),
 		.occ_count(40'd0), .occ_clear(),
-		.busy(busy), .cmd_active(cmd_active),
-		.fault(fault), .fault_kind(), .fault_addr(), .fault_tag()
+		.busy(busy), .cmd_active(cmd_active), .seq_st(),
+		.fault(fault), .fault_kind(), .fault_addr(), .fault_tag(),
+		.caps_r_idx(), .caps_r_data(32'd0), .caps_fw_stall(1'b0),
+		.bound_session()
 	);
 
 	reg saw_grid_x = 0, saw_grid_y = 0, saw_grid_z = 0;

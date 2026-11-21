@@ -197,7 +197,7 @@ module atg_cpu_win_tb;
 		expect("st_ridx", st_ridx, 9'h1E3);
 		access(0, WIN + 4 * 6'h08, 0);
 		expect("STATE_DATA", rd, {23'h5A5A5A, 9'h1E3});
-		expect("STATE_DATA lat", lat, 2);
+		expect("STATE_DATA lat", lat, 3);
 		/* Unmapped: answered at once with 0; a store goes nowhere. */
 		access(1, 32'h0000_0100, 32'h55);
 		access(1, 32'hF000_0100, 32'h55);

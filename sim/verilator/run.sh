@@ -26,32 +26,26 @@ SU="-GNSU=1 -GSU_NPHYS=4 -GSU_GRP_W=3 -GSU_NREGS=64 -GSU_SB_ENTRIES=8 -GSU_SBE_W
 	-GSU_PACKED=1 -GSU_SUBGROUP=1 -GSU_FRAG_RESERVE=2 -GSU_LDS_BYTES=16384 -GSU_VARY_WORDS=64"
 GFX="-GHAS_VF=1 -GHAS_RX=1 -GHAS_TU=1 -GHAS_ROP=1 -GROP_STENCIL=1"
 
-CFG_CFLAGS=""
-CFG_VFLAGS=""
+CFG_BILINEAR=1
+CFG_FFILT=1
+CFG_ROP_PACK=1
+CFG_EARLY_Z=1
+CFG_DEPTH32F=1
 if [ -f "$root/config.mk" ]; then
 	while IFS='=' read -r key val || [ -n "$key" ]; do
 		key=$(echo "$key" | tr -d '[:space:]')
 		val=$(echo "$val" | tr -d '[:space:]')
 		case "$key" in
-		CONFIG_TU_ENABLE_BILINEAR)
-			CFG_CFLAGS="$CFG_CFLAGS -DCFG_TU_ENABLE_BILINEAR=$val"
-			CFG_VFLAGS="$CFG_VFLAGS -DCFG_TU_ENABLE_BILINEAR=$val"
-			;;
-		CONFIG_TU_ENABLE_FFILT)
-			CFG_CFLAGS="$CFG_CFLAGS -DCFG_TU_ENABLE_FFILT=$val"
-			CFG_VFLAGS="$CFG_VFLAGS -DCFG_TU_ENABLE_FFILT=$val"
-			;;
-		CONFIG_ROP_ENABLE_PACK)
-			CFG_CFLAGS="$CFG_CFLAGS -DCFG_ROP_ENABLE_PACK=$val"
-			CFG_VFLAGS="$CFG_VFLAGS -DCFG_ROP_ENABLE_PACK=$val"
-			;;
-		CONFIG_RX_ENABLE_EARLY_Z)
-			CFG_CFLAGS="$CFG_CFLAGS -DCFG_ENABLE_EARLY_Z=$val"
-			CFG_VFLAGS="$CFG_VFLAGS -DCFG_ENABLE_EARLY_Z=$val"
-			;;
+		CONFIG_TU_ENABLE_BILINEAR) CFG_BILINEAR=$val ;;
+		CONFIG_TU_ENABLE_FFILT)    CFG_FFILT=$val ;;
+		CONFIG_ROP_ENABLE_PACK)    CFG_ROP_PACK=$val ;;
+		CONFIG_RX_ENABLE_EARLY_Z)  CFG_EARLY_Z=$val ;;
+		CONFIG_FMT_ENABLE_DEPTH32F) CFG_DEPTH32F=$val ;;
 		esac
 	done < "$root/config.mk"
 fi
+CFG_CFLAGS="-DCFG_TU_ENABLE_BILINEAR=$CFG_BILINEAR -DCFG_TU_ENABLE_FFILT=$CFG_FFILT -DCFG_ROP_ENABLE_PACK=$CFG_ROP_PACK -DCFG_ENABLE_EARLY_Z=$CFG_EARLY_Z"
+CFG_VFLAGS="$CFG_CFLAGS -DCFG_FMT_ENABLE_DEPTH32F=$CFG_DEPTH32F"
 
 # build NAME DEFINE PARAMS...: the harness as build/verilator/atg_top_NAME, then its run.
 build() {
@@ -90,7 +84,7 @@ for m in ${*:-basic raster shade tex msaa compute core}; do
 	# memory against the reference model gsi1model, an ISA fault.
 	compute) build compute -DCOMPUTE $SU ;;
 	# The Vulkan 1.0 core scene (CAPS[30], reference scene generator rx-core-scene).
-	core) build core -DCORE $GFX $SU -GMS4=1 ;;
+	core) build core -DCORE $GFX $SU -GMS4=1 -GHAS_ETC=1 ;;
 	*) echo "verilator: no mode $m" >&2; exit 1 ;;
 	esac
 done

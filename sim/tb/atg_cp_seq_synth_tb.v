@@ -61,10 +61,13 @@ module atg_cp_seq_synth_tb;
 		.kick(kick), .kick_code(kick_code), .inv(inv),
 		.busy_in(9'd0), .vsync(1'b0), .l2_flush_done(l2_flush_done), .l2_idle(1'b1),
 		.f_valid(f_valid), .f_ready(f_ready), .f_op(f_op), .f_addr(f_addr),
-		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush),
+		.f_value(f_value), .f_aux(f_aux), .f_irq(f_irq), .f_mem(f_mem), .f_flush(f_flush), .f_64(),
 		.f_busy(1'b0), .occ_count(40'd0), .occ_clear(occ_clear),
 		.busy(busy), .cmd_active(cmd_active), .seq_st(seq_st),
-		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag)
+		.fault(fault), .fault_kind(fault_kind), .fault_addr(fault_addr), .fault_tag(fault_tag),
+		.u_fw(), .u_side(),
+		.caps_r_idx(), .caps_r_data(32'd0), .caps_fw_stall(1'b0),
+		.bound_session()
 	);
 
 	integer errors = 0;

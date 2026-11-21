@@ -113,7 +113,7 @@ module atg_ex_rt #(
 
 	generate
 		for (gk = 0; gk < K; gk = gk + 1) begin : g_ex_rdy
-			assign sk_r[gk] = out_in_ready && (pick == gk[KW-1:0]);
+			assign sk_r[gk] = out_in_ready && pick_valid && (pick == gk[KW-1:0]);
 		end
 	endgenerate
 

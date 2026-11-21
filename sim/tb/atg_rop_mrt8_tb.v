@@ -381,29 +381,56 @@ module atg_rop_mrt8_tb;
 		/* Test CAM matching across RT bits */
 		@(negedge clk);
 		dut_wb.u_hazard.valid[0] = 1'b1;
-		d_xy = {16'd4, 16'd4};
-		dut_wb.u_hazard.tag[0] = {3'd0, d_xy[31:17], d_xy[15:1]}; /* RT=0, Y=4, X=4 */
+		dut_wb.u_hazard.tag[0] = {3'd0, 15'd2, 15'd2}; /* RT=0, Y=4, X=4 */
 
 		/* Check RT=1 with same Y=4, X=4: MUST NOT hit hazard (alloc_ready == 1) */
-		d_rt = 3'd1;
+		@(negedge clk);
+		d_valid <= 1'b1;
+		d_nocol <= 1'b0;
+		d_smask <= 16'h1111;
+		d_xy <= {16'd4, 16'd4};
+		d_rt <= 3'd1;
+		@(posedge clk);
+		d_valid <= 1'b0;
 		#1;
 		if (!dut_wb.alloc_ready)
 			fail("hazard: different RT (1 vs 0) falsely hit hazard");
+		drain();
 
 		/* Check RT=2 with same Y=4, X=4: MUST NOT hit hazard (alloc_ready == 1) */
-		d_rt = 3'd2;
+		@(negedge clk);
+		dut_wb.u_hazard.valid[0] = 1'b1;
+		dut_wb.u_hazard.tag[0] = {3'd0, 15'd2, 15'd2};
+		d_valid <= 1'b1;
+		d_rt <= 3'd2;
+		@(posedge clk);
+		d_valid <= 1'b0;
 		#1;
 		if (!dut_wb.alloc_ready)
 			fail("hazard: different RT (2 vs 0) falsely hit hazard");
+		drain();
 
 		/* Check RT=7 with same Y=4, X=4: MUST NOT hit hazard (alloc_ready == 1) */
-		d_rt = 3'd7;
+		@(negedge clk);
+		dut_wb.u_hazard.valid[0] = 1'b1;
+		dut_wb.u_hazard.tag[0] = {3'd0, 15'd2, 15'd2};
+		d_valid <= 1'b1;
+		d_rt <= 3'd7;
+		@(posedge clk);
+		d_valid <= 1'b0;
 		#1;
 		if (!dut_wb.alloc_ready)
 			fail("hazard: different RT (7 vs 0) falsely hit hazard");
+		drain();
 
 		/* Check RT=0 with same Y=4, X=4: MUST hit hazard (alloc_ready == 0) */
-		d_rt = 3'd0;
+		@(negedge clk);
+		dut_wb.u_hazard.valid[0] = 1'b1;
+		dut_wb.u_hazard.tag[0] = {3'd0, 15'd2, 15'd2};
+		d_valid <= 1'b1;
+		d_rt <= 3'd0;
+		@(posedge clk);
+		d_valid <= 1'b0;
 		#1;
 		if (dut_wb.alloc_ready)
 			fail("hazard: same RT (0 vs 0) failed to detect hazard");
@@ -411,6 +438,7 @@ module atg_rop_mrt8_tb;
 		/* Clean up CAM entry */
 		@(negedge clk);
 		dut_wb.u_hazard.valid[0] = 1'b0;
+		drain();
 
 		if (errors == ec)
 			$display("PASS atg_rop_mrt8.hazard");
