@@ -2108,8 +2108,8 @@ Under GHCI 1.0, memory protection is enforced hardware-wide through **per-sessio
   for fragment discard).
 - Lanes outside EXEC neither write registers nor have side effects
   (except `exec.save`, `vote` and `ballot`, which write every lane). Killed
-  lanes and fragment helper lanes have no side effects (`sw`, `atom`, `atoms`,
-  `sts`, `exp`), except `sw.x`, the store to the warp's scratch memory
+  lanes and fragment helper lanes have no side effects (`sw`, `sd.64`, `atom`,
+  `atoms`, `sts`, `exp`, including `.a64` forms), except `sw.x`, the store to the warp's scratch memory
   (section 12.8), which every lane in EXEC makes.
 - Branches are per warp; the hardware does not reconverge. The compiler
   manages divergence with EXEC.
@@ -2205,12 +2205,12 @@ word1 (bits 63:32):
 | 0110011 OP | `add sub sll slt sltu xor srl sra or and`; funct7 0000001: `mul mulh mulhsu mulhu div divu rem remu`; funct7 0000101: `min max minu maxu` (funct3 100, 110, 101, 111); funct7 0100000: `andn orn xnor` (funct3 111, 110, 100) besides `sub sra` |
 | 0010011 OP-IMM | `addi slti sltiu xori ori andi slli srli srai` |
 | 0110111 LUI | `lui`, `movi` |
-| 0000011 LOAD | funct3 010 `lw rd, imm(rs1)` (global 32-bit); funct3 011 `ld.64 rd, imm(rs1)` (global 64-bit pair into even/odd registers `rd, rd+1`); 110 `lwc rd, imm(rs1)` (constant bank, word index rs1 + imm) |
-| 0100011 STORE | funct3 010 `sw rs2, imm(rs1)` (sub 0); funct3 011 `sd.64 rs2, imm(rs1)` (global 64-bit pair from `rs2, rs2+1`); `sw.x rs2, imm(rs1)` (sub 1: the store of every lane in EXEC, helper and killed lanes included, for the warp's scratch memory, section 12.8) |
+| 0000011 LOAD | funct3 010 `lw rd, imm(rs1)` (`sub = 0`: global 32-bit EA), `lw.a64 rd, imm(rs1)` (`sub = 2`: global 64-bit EA); funct3 011 `ld.64 rd, imm(rs1)` (`sub = 0`: global 32-bit EA), `ld.64.a64 rd, imm(rs1)` (`sub = 2`: global 64-bit EA) loading 64-bit pair into consecutive registers `rd, rd+1`; 110 `lwc rd, imm(rs1)` (constant bank, word index rs1 + imm) |
+| 0100011 STORE | funct3 010 `sw rs2, imm(rs1)` (`sub = 0`: 32-bit EA), `sw.x rs2, imm(rs1)` (`sub = 1`: 32-bit EA, store of every lane in EXEC, helper and killed lanes included, for warp scratch memory, §12.8), `sw.a64 rs2, imm(rs1)` (`sub = 2`: 64-bit EA); funct3 011 `sd.64 rs2, imm(rs1)` (`sub = 0`: 32-bit EA), `sd.64.a64 rs2, imm(rs1)` (`sub = 2`: 64-bit EA) storing 64-bit pair from consecutive registers `rs2, rs2+1` |
 | 1100011 BRANCH | funct3 000 `bany rs1, off`, 001 `bnone`, 010 `ball`, 011 `j off`, 100 `bexnz off`, 101 `bexz off` |
 | 1010011 OP-FP (single) | `fadd.s fsub.s fmul.s` (funct7 0000000/0000100/0001000), `fsgnj.s` (0010000, funct3 000), `fmin.s fmax.s` (0010100, funct3 000/001), `fsqrt.s` (0101100, rs2 0), `fcvt.w.s fcvt.wu.s` (1100000, rs2 0/1), `fcvt.s.w fcvt.s.wu` (1101000, rs2 0/1), `feq.s flt.s fle.s fne.s` (1010000, funct3 010/001/000/011), `fround.s` (0100000, rs2 00100) |
 | 1000011 1000111 1001011 1001111 | `fmadd.s fmsub.s fnmsub.s fnmadd.s` (R4) |
-| 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4; with sub[4] `atoms.<op>`, the same on shared memory), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
+| 0001011 custom-0 | funct3 000 `lds rd, imm(rs1)`, 001 `sts rs2, imm(rs1)`, 010 `atom.<op> rd, (rs1), rs2[, rs3]` (R4, 32-bit EA; with `sub[4] == 1` `atoms.<op>`, the same on shared memory), 011 `atom.<op>.a64 rd, (rs1), rs2[, rs3]` (R4, 64-bit EA `{rs1+1, rs1}`, global only), 100 `fence imm`, 101 `bar`, 110 `wait cm, ct, cx` (I: imm[3:0] cm, [7:4] ct, [11:8] cx), 111 `end` |
 | 0101011 custom-1 | funct3 000 `texl`, 001 `texb`, 010 `texf` (rd..rd+3; rs1, rs1+1 coordinates; single 6-bit `.idx` encoding §12.9: `w1[21] I/R`, `tex_field = {w1[15:14], w1[20:17]}`, `samp_field = {w1[30], w1[16], w1[9:6]}`, `w1[31] = 0`; funct7 modifiers: `texl`/`texb` [0] `.c` (Dref after the coordinates), `texl` [1] gather `texg` with the component in [3:2], `texb` 0010000 `texqlod`, [5] `.3` (a third coordinate in rs1+2); word1 [25:22] du, [29:26] dv, [13:10] dw texel offsets), 011 `texsz` (I; immediate 1: `texsz.l`, 2: `texsz.d`, 3: `texsz.s`; uses `tex_field` with single 6-bit `.idx` encoding), 100 `exp rs2, target` (S), 101 `lda rd, imm(rs1)` (I; sub[0] dynamic index flag, imm layout §12.10.3), 110 `qd` (sub 0 qdx, 1 qdy, 2-4 qswap1-3, 5 qbcast), 111 `shfl` (sub 0 idx, 1 xor, 2 up, 3 down, 4 rot) |
 | 1011011 custom-2 (packed) | funct3 000 `fadd2`, 001 `fsub2`, 010 `fmul2`, 011 `ffma2` (R4), 100 `fmin2`/`fmax2` (funct7 0/1), 101 `iadd2`/`isub2`/`imul2` (funct7 0/1/2), 110 `fcmp2.lt/ge/eq/ne` (funct7 0-3), 111: funct7 0000000 `packh rd, rs1, rs2`, 0000001 `unpackh rd, rs1` (sub 0 low, 1 high), 0000010 `swaph rd, rs1` |
 | 1111011 custom-3 | funct3 000 `sel rd, rs1, rs2, rs3` (R4, bitwise: (rs1 & rs2) \| (~rs1 & rs3)), 001 `exec.set rs1` / `exec.and rs1` / `exec.or rs1` / `exec.save rd` (sub 0-3), 010 `kill rs1`, 011 transcendental (sub 0 `rcp`, 1 `rsq`, 2 `exp2`, 3 `log2`, 4 `sin`, 5 `cos`, 6 `fract`), 100 `vote.any/all rd, rs1` (sub 0/1), 101 `ballot rd, rs1`, 110 `sactl rs1` (reserved), 111 `nop` |
@@ -2218,9 +2218,7 @@ word1 (bits 63:32):
 
 - **Atomic operations** (`atom` sub[3:0]): 0 and, 1 or, 2 xor, 3 xchg, 4 add,
   5 sub, 6 smax, 7 smin, 8 umax, 9 umin, 10 cmpxchg (rs3 is the compare
-  value). sub[4] selects the memory: 0 global (`atom`, rs1 a GPU
-  address), 1 shared (`atoms`, rs1 a byte address in shared memory,
-  section 12.8). rd gets the word's old value.
+  value). On `funct3 010`, `sub[4]` selects the memory: `0` global (`atom.<op>`, 32-bit EA `{32'd0, rs1[31:0]}`), `1` shared (`atoms.<op>`, byte address in shared memory, section 12.8). On `funct3 011` (`atom.<op>.a64`), `sub[4]` must be `0` (`sub[4] == 1` raises `GHCI_FAULT_KIND_INVALID_OP`) and the global EA is `{rs1_p1[31:0], rs1[31:0]}` from consecutive GPR pair `rs1, rs1+1`. `rd` gets the word's old value.
 - **`fence imm`:** imm[0] waits until the warp's stores and atomics are
   complete, imm[1] the same for shared memory, imm[2] (acquire)
   invalidates the data cache.
@@ -2242,9 +2240,9 @@ word1 (bits 63:32):
 
 The warp stops, and the GPU reports an ISA execution fault:
 - **Fault Classification**:
-  - `kind 1` (`GHCI_FAULT_KIND_INVALID_OP`): Reported for illegal opcodes, undefined funct3/funct7, unsupported sub-operations, or invalid rounding modes.
-  - `kind 9` (`GHCI_FAULT_KIND_PAGE_FAULT`): Reported when a global memory load/store references an unmapped virtual address.
-  - `kind 10` (`GHCI_FAULT_KIND_PERM_FAULT` / `GHCI_FAULT_KIND_MEMORY_FAULT`): Reported for VM page permission violations (`GHCI_VM_FLAG_READ`/`WRITE`/`EXEC`), LDS out-of-bounds access, or misaligned 64-bit access crossing 8-byte boundaries.
+  - `kind 1` (`GHCI_FAULT_KIND_INVALID_OP`): Reported for illegal opcodes, undefined funct3/funct7/sub, unsupported sub-operations, invalid rounding modes, `.a64` forms when `VA_BITS <= 32`, or out-of-range / non-GPR register pairs `r_k` (`k > min(NREGS - 2, 61)`).
+  - `kind 9` (`GHCI_FAULT_KIND_PAGE_FAULT`): Reported when an executed active lane's global memory load/store/atomic references an unmapped virtual address or a `.a64` effective address has non-zero upper bits `EA[63:VA_BITS] != 0` (`FAULT_INFO[20]`: `0` Read, `1` Write).
+  - `kind 10` (`GHCI_FAULT_KIND_PERM_FAULT`): Reported for VM page permission violations (`GHCI_VM_FLAG_READ`/`WRITE`/`EXEC`), LDS out-of-bounds access, or unaligned global memory access (`lw`/`sw`/`sw.x`/`atom.<op>` with `EA[1:0] != 0`, or `ld.64`/`sd.64` with `EA[2:0] != 0`, including `.a64` forms; `FAULT_INFO[20]`: `0` Read, `1` Write).
 - **Diagnostic Information**:
   - `FAULT_ADDR` latches the faulting instruction Program Counter (PC) relative to the stage instruction base (`vs_code_va`, `fs_code_va`, `cs_code_va`, `ms_code_va`).
   - `FAULT_INFO[7:4]` (`UNIT = 2`, Shader Unit) and `FAULT_INFO[19:16]` identifies the active shader stage (0: VS, 1: FS, 2: CS, 3: MS).
@@ -2255,15 +2253,18 @@ The warp stops, and the GPU reports an ISA execution fault:
   00 (except `atom`);
 - a register above the program's or the implementation's limit (including
   rd+3 of the texture instructions and rs1+1 of `texl`, `texb`, `texf`,
-  which may not be r62, c31 or operand 127); a destination of 64 or above;
+  which may not be r62, c31 or operand 127); any consecutive 2-register pair
+  (`ld.64` `rd`, `sd.64` `rs2`, `.a64` `rs1`) whose base operand is not a GPR
+  `r_k` with `k <= min(NREGS - 2, 61)` (constant bank `c` and special operands
+  are invalid for pair operands); `.a64` forms (`LOAD`/`STORE` `sub = 2`, `custom-0` `funct3 = 3`) when `VA_BITS <= 32`; a destination of 64 or above;
 - an optional instruction (section 12.5) without its CAPS bit.
 
 Undefined encodings, in detail: OP funct7 0100000 with funct3 001, 010 or
 011; funct7 0000101 with funct3 0xx; an R-form custom instruction whose
 funct7 differs from its defined value (`texl`: 0, 1, 2, 3, 6, 10, 14; `texb`: 0, 1, 0010000; `texf`: 0); in `texl`/`texg`/`texb`/`texqlod`/`texf` (`custom-1, f3 = 0..2`), an undefined `funct7`, `w1[31] != 0`, a non-zero `samp_field` on `texf`, or when `w1[21] == 1` (Register mode) `tex_field >= min(NREGS, 63)` or (for sampler-using forms) `samp_field >= min(NREGS, 63)` raises `GHCI_FAULT_KIND_INVALID_OP`; in `texsz` (`custom-1, f3 = 3`), `w0[31:25] != 0`, `w0[24:20]` other than `0, 1, 2` or (with `DEVICE_CAPS[31]` `CAP_MSAA`) `3`, `w1[31:22] != 0` (including `w1[30]`), `w1[16] != 0`, `w1[9:6] != 0`, or when `w1[21] == 1` `tex_field >= min(NREGS, 63)` raises `INVALID_OP` (Register-mode index operands accept GPRs `r0..r62` only, never constant bank `c` or special operands); a `.c` form (`texl.c`, `texb.c`, `texg.c`) with rs1+2 past r62, NREGS, c31 or the specials;
-`sw` sub above 1; `atom` sub[3:0] above 10; `qd` sub above 5; `shfl` sub above 4; transcendental
-sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
-1; `nop` sub other than 0.
+`LOAD` `sub` other than `0` or `2` on `lw`/`ld.64` (or `!= 0` on `lwc`); `STORE` `sub` other than `0, 1, 2` on `sw` (or `0, 2` on `sd.64`); `custom-0` `funct3 = 3` (`atom.<op>.a64`) with `sub[4] != 0`; `atom` `sub[3:0]` above `10`; `qd` `sub` above `5`; `shfl` `sub` above `4`; transcendental
+sub above `6`; `exec.*` `sub` above `3`; `vote` `sub` above `1`; `unpackh` `sub` above
+`1`; `nop` `sub` other than `0`.
 
 ### 12.7 Arithmetic
 
@@ -2302,8 +2303,19 @@ sub above 6; `exec.*` sub above 3; `vote` sub above 1; `unpackh` sub above
 ### 12.8 Memory
 
 - **Global memory:** GPU virtual addresses in the session's address space (section 11.2).
-  - Standard 32-bit addressing: word accesses (`lw`, `sw`; bits 1:0 of the address are ignored, naturally aligning to 4-byte boundaries without faulting), and atomics on words.
-  - **Extended 64-bit Addressing**: When `VA_BITS > 32` (up to 40-bit virtual addresses, 1 TiB space), shaders access memory above 4 GiB using even-odd register pairs $\{r[2k+1], r[2k]\}$ via 64-bit instructions (`LOAD64`, `STORE64`), where $r[2k]$ holds low 32 bits and $r[2k+1]$ holds high bits `[VA_BITS-1:32]`. Unaligned 64-bit accesses crossing 8-byte boundaries raise `kind 10 PERM_FAULT`.
+  - **Short 32-bit Addressing**: `lw`, `ld.64`, `sw`, `sd.64`, and `sw.x` compute the 64-bit effective address with 32-bit modular wrap and upper-half zero-extension:
+    $$\text{EA} = \{\text{32'd0},\ (\text{rs1}[31:0] + \text{sext32}(\text{imm}))[31:0]\}$$
+    `atom.<op>` (`custom-0, funct3 = 2, sub[4] = 0`) uses $\text{EA} = \{\text{32'd0},\ \text{rs1}[31:0]\}$. Thus short forms always address `[0, 4 GiB)` even when `VA_BITS > 32`.
+  - **Extended 64-bit Addressing (`.a64`) & Consecutive Register Pairs**: When `VA_BITS > 32` (when `VA_BITS <= 32`, any `.a64` form raises `GHCI_FAULT_KIND_INVALID_OP`), shaders use `.a64` instructions (`lw.a64`, `ld.64.a64`, `sw.a64`, `sd.64.a64` via `LOAD`/`STORE` `sub = 2`, and `atom.<op>.a64` via `custom-0` `funct3 = 3`) with a consecutive GPR pair `{r_{k+1}, r_k}` (`k <= min(NREGS - 2, 61)`, valid for any `k` without even/odd parity restriction; `r_k` holds bits `[31:0]` and `r_{k+1}` holds bits `[63:32]`):
+    - `lw.a64` / `ld.64.a64` / `sw.a64` / `sd.64.a64`: $\text{EA} = \{r_{k+1}[31:0],\ r_k[31:0]\} + \text{sext64}(\text{imm})$
+    - `atom.<op>.a64`: $\text{EA} = \{r_{k+1}[31:0],\ r_k[31:0]\}$
+    If `EA[63:VA_BITS] != 0` on an executed lane, hardware raises `GHCI_FAULT_KIND_PAGE_FAULT` (`kind 9`).
+  - **64-bit Data Transfers (`ld.64`, `sd.64`)**: `ld.64` / `ld.64.a64` load 64 bits into consecutive GPR pair `{rd+1, rd}` (`rd = r_k` with `k <= min(NREGS - 2, 61)`), and `sd.64` / `sd.64.a64` store 64 bits from `{rs2+1, rs2}` (`rs2 = r_k` with `k <= min(NREGS - 2, 61)`), without even/odd restriction.
+  - **Alignment & Active-Lane Fault Rules**: Every global memory access enforces natural alignment:
+    - 32-bit operations (`lw`, `sw`, `sw.x`, `atom.<op>`, including `.a64` forms) require 4-byte alignment (`EA[1:0] == 0`).
+    - 64-bit operations (`ld.64`, `sd.64`, including `.a64` forms) require 8-byte alignment (`EA[2:0] == 0`).
+    - Any misaligned access raises `GHCI_FAULT_KIND_PERM_FAULT` (`kind 10`, with `FAULT_INFO[20]` distinguishing `0 = Read`, `1 = Write`).
+    - Lanes outside `EXEC`, as well as killed or fragment helper lanes on `sw`, `sd.64`, and `atom.<op>` (including `.a64` forms), perform no memory access and NEVER trigger alignment or address faults (`sw.x` executes and checks alignment/addressing for all lanes in `EXEC`, including helper and killed lanes).
   - The data cache is not coherent with other agents: use `fence 4`
     (acquire) before reading data that another agent wrote, and `fence 1`
     and `wait` before a result is read by another agent. `end` completes
